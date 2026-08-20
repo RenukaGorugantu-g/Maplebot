@@ -1,0 +1,63 @@
+{
+  "timestamp": "2026-08-20T07:12:42.437Z",
+  "mode": "DRY_RUN",
+  "oldEmployeesCount": 8,
+  "oldUpdatesCount": 5,
+  "oldCommentsCount": 2,
+  "oldPodsDepartments": 4,
+  "matchedEmployeesCount": 8,
+  "unmatchedEmployeesCount": 0,
+  "duplicateUpdatesCount": 0,
+  "readyToMigrateCount": 13,
+  "potentialConflictsCount": 0,
+  "employees": [
+    {
+      "name": "Maple Edge",
+      "email": "info@maplelearningsolutions.com",
+      "mappedRole": "admin",
+      "mappedPod": "HR Operations"
+    },
+    {
+      "name": "Sandeep M",
+      "email": "sandeep@maplelearningsolutions.com",
+      "mappedRole": "manager",
+      "mappedPod": "HR Operations"
+    },
+    {
+      "name": "Krishna",
+      "email": "krishna@maplelearningsolutions.com",
+      "mappedRole": "manager",
+      "mappedPod": "HR Operations"
+    },
+    {
+      "name": "Rathish",
+      "email": "rathish@maplelearningsolutions.com",
+      "mappedRole": "manager",
+      "mappedPod": "HR Operations"
+    },
+    {
+      "name": "Renuka Gorugantu",
+      "email": "renuka@maplelearningsolutions.com",
+      "mappedRole": "member",
+      "mappedPod": "Web & Sales"
+    },
+    {
+      "name": "Swetha",
+      "email": "swetha@maplelearningsolutions.com",
+      "mappedRole": "member",
+      "mappedPod": "HR Operations"
+    },
+    {
+      "name": "Dhana",
+      "email": "dhana@maplelearningsolutions.com",
+      "mappedRole": "manager",
+      "mappedPod": "eLearning"
+    },
+    {
+      "name": "Nithin",
+      "email": "nithin@maplelearningsolutions.com",
+      "mappedRole": "manager",
+      "mappedPod": "Marketing"
+    }
+  ]
+}
