@@ -17,7 +17,9 @@ export const reportsService = {
     let updates = dataStore.getUpdates();
 
     if (filters.podId) {
-      updates = updates.filter((u) => u.pod_id === filters.podId);
+      updates = updates.filter(
+        (u) => u.pod_id === filters.podId || (u.profile?.pod_ids && u.profile.pod_ids.includes(filters.podId))
+      );
     }
     if (filters.profileId) {
       updates = updates.filter((u) => u.profile_id === filters.profileId);

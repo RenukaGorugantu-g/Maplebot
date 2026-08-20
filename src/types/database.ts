@@ -47,6 +47,7 @@ export interface Profile {
   avatar_url?: string;
   role: UserRole;
   pod_id?: string;
+  pod_ids?: string[];
   manager_id?: string;
   timezone: string;
   status: UserStatus;
@@ -54,6 +55,7 @@ export interface Profile {
   updated_at: string;
   // Joins
   pod?: Pod;
+  pods?: Pod[];
   manager?: Profile;
   last_update?: Update;
 }

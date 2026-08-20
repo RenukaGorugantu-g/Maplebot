@@ -48,9 +48,15 @@ export const aiService = {
 
     // 2. STRICT POD ISOLATION FOR POD LEADS
     if (isManager && authorizedPodId) {
-      updates = updates.filter((u) => u.pod_id === authorizedPodId);
-      blockers = blockers.filter((b) => b.pod_id === authorizedPodId);
-      allProfiles = allProfiles.filter((p) => p.pod_id === authorizedPodId);
+      updates = updates.filter(
+        (u) => u.pod_id === authorizedPodId || (u.profile?.pod_ids && u.profile.pod_ids.includes(authorizedPodId))
+      );
+      blockers = blockers.filter(
+        (b) => b.pod_id === authorizedPodId || (b.reporter?.pod_ids && b.reporter.pod_ids.includes(authorizedPodId))
+      );
+      allProfiles = allProfiles.filter(
+        (p) => p.pod_id === authorizedPodId || (p.pod_ids && p.pod_ids.includes(authorizedPodId))
+      );
       allKudos = allKudos.filter((k) => k.pod_id === authorizedPodId);
     }
 

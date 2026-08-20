@@ -6,7 +6,9 @@ export const updatesService = {
   getUpdates(filters?: { podId?: string; profileId?: string; date?: string; status?: string }): Update[] {
     let list = dataStore.getUpdates();
     if (filters?.podId) {
-      list = list.filter((u) => u.pod_id === filters.podId);
+      list = list.filter(
+        (u) => u.pod_id === filters.podId || (u.profile?.pod_ids && u.profile.pod_ids.includes(filters.podId))
+      );
     }
     if (filters?.profileId) {
       list = list.filter((u) => u.profile_id === filters.profileId);
@@ -72,7 +74,9 @@ export const updatesService = {
   getSubmissionStats(podId?: string) {
     const today = new Date().toISOString().split('T')[0];
     const allProfiles = dataStore.getProfiles().filter((p) => p.status === 'active' && p.role === 'member');
-    const filteredProfiles = podId ? allProfiles.filter((p) => p.pod_id === podId) : allProfiles;
+    const filteredProfiles = podId
+      ? allProfiles.filter((p) => p.pod_id === podId || (p.pod_ids && p.pod_ids.includes(podId)))
+      : allProfiles;
 
     const todayUpdates = this.getTodayUpdates(podId);
     const submittedCount = todayUpdates.length;

@@ -30,7 +30,9 @@ export const ManagerTeamPage: React.FC<{ onNavigate: (path: string) => void }> =
   const pod = dataStore.getPodById(podId);
 
   const stats = updatesService.getSubmissionStats(podId);
-  const podMembers = dataStore.getProfiles().filter((m) => m.pod_id === podId && m.status === 'active');
+  const podMembers = dataStore
+    .getProfiles()
+    .filter((m) => (m.pod_id === podId || (m.pod_ids && m.pod_ids.includes(podId))) && m.status === 'active');
   const podUpdates = updatesService.getTodayUpdates(podId);
   const podBlockers = blockersService.getBlockers({ podId, status: 'open' });
 

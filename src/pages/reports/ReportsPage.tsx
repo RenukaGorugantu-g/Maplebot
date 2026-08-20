@@ -43,7 +43,9 @@ export const ReportsPage: React.FC = () => {
 
   const pods = dataStore.getPods();
   const effectivePodId = isManager ? podIdForScope : (selectedPod || undefined);
-  const members = dataStore.getProfiles().filter((m) => !effectivePodId || m.pod_id === effectivePodId);
+  const members = dataStore
+    .getProfiles()
+    .filter((m) => !effectivePodId || m.pod_id === effectivePodId || (m.pod_ids && m.pod_ids.includes(effectivePodId)));
 
   const reportData = reportsService.generateReportData({
     reportType,

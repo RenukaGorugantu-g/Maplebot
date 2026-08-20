@@ -165,6 +165,7 @@ export const INITIAL_PROFILES: Profile[] = [
     email: 'nithin@maplelearningsolutions.com',
     role: 'member', // Member in Web & Sales (reports to Renuka), and Pod Lead for Marketing
     pod_id: 'pod-web-sales',
+    pod_ids: ['pod-web-sales', 'pod-marketing'],
     manager_id: 'prof-renuka',
     timezone: 'America/Toronto',
     status: 'active',
@@ -179,6 +180,7 @@ export const INITIAL_PROFILES: Profile[] = [
     email: 'raghavi@maplelearningsolutions.com',
     role: 'member',
     pod_id: 'pod-web-sales',
+    pod_ids: ['pod-web-sales', 'pod-marketing'],
     manager_id: 'prof-renuka',
     timezone: 'America/Toronto',
     status: 'active',
@@ -357,6 +359,7 @@ export const INITIAL_PROFILES: Profile[] = [
     email: 'abhishek@maplelearningsolutions.com',
     role: 'member',
     pod_id: 'pod-hr',
+    pod_ids: ['pod-hr', 'pod-marketing'],
     manager_id: 'prof-swetha',
     timezone: 'America/Toronto',
     status: 'active',
