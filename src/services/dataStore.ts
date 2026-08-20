@@ -299,6 +299,32 @@ class MapleDataStore {
     return resultUpdate;
   }
 
+  public addUpdateComment(updateId: string, commentData: { user_id: string; user_name: string; comment: string }): Update | undefined {
+    const idx = this.updates.findIndex((u) => u.id === updateId);
+    if (idx !== -1) {
+      const newComment = {
+        id: `comm-${Date.now()}`,
+        update_id: updateId,
+        user_id: commentData.user_id,
+        user_name: commentData.user_name,
+        comment: commentData.comment,
+        created_at: new Date().toISOString(),
+      };
+      const existingComments = this.updates[idx].comments || [];
+      this.updates[idx] = {
+        ...this.updates[idx],
+        comments: [...existingComments, newComment],
+      };
+      this.logAudit('UPDATE_COMMENT_ADDED', 'Update', updateId, {
+        userName: commentData.user_name,
+        comment: commentData.comment,
+      });
+      this.notify();
+      return this.updates[idx];
+    }
+    return undefined;
+  }
+
   public getBlockers(): Blocker[] {
     return this.blockers.map((b) => {
       const reporter = this.getProfileById(b.reported_by);

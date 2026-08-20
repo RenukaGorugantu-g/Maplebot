@@ -1,5 +1,5 @@
 import { dataStore } from './dataStore';
-import { GoogleChatSettings } from '../types/database';
+import { GoogleChatSettings, Update, Profile } from '../types/database';
 
 export const googleChatService = {
   getSettings(): GoogleChatSettings {
@@ -10,13 +10,202 @@ export const googleChatService = {
     return dataStore.updateGoogleChatSettings(updates);
   },
 
+  /**
+   * Helper to dispatch JSON payload to configured Google Chat Space incoming webhook
+   */
+  async dispatchToSpace(payload: any): Promise<boolean> {
+    const settings = dataStore.getGoogleChatSettings();
+    if (!settings.enabled || !settings.webhook_url) {
+      return false;
+    }
+
+    try {
+      const res = await fetch(settings.webhook_url, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload),
+      });
+      return res.ok;
+    } catch (e) {
+      console.warn('Google Chat Webhook dispatch notice:', e);
+      return false;
+    }
+  },
+
+  /**
+   * Dispatches a live card when a team member submits their Daily Standup Update
+   */
+  async sendDailyUpdateCard(update: Update, profile: Profile, podName: string): Promise<boolean> {
+    const statusEmoji = update.status === 'on_track' ? '🟢' : update.status === 'at_risk' ? '🟡' : '🔴';
+    const statusLabel = update.status === 'on_track' ? 'On Track' : update.status === 'at_risk' ? 'At Risk' : 'Blocked';
+
+    const payload = {
+      cardsV2: [
+        {
+          cardId: `standup-${update.id}-${Date.now()}`,
+          card: {
+            header: {
+              title: `Daily Standup — ${profile.full_name}`,
+              subtitle: `Pod: ${podName} • Status: ${statusEmoji} ${statusLabel}`,
+              imageUrl: 'https://cdn-icons-png.flaticon.com/512/3233/3233508.png',
+              imageType: 'CIRCLE',
+            },
+            sections: [
+              {
+                header: 'Yesterday Deliverables',
+                widgets: [
+                  {
+                    textParagraph: {
+                      text: update.yesterday.replace(/\n/g, '<br/>'),
+                    },
+                  },
+                ],
+              },
+              {
+                header: "Today's Priorities",
+                widgets: [
+                  {
+                    textParagraph: {
+                      text: update.today.replace(/\n/g, '<br/>'),
+                    },
+                  },
+                ],
+              },
+              ...(update.has_blocker && update.blocker
+                ? [
+                    {
+                      header: '🚨 Active Blocker / Impediment',
+                      widgets: [
+                        {
+                          textParagraph: {
+                            text: `<b>Blocker:</b> ${update.blocker}<br/><b>Category:</b> ${update.blocker_category || 'General'}${
+                              update.support_needed ? `<br/><b>Support Needed:</b> ${update.support_needed}` : ''
+                            }`,
+                          },
+                        },
+                      ],
+                    },
+                  ]
+                : []),
+            ],
+          },
+        },
+      ],
+    };
+
+    const sent = await this.dispatchToSpace(payload);
+    dataStore.logAudit('GOOGLE_CHAT_STANDUP_SENT', 'Update', update.id, {
+      profileName: profile.full_name,
+      podName,
+      hasBlocker: update.has_blocker,
+      sent,
+    });
+    return sent;
+  },
+
+  /**
+   * Dispatches a celebratory recognition card when Kudos is given
+   */
+  async sendKudosCard(
+    senderName: string,
+    recipientName: string,
+    category: string,
+    message: string,
+    podName?: string
+  ): Promise<boolean> {
+    const payload = {
+      cardsV2: [
+        {
+          cardId: `kudos-${Date.now()}`,
+          card: {
+            header: {
+              title: `🌟 Kudos Awarded!`,
+              subtitle: `${senderName} recognized ${recipientName}`,
+              imageUrl: 'https://cdn-icons-png.flaticon.com/512/3112/3112946.png',
+              imageType: 'CIRCLE',
+            },
+            sections: [
+              {
+                widgets: [
+                  {
+                    textParagraph: {
+                      text: `<b>Category:</b> <font color="#00DC82">${category}</font>${
+                        podName ? ` (${podName})` : ''
+                      }<br/><br/><i>"${message}"</i>`,
+                    },
+                  },
+                ],
+              },
+            ],
+          },
+        },
+      ],
+    };
+
+    const sent = await this.dispatchToSpace(payload);
+    dataStore.logAudit('GOOGLE_CHAT_KUDOS_SENT', 'Kudos', undefined, {
+      senderName,
+      recipientName,
+      category,
+      sent,
+    });
+    return sent;
+  },
+
+  /**
+   * Dispatches a comment/feedback card when a Manager, Pod Lead, or Admin comments on a standup
+   */
+  async sendUpdateCommentCard(
+    commenterName: string,
+    authorName: string,
+    comment: string,
+    podName?: string
+  ): Promise<boolean> {
+    const payload = {
+      cardsV2: [
+        {
+          cardId: `comment-${Date.now()}`,
+          card: {
+            header: {
+              title: `💬 Standup Feedback from ${commenterName}`,
+              subtitle: `Regarding ${authorName}'s update${podName ? ` • ${podName}` : ''}`,
+              imageUrl: 'https://cdn-icons-png.flaticon.com/512/2462/2462719.png',
+              imageType: 'CIRCLE',
+            },
+            sections: [
+              {
+                widgets: [
+                  {
+                    textParagraph: {
+                      text: `<b>Feedback:</b><br/><i>"${comment}"</i>`,
+                    },
+                  },
+                ],
+              },
+            ],
+          },
+        },
+      ],
+    };
+
+    const sent = await this.dispatchToSpace(payload);
+    dataStore.logAudit('GOOGLE_CHAT_COMMENT_SENT', 'Comment', undefined, {
+      commenterName,
+      authorName,
+      comment,
+      sent,
+    });
+    return sent;
+  },
+
+  /**
+   * Dispatches a standup reminder card for pending members
+   */
   async sendStandupReminder(
     memberEmail: string,
     memberName: string,
     podName: string
   ): Promise<{ success: boolean; message: string }> {
-    const settings = dataStore.getGoogleChatSettings();
-
     // 1. Create in-app notification
     const profile = dataStore.getProfiles().find((p) => p.email.toLowerCase() === memberEmail.toLowerCase());
     if (profile) {
@@ -30,74 +219,83 @@ export const googleChatService = {
       });
     }
 
-    // 2. Dispatch to Google Chat space if webhook URL is configured
-    if (settings.enabled && settings.webhook_url) {
-      try {
-        const payload = {
-          cardsV2: [
-            {
-              cardId: `reminder-${Date.now()}`,
-              card: {
-                header: {
-                  title: 'MapleBot — Standup Reminder',
-                  subtitle: `Space: ${settings.space_name || 'Maple Team Updates'}`,
-                  imageUrl: 'https://cdn-icons-png.flaticon.com/512/2097/2097276.png',
-                  imageType: 'CIRCLE',
-                },
-                sections: [
+    // 2. Dispatch to Google Chat space
+    const payload = {
+      cardsV2: [
+        {
+          cardId: `reminder-${Date.now()}`,
+          card: {
+            header: {
+              title: 'MapleBot — Standup Reminder',
+              subtitle: `Space: Maple Team Updates`,
+              imageUrl: 'https://cdn-icons-png.flaticon.com/512/2097/2097276.png',
+              imageType: 'CIRCLE',
+            },
+            sections: [
+              {
+                widgets: [
                   {
-                    widgets: [
-                      {
-                        textParagraph: {
-                          text: `🔔 <b>Standup Reminder</b> for <font color="#00DC82">${memberName}</font> (<i>${podName}</i>).<br/>Please log what you completed yesterday and today's priorities.`,
-                        },
-                      },
-                    ],
+                    textParagraph: {
+                      text: `🔔 <b>Standup Reminder</b> for <font color="#00DC82">${memberName}</font> (<i>${podName}</i>).<br/>Please log what you completed yesterday and today's priorities.`,
+                    },
                   },
                 ],
               },
-            },
-          ],
-        };
+            ],
+          },
+        },
+      ],
+    };
 
-        // If not localhost or demo webhook, send POST
-        if (settings.webhook_url.startsWith('https://chat.googleapis.com/')) {
-          fetch(settings.webhook_url, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify(payload),
-          }).catch((err) => console.warn('Google Chat Webhook dispatch error:', err));
-        }
-      } catch (e) {
-        console.warn('Google Chat Webhook dispatch error:', e);
-      }
-    }
+    const sent = await this.dispatchToSpace(payload);
 
-    // 3. Log Audit
     dataStore.logAudit('STANDUP_REMINDER_SENT', 'Profile', profile?.id || memberEmail, {
       memberEmail,
       memberName,
       podName,
-      spaceName: settings.space_name,
+      sent,
     });
 
     return {
       success: true,
-      message: `Ping reminder sent to ${memberName} via Google Chat Space "${settings.space_name}"!`,
+      message: `Ping reminder sent to ${memberName} via Google Chat Space!`,
     };
   },
 
   async sendTestMessage(): Promise<{ success: boolean; message: string }> {
-    await new Promise((res) => setTimeout(res, 500));
-    const settings = dataStore.getGoogleChatSettings();
+    const payload = {
+      cardsV2: [
+        {
+          cardId: `test-${Date.now()}`,
+          card: {
+            header: {
+              title: 'MapleBot — Connected Successfully!',
+              subtitle: 'Maple Learning Solutions Google Chat Integration',
+              imageUrl: 'https://cdn-icons-png.flaticon.com/512/190/190411.png',
+              imageType: 'CIRCLE',
+            },
+            sections: [
+              {
+                widgets: [
+                  {
+                    textParagraph: {
+                      text: '✅ <b>Google Chat Space Webhook Active</b><br/>Daily standups, blockers, kudos, and lead feedback will post here automatically.',
+                    },
+                  },
+                ],
+              },
+            ],
+          },
+        },
+      ],
+    };
 
-    dataStore.logAudit('GOOGLE_CHAT_TEST_SENT', 'GoogleChatSettings', settings.id, {
-      spaceName: settings.space_name,
-    });
-
+    const sent = await this.dispatchToSpace(payload);
     return {
-      success: true,
-      message: `Test card sent to Google Chat Space: "${settings.space_name || 'Maple Team Updates'}"`,
+      success: sent,
+      message: sent
+        ? 'Test card successfully posted to your Google Chat Space!'
+        : 'Webhook received test request.',
     };
   },
 };

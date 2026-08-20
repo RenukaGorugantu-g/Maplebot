@@ -1,4 +1,5 @@
 import { dataStore } from './dataStore';
+import { googleChatService } from './googleChatService';
 import { Kudos, KudosCategory } from '../types/database';
 
 export const kudosService = {
@@ -17,7 +18,23 @@ export const kudosService = {
   },
 
   giveKudos(data: Omit<Kudos, 'id' | 'created_at'>): Kudos {
-    return dataStore.giveKudos(data);
+    const kudos = dataStore.giveKudos(data);
+    const sender = dataStore.getProfileById(data.sender_id);
+    const recipient = dataStore.getProfileById(data.recipient_id);
+    const pod = data.pod_id ? dataStore.getPodById(data.pod_id) : undefined;
+
+    if (sender && recipient) {
+      // Async dispatch celebration card to Google Chat space
+      googleChatService.sendKudosCard(
+        sender.full_name,
+        recipient.full_name,
+        data.category,
+        data.message,
+        pod?.name
+      );
+    }
+
+    return kudos;
   },
 
   getLeaderboard(period: 'month' | 'all' = 'month', podId?: string) {

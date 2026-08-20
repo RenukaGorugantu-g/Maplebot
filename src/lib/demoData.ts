@@ -163,8 +163,8 @@ export const INITIAL_PROFILES: Profile[] = [
     organization_id: 'org-maple-01',
     full_name: 'Nithin Guggilla',
     email: 'nithin@maplelearningsolutions.com',
-    role: 'manager', // Lead for Marketing, also AI Developer for Web
-    pod_id: 'pod-marketing',
+    role: 'manager', // Lead for Marketing, also AI Developer for Web & Sales
+    pod_id: 'pod-web-sales',
     manager_id: 'prof-renuka',
     timezone: 'America/Toronto',
     status: 'active',
@@ -575,9 +575,9 @@ export const INITIAL_GOOGLE_CHAT_SETTINGS: GoogleChatSettings = {
   id: 'gchat-maple-01',
   organization_id: 'org-maple-01',
   enabled: true,
-  space_id: 'spaces/AAAA_maple_team_updates',
+  space_id: 'spaces/AAQA8ijHd80',
   space_name: 'Maple Team Updates',
-  webhook_url: 'https://chat.googleapis.com/v1/spaces/AAAA_maple/messages?key=encrypted',
+  webhook_url: 'https://chat.googleapis.com/v1/spaces/AAQA8ijHd80/messages?key=AIzaSyDdI0hCZtE6vySjMm-WEfRq3CPzqKqqsHI&token=vR_WlFMQiHtcfTFfa2B5qfy6y14GpyXdIczanj0q5w0',
   report_time: '10:30',
   daily_reports: true,
   weekly_reports: true,

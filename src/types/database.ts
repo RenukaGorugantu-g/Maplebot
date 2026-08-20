@@ -109,6 +109,16 @@ export interface Update {
   // Joins
   profile?: Profile;
   pod?: Pod;
+  comments?: UpdateComment[];
+}
+
+export interface UpdateComment {
+  id: string;
+  update_id: string;
+  user_id: string;
+  user_name: string;
+  comment: string;
+  created_at: string;
 }
 
 export interface Blocker {

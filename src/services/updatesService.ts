@@ -1,4 +1,5 @@
 import { dataStore } from './dataStore';
+import { googleChatService } from './googleChatService';
 import { Update } from '../types/database';
 
 export const updatesService = {
@@ -30,7 +31,31 @@ export const updatesService = {
   },
 
   submitUpdate(data: Omit<Update, 'id' | 'submitted_at' | 'updated_at' | 'created_at'>): Update {
-    return dataStore.submitUpdate(data);
+    const update = dataStore.submitUpdate(data);
+    const profile = dataStore.getProfileById(data.profile_id);
+    const pod = data.pod_id ? dataStore.getPodById(data.pod_id) : undefined;
+
+    if (profile) {
+      // Async dispatch to Google Chat space
+      googleChatService.sendDailyUpdateCard(update, profile, pod?.name || 'General');
+    }
+    return update;
+  },
+
+  addComment(updateId: string, userId: string, userName: string, comment: string): Update | undefined {
+    const updated = dataStore.addUpdateComment(updateId, { user_id: userId, user_name: userName, comment });
+    if (updated) {
+      const author = dataStore.getProfileById(updated.profile_id);
+      const pod = updated.pod_id ? dataStore.getPodById(updated.pod_id) : undefined;
+      // Async dispatch comment card to Google Chat space
+      googleChatService.sendUpdateCommentCard(
+        userName,
+        author?.full_name || 'Team Member',
+        comment,
+        pod?.name
+      );
+    }
+    return updated;
   },
 
   getSubmissionStats(podId?: string) {
