@@ -15,19 +15,39 @@ export const googleChatService = {
    */
   async dispatchToSpace(payload: any): Promise<boolean> {
     const settings = dataStore.getGoogleChatSettings();
-    if (!settings.enabled || !settings.webhook_url) {
+    if (!settings.enabled) {
       return false;
     }
 
+    const webhookUrl =
+      settings.webhook_url ||
+      'https://chat.googleapis.com/v1/spaces/AAQA8ijHd80/messages?key=AIzaSyDdI0hCZtE6vySjMm-WEfRq3CPzqKqqsHI&token=vR_WlFMQiHtcfTFfa2B5qfy6y14GpyXdIczanj0q5w0';
+
     try {
-      const res = await fetch(settings.webhook_url, {
+      // 1. Try local Vite proxy or Vercel serverless function /api/gchat (bypasses browser CORS)
+      const proxyRes = await fetch('/api/gchat', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ webhookUrl, payload }),
+      });
+
+      if (proxyRes.ok) {
+        return true;
+      }
+    } catch (proxyErr) {
+      console.warn('Proxy route notice:', proxyErr);
+    }
+
+    try {
+      // 2. Direct fallback
+      const directRes = await fetch(webhookUrl, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(payload),
       });
-      return res.ok;
-    } catch (e) {
-      console.warn('Google Chat Webhook dispatch notice:', e);
+      return directRes.ok;
+    } catch (directErr) {
+      console.warn('Direct Google Chat dispatch notice:', directErr);
       return false;
     }
   },
