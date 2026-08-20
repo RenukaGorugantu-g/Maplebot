@@ -163,7 +163,7 @@ export const INITIAL_PROFILES: Profile[] = [
     organization_id: 'org-maple-01',
     full_name: 'Nithin Guggilla',
     email: 'nithin@maplelearningsolutions.com',
-    role: 'manager', // Lead for Marketing, also AI Developer for Web & Sales
+    role: 'member', // Member in Web & Sales (reports to Renuka), and Pod Lead for Marketing
     pod_id: 'pod-web-sales',
     manager_id: 'prof-renuka',
     timezone: 'America/Toronto',

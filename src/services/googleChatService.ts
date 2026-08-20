@@ -59,6 +59,13 @@ export const googleChatService = {
     const statusEmoji = update.status === 'on_track' ? '🟢' : update.status === 'at_risk' ? '🟡' : '🔴';
     const statusLabel = update.status === 'on_track' ? 'On Track' : update.status === 'at_risk' ? 'At Risk' : 'Blocked';
 
+    const blockerText =
+      update.has_blocker && update.blocker
+        ? `🔴 <b>Active Blocker:</b> ${update.blocker}<br/><b>Category:</b> ${update.blocker_category || 'General'}${
+            update.support_needed ? `<br/><b>Support Needed:</b> ${update.support_needed}` : ''
+          }`
+        : `🟢 <b>No Blockers</b> — Work is progressing smoothly without impediments.`;
+
     const payload = {
       cardsV2: [
         {
@@ -66,47 +73,41 @@ export const googleChatService = {
           card: {
             header: {
               title: `Daily Standup — ${profile.full_name}`,
-              subtitle: `Pod: ${podName} • Status: ${statusEmoji} ${statusLabel}`,
+              subtitle: `Pod: ${podName} • Status: ${statusEmoji} ${statusLabel} (${update.progress_percent}% Progress)`,
               imageUrl: 'https://cdn-icons-png.flaticon.com/512/3233/3233508.png',
               imageType: 'CIRCLE',
             },
             sections: [
               {
-                header: 'Yesterday Deliverables',
+                header: '✅ What Was Completed Yesterday',
                 widgets: [
                   {
                     textParagraph: {
-                      text: update.yesterday.replace(/\n/g, '<br/>'),
+                      text: update.yesterday ? update.yesterday.replace(/\n/g, '<br/>') : 'None specified',
                     },
                   },
                 ],
               },
               {
-                header: "Today's Priorities",
+                header: "🎯 Today's Focus & Priorities",
                 widgets: [
                   {
                     textParagraph: {
-                      text: update.today.replace(/\n/g, '<br/>'),
+                      text: update.today ? update.today.replace(/\n/g, '<br/>') : 'None specified',
                     },
                   },
                 ],
               },
-              ...(update.has_blocker && update.blocker
-                ? [
-                    {
-                      header: '🚨 Active Blocker / Impediment',
-                      widgets: [
-                        {
-                          textParagraph: {
-                            text: `<b>Blocker:</b> ${update.blocker}<br/><b>Category:</b> ${update.blocker_category || 'General'}${
-                              update.support_needed ? `<br/><b>Support Needed:</b> ${update.support_needed}` : ''
-                            }`,
-                          },
-                        },
-                      ],
+              {
+                header: '🛑 Blockers & Team Support',
+                widgets: [
+                  {
+                    textParagraph: {
+                      text: blockerText,
                     },
-                  ]
-                : []),
+                  },
+                ],
+              },
             ],
           },
         },

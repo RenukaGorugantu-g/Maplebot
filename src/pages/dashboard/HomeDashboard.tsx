@@ -270,33 +270,73 @@ export const HomeDashboard: React.FC<{
                 </div>
               </div>
 
-              {/* Blocker Toggle */}
-              <div className="pt-1">
-                <button
-                  type="button"
-                  onClick={() => setHasBlocker(!hasBlocker)}
-                  className={`px-3 py-1.5 rounded-lg border text-xs font-semibold transition-all inline-flex items-center gap-1.5 ${
-                    hasBlocker
-                      ? 'bg-rose-500/20 border-rose-500 text-rose-300'
-                      : 'bg-slate-900 border-slate-800 text-slate-400 hover:text-white'
-                  }`}
-                >
-                  <AlertTriangle className="w-3.5 h-3.5" />
-                  {hasBlocker ? 'Active Blocker Flagged' : 'Flag a Blocker or Impediment'}
-                </button>
+              {/* Question 3: Blockers & Support */}
+              <div className="space-y-3 p-4 rounded-xl bg-slate-900/80 border border-slate-800">
+                <label className="font-bold text-slate-200 flex items-center justify-between text-xs">
+                  <span className="flex items-center gap-1.5">
+                    <AlertTriangle className={`w-4 h-4 ${hasBlocker ? 'text-rose-400' : 'text-emerald-400'}`} />
+                    3. Do you have any blockers or require team support?
+                  </span>
+                </label>
+
+                <div className="flex gap-3">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setHasBlocker(false);
+                      setBlocker('');
+                      setSupportNeeded('');
+                    }}
+                    className={`flex-1 py-1.5 px-3 rounded-lg border text-xs font-semibold flex items-center justify-center gap-1.5 transition-all ${
+                      !hasBlocker
+                        ? 'bg-emerald-500/15 border-emerald-500/40 text-emerald-300 shadow-sm'
+                        : 'bg-slate-900 border-slate-800 text-slate-400 hover:text-white'
+                    }`}
+                  >
+                    <CheckCircle2 className="w-3.5 h-3.5 text-emerald-400" />
+                    <span>No Blockers (All Clear)</span>
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => setHasBlocker(true)}
+                    className={`flex-1 py-1.5 px-3 rounded-lg border text-xs font-semibold flex items-center justify-center gap-1.5 transition-all ${
+                      hasBlocker
+                        ? 'bg-rose-500/20 border-rose-500/50 text-rose-300 shadow-sm'
+                        : 'bg-slate-900 border-slate-800 text-slate-400 hover:text-white'
+                    }`}
+                  >
+                    <AlertTriangle className="w-3.5 h-3.5 text-rose-400" />
+                    <span>Yes, I Have a Blocker</span>
+                  </button>
+                </div>
 
                 {hasBlocker && (
-                  <div className="mt-3 p-4 rounded-xl bg-rose-950/20 border border-rose-800/40 space-y-3 animate-in fade-in">
+                  <div className="pt-2 space-y-3 animate-in fade-in">
                     <div>
                       <label className="text-[11px] font-semibold text-rose-200 block mb-1">
-                        Blocker Description
+                        Blocker Description (What is stopping you?)
                       </label>
                       <input
                         type="text"
+                        required
                         value={blocker}
                         onChange={(e) => setBlocker(e.target.value)}
-                        placeholder="e.g. Awaiting client API keys to continue LMS export testing"
-                        className="w-full px-3 py-2 bg-slate-900 border border-rose-800/60 rounded-lg text-xs text-white placeholder-slate-500 focus:outline-none"
+                        placeholder="Describe what is blocking your progress..."
+                        className="w-full px-3 py-2 bg-slate-900 border border-rose-800/60 rounded-lg text-xs text-white placeholder-slate-500 focus:outline-none focus:border-rose-500"
+                      />
+                    </div>
+
+                    <div>
+                      <label className="text-[11px] font-semibold text-rose-200 block mb-1">
+                        Support Needed From Team / Manager
+                      </label>
+                      <input
+                        type="text"
+                        value={supportNeeded}
+                        onChange={(e) => setSupportNeeded(e.target.value)}
+                        placeholder="e.g. Need access permissions, design sign-off, or API review"
+                        className="w-full px-3 py-2 bg-slate-900 border border-rose-800/60 rounded-lg text-xs text-white placeholder-slate-500 focus:outline-none focus:border-rose-500"
                       />
                     </div>
                   </div>
