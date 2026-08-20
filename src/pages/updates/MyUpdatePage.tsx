@@ -137,7 +137,7 @@ export const MyUpdatePage: React.FC<{ onNavigate: (path: string) => void }> = ({
       <form onSubmit={handleSubmit} className="glass-card p-6 lg:p-8 border border-slate-800 space-y-6 text-xs shadow-2xl">
         <div className="space-y-2">
           <label className="font-bold text-slate-200 flex items-center justify-between text-xs">
-            <span>1. What did you complete yesterday?</span>
+            <span>1. What did you complete yesterday and how much time did you spend on each task?</span>
             <span className="text-slate-500 font-normal">Required</span>
           </label>
           <textarea
@@ -151,7 +151,7 @@ export const MyUpdatePage: React.FC<{ onNavigate: (path: string) => void }> = ({
 
         <div className="space-y-2">
           <label className="font-bold text-slate-200 flex items-center justify-between text-xs">
-            <span>2. What are you working on today?</span>
+            <span>2. What are you working on today and how much time are you going to spend on each task?</span>
             <span className="text-slate-500 font-normal">Required</span>
           </label>
           <textarea

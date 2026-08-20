@@ -79,7 +79,7 @@ export const googleChatService = {
             },
             sections: [
               {
-                header: '✅ What Was Completed Yesterday',
+                header: '✅ What Was Completed Yesterday (Time Spent)',
                 widgets: [
                   {
                     textParagraph: {
@@ -89,7 +89,7 @@ export const googleChatService = {
                 ],
               },
               {
-                header: "🎯 Today's Focus & Priorities",
+                header: "🎯 Today's Focus & Estimated Time",
                 widgets: [
                   {
                     textParagraph: {

@@ -387,7 +387,7 @@ export const INITIAL_CHECKIN: Checkin = {
     {
       id: 'q-1',
       checkin_id: 'chk-maple-daily',
-      question: 'What did you complete yesterday?',
+      question: 'What did you complete yesterday and how much time did you spend on each task?',
       question_type: 'text',
       required: true,
       sort_order: 1,
@@ -396,7 +396,7 @@ export const INITIAL_CHECKIN: Checkin = {
     {
       id: 'q-2',
       checkin_id: 'chk-maple-daily',
-      question: 'What are you working on today?',
+      question: 'What are you working on today and how much time are you going to spend on each task?',
       question_type: 'text',
       required: true,
       sort_order: 2,

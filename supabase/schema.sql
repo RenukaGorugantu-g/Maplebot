@@ -301,10 +301,10 @@ VALUES ('chk-maple-daily', 'org-maple-01', 'Daily Standup Check-in', 'Asynchrono
 ON CONFLICT (id) DO NOTHING;
 
 INSERT INTO checkin_questions (id, checkin_id, question, question_type, required, sort_order) VALUES
-('q-1', 'chk-maple-daily', 'What did you complete yesterday?', 'text', true, 1),
-('q-2', 'chk-maple-daily', 'What are you working on today?', 'text', true, 2),
+('q-1', 'chk-maple-daily', 'What did you complete yesterday and how much time did you spend on each task?', 'text', true, 1),
+('q-2', 'chk-maple-daily', 'What are you working on today and how much time are you going to spend on each task?', 'text', true, 2),
 ('q-3', 'chk-maple-daily', 'Do you have any blockers or require team support?', 'boolean', false, 3)
-ON CONFLICT (id) DO NOTHING;
+ON CONFLICT (id) DO UPDATE SET question = EXCLUDED.question;
 
 -- Insert Google Chat Settings
 INSERT INTO google_chat_settings (id, organization_id, enabled, space_name, webhook_url)

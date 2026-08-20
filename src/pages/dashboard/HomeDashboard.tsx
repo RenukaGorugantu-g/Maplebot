@@ -199,7 +199,7 @@ export const HomeDashboard: React.FC<{
             <form onSubmit={handleInlineSubmit} className="space-y-4 text-xs">
               <div className="space-y-1.5">
                 <label className="font-bold text-slate-200 flex items-center justify-between">
-                  <span>1. What did you complete yesterday?</span>
+                  <span>1. What did you complete yesterday and how much time did you spend on each task?</span>
                   <span className="text-[11px] font-normal text-slate-500">Required</span>
                 </label>
                 <textarea
@@ -213,7 +213,7 @@ export const HomeDashboard: React.FC<{
 
               <div className="space-y-1.5">
                 <label className="font-bold text-slate-200 flex items-center justify-between">
-                  <span>2. What are you working on today?</span>
+                  <span>2. What are you working on today and how much time are you going to spend on each task?</span>
                   <span className="text-[11px] font-normal text-slate-500">Required</span>
                 </label>
                 <textarea
