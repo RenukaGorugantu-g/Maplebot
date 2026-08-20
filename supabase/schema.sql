@@ -308,23 +308,58 @@ ON CONFLICT (id) DO NOTHING;
 
 -- Insert Google Chat Settings
 INSERT INTO google_chat_settings (id, organization_id, enabled, space_name, webhook_url)
-VALUES ('gchat-maple-01', 'org-maple-01', true, 'Maple Team Updates', 'https://chat.googleapis.com/v1/spaces/AAAA_maple/messages?key=encrypted')
-ON CONFLICT (id) DO NOTHING;
+VALUES ('gchat-maple-01', 'org-maple-01', true, 'Maple Team Updates', 'https://chat.googleapis.com/v1/spaces/AAQA8ijHd80/messages?key=AIzaSyDdI0hCZtE6vySjMm-WEfRq3CPzqKqqsHI&token=vR_WlFMQiHtcfTFfa2B5qfy6y14GpyXdIczanj0q5w0')
+ON CONFLICT (id) DO UPDATE SET webhook_url = EXCLUDED.webhook_url, enabled = true;
 
--- Enable Row Level Security (RLS)
-ALTER TABLE profiles ENABLE ROW LEVEL SECURITY;
+-- Enable Row Level Security (RLS) & Grant Policies for App Sync
+ALTER TABLE organizations ENABLE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS "Allow all on organizations" ON organizations;
+CREATE POLICY "Allow all on organizations" ON organizations FOR ALL USING (true) WITH CHECK (true);
+
 ALTER TABLE pods ENABLE ROW LEVEL SECURITY;
-ALTER TABLE updates ENABLE ROW LEVEL SECURITY;
-ALTER TABLE blockers ENABLE ROW LEVEL SECURITY;
-ALTER TABLE kudos ENABLE ROW LEVEL SECURITY;
-ALTER TABLE notifications ENABLE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS "Allow all on pods" ON pods;
+CREATE POLICY "Allow all on pods" ON pods FOR ALL USING (true) WITH CHECK (true);
 
--- Base RLS Policies
-CREATE POLICY "Public read for authenticated users" ON profiles FOR SELECT USING (true);
-CREATE POLICY "Users can update own profile" ON profiles FOR UPDATE USING (auth.uid()::text = id OR role = 'admin');
-CREATE POLICY "Public read for pods" ON pods FOR SELECT USING (true);
-CREATE POLICY "Updates visible to all org members" ON updates FOR SELECT USING (true);
-CREATE POLICY "Users can insert own updates" ON updates FOR INSERT WITH CHECK (true);
-CREATE POLICY "Blockers visible to all org members" ON blockers FOR SELECT USING (true);
-CREATE POLICY "Kudos visible to all org members" ON kudos FOR SELECT USING (true);
-CREATE POLICY "Notifications visible to recipient" ON notifications FOR SELECT USING (auth.uid()::text = profile_id OR true);
+ALTER TABLE profiles ENABLE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS "Allow all on profiles" ON profiles;
+CREATE POLICY "Allow all on profiles" ON profiles FOR ALL USING (true) WITH CHECK (true);
+
+ALTER TABLE checkins ENABLE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS "Allow all on checkins" ON checkins;
+CREATE POLICY "Allow all on checkins" ON checkins FOR ALL USING (true) WITH CHECK (true);
+
+ALTER TABLE checkin_questions ENABLE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS "Allow all on checkin_questions" ON checkin_questions;
+CREATE POLICY "Allow all on checkin_questions" ON checkin_questions FOR ALL USING (true) WITH CHECK (true);
+
+ALTER TABLE updates ENABLE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS "Allow all on updates" ON updates;
+CREATE POLICY "Allow all on updates" ON updates FOR ALL USING (true) WITH CHECK (true);
+
+ALTER TABLE blockers ENABLE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS "Allow all on blockers" ON blockers;
+CREATE POLICY "Allow all on blockers" ON blockers FOR ALL USING (true) WITH CHECK (true);
+
+ALTER TABLE blocker_comments ENABLE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS "Allow all on blocker_comments" ON blocker_comments;
+CREATE POLICY "Allow all on blocker_comments" ON blocker_comments FOR ALL USING (true) WITH CHECK (true);
+
+ALTER TABLE kudos ENABLE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS "Allow all on kudos" ON kudos;
+CREATE POLICY "Allow all on kudos" ON kudos FOR ALL USING (true) WITH CHECK (true);
+
+ALTER TABLE notifications ENABLE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS "Allow all on notifications" ON notifications;
+CREATE POLICY "Allow all on notifications" ON notifications FOR ALL USING (true) WITH CHECK (true);
+
+ALTER TABLE google_chat_settings ENABLE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS "Allow all on google_chat_settings" ON google_chat_settings;
+CREATE POLICY "Allow all on google_chat_settings" ON google_chat_settings FOR ALL USING (true) WITH CHECK (true);
+
+ALTER TABLE audit_logs ENABLE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS "Allow all on audit_logs" ON audit_logs;
+CREATE POLICY "Allow all on audit_logs" ON audit_logs FOR ALL USING (true) WITH CHECK (true);
+
+ALTER TABLE sprints ENABLE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS "Allow all on sprints" ON sprints;
+CREATE POLICY "Allow all on sprints" ON sprints FOR ALL USING (true) WITH CHECK (true);

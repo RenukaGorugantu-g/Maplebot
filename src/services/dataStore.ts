@@ -82,13 +82,88 @@ class MapleDataStore {
 
   private async initSupabaseSync() {
     try {
-      // Test Supabase connection in background
-      const { data: dbUpdates, error } = await supabase.from('updates').select('*').limit(5);
-      if (!error && dbUpdates && dbUpdates.length > 0) {
-        console.log('Connected to live Supabase database with data.');
+      // 1. Fetch live updates from Supabase
+      const { data: dbUpdates, error: updError } = await supabase
+        .from('updates')
+        .select('*')
+        .order('created_at', { ascending: false });
+
+      if (!updError && dbUpdates && dbUpdates.length > 0) {
+        this.updates = dbUpdates;
       }
+
+      // 2. Fetch live blockers from Supabase
+      const { data: dbBlockers, error: blkError } = await supabase
+        .from('blockers')
+        .select('*')
+        .order('created_at', { ascending: false });
+
+      if (!blkError && dbBlockers && dbBlockers.length > 0) {
+        this.blockers = dbBlockers;
+      }
+
+      // 3. Fetch live kudos from Supabase
+      const { data: dbKudos, error: kudError } = await supabase
+        .from('kudos')
+        .select('*')
+        .order('created_at', { ascending: false });
+
+      if (!kudError && dbKudos && dbKudos.length > 0) {
+        this.kudos = dbKudos;
+      }
+
+      // 4. Fetch checkin & questions from Supabase
+      const { data: dbCheckins } = await supabase.from('checkins').select('*').limit(1);
+      const { data: dbQuestions } = await supabase.from('checkin_questions').select('*').order('sort_order', { ascending: true });
+      if (dbCheckins && dbCheckins.length > 0) {
+        this.checkin = {
+          ...dbCheckins[0],
+          questions: (dbQuestions && dbQuestions.length > 0) ? dbQuestions : this.checkin.questions,
+        };
+      }
+
+      this.notify();
+
+      // 5. Subscribe to Supabase real-time updates across tables
+      supabase
+        .channel('public-sync')
+        .on('postgres_changes', { event: '*', schema: 'public', table: 'updates' }, (payload) => {
+          if (payload.eventType === 'INSERT') {
+            const newUpd = payload.new as Update;
+            if (!this.updates.some((u) => u.id === newUpd.id)) {
+              this.updates.unshift(newUpd);
+              this.notify();
+            }
+          } else if (payload.eventType === 'UPDATE') {
+            const updated = payload.new as Update;
+            const idx = this.updates.findIndex((u) => u.id === updated.id);
+            if (idx !== -1) {
+              this.updates[idx] = updated;
+              this.notify();
+            }
+          }
+        })
+        .on('postgres_changes', { event: '*', schema: 'public', table: 'blockers' }, (payload) => {
+          if (payload.eventType === 'INSERT') {
+            const newBlk = payload.new as Blocker;
+            if (!this.blockers.some((b) => b.id === newBlk.id)) {
+              this.blockers.unshift(newBlk);
+              this.notify();
+            }
+          }
+        })
+        .on('postgres_changes', { event: '*', schema: 'public', table: 'kudos' }, (payload) => {
+          if (payload.eventType === 'INSERT') {
+            const newKud = payload.new as Kudos;
+            if (!this.kudos.some((k) => k.id === newKud.id)) {
+              this.kudos.unshift(newKud);
+              this.notify();
+            }
+          }
+        })
+        .subscribe();
     } catch (e) {
-      // Graceful fallback to rich data store
+      console.warn('Supabase real-time sync notice:', e);
     }
   }
 
@@ -298,6 +373,32 @@ class MapleDataStore {
       }
     }
 
+    // Direct asynchronous persistence to Supabase
+    supabase
+      .from('updates')
+      .upsert({
+        id: resultUpdate.id,
+        organization_id: resultUpdate.organization_id,
+        checkin_id: resultUpdate.checkin_id || null,
+        profile_id: resultUpdate.profile_id,
+        pod_id: resultUpdate.pod_id || null,
+        update_date: resultUpdate.update_date,
+        yesterday: resultUpdate.yesterday,
+        today: resultUpdate.today,
+        has_blocker: resultUpdate.has_blocker,
+        blocker: resultUpdate.blocker || null,
+        blocker_category: resultUpdate.blocker_category || null,
+        support_needed: resultUpdate.support_needed || null,
+        status: resultUpdate.status,
+        priority: resultUpdate.priority,
+        progress_percent: resultUpdate.progress_percent,
+        submitted_at: resultUpdate.submitted_at,
+        updated_at: resultUpdate.updated_at,
+      })
+      .then(({ error }) => {
+        if (error) console.warn('Supabase updates upsert note:', error);
+      });
+
     this.notify();
     return resultUpdate;
   }
@@ -365,6 +466,29 @@ class MapleDataStore {
       title: newBlocker.title,
       severity: newBlocker.severity,
     });
+
+    // Direct asynchronous persistence to Supabase
+    supabase
+      .from('blockers')
+      .insert({
+        id: newBlocker.id,
+        organization_id: newBlocker.organization_id,
+        update_id: newBlocker.update_id || null,
+        reported_by: newBlocker.reported_by,
+        pod_id: newBlocker.pod_id || null,
+        title: newBlocker.title,
+        description: newBlocker.description,
+        category: newBlocker.category,
+        severity: newBlocker.severity,
+        status: newBlocker.status,
+        assigned_to: newBlocker.assigned_to || null,
+        created_at: newBlocker.created_at,
+        updated_at: newBlocker.updated_at,
+      })
+      .then(({ error }) => {
+        if (error) console.warn('Supabase blockers insert notice:', error);
+      });
+
     this.notify();
     return newBlocker;
   }
@@ -377,8 +501,8 @@ class MapleDataStore {
       this.blockers[idx] = {
         ...this.blockers[idx],
         ...updates,
-        resolved_at: isResolving ? now : this.blockers[idx].resolved_at,
         updated_at: now,
+        resolved_at: isResolving ? now : this.blockers[idx].resolved_at,
       };
 
       if (isResolving) {
@@ -394,6 +518,15 @@ class MapleDataStore {
       }
 
       this.logAudit('BLOCKER_UPDATED', 'Blocker', id, updates);
+
+      supabase
+        .from('blockers')
+        .update({ ...updates, updated_at: now })
+        .eq('id', id)
+        .then(({ error }) => {
+          if (error) console.warn('Supabase blocker update notice:', error);
+        });
+
       this.notify();
       return this.blockers[idx];
     }
@@ -404,15 +537,29 @@ class MapleDataStore {
     const blocker = this.blockers.find((b) => b.id === blockerId);
     if (blocker) {
       if (!blocker.comments) blocker.comments = [];
-      blocker.comments.push({
+      const newComment = {
         id: `c-${Date.now()}`,
         blocker_id: blockerId,
         user_id: userId,
         comment,
         created_at: new Date().toISOString(),
         user: this.getProfileById(userId),
-      });
+      };
+      blocker.comments.push(newComment);
       this.notify();
+
+      supabase
+        .from('blocker_comments')
+        .insert({
+          id: newComment.id,
+          blocker_id: blockerId,
+          user_id: userId,
+          comment,
+          created_at: newComment.created_at,
+        })
+        .then(({ error }) => {
+          if (error) console.warn('Supabase blocker comment insert notice:', error);
+        });
     }
   }
 
@@ -439,17 +586,34 @@ class MapleDataStore {
       organization_id: data.organization_id,
       profile_id: data.recipient_id,
       type: 'kudos_received',
-      title: 'You received Kudos! 🎉',
-      message: `${sender?.full_name || 'A teammate'} gave you Kudos for ${data.category}: "${data.message}"`,
+      title: 'You Received Kudos!',
+      message: `${sender?.full_name || 'A teammate'} sent you kudos: "${data.message}"`,
       read: false,
-      metadata: { category: data.category },
+      metadata: { kudos_id: newKudos.id },
     });
 
-    this.logAudit('KUDOS_GIVEN', 'Kudos', newKudos.id, {
+    this.logAudit('KUDOS_SENT', 'Kudos', newKudos.id, {
       from: data.sender_id,
       to: data.recipient_id,
       category: data.category,
     });
+
+    supabase
+      .from('kudos')
+      .insert({
+        id: newKudos.id,
+        organization_id: newKudos.organization_id,
+        sender_id: newKudos.sender_id,
+        recipient_id: newKudos.recipient_id,
+        pod_id: newKudos.pod_id || null,
+        category: newKudos.category,
+        message: newKudos.message,
+        created_at: newKudos.created_at,
+      })
+      .then(({ error }) => {
+        if (error) console.warn('Supabase kudos insert notice:', error);
+      });
+
     this.notify();
     return newKudos;
   }
