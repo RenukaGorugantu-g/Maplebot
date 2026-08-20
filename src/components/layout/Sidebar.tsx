@@ -48,10 +48,9 @@ export const Sidebar: React.FC<SidebarProps> = ({
       ],
     },
     {
-      title: 'Team & Culture',
+      title: 'Recognition',
       items: [
         { label: 'Kudos', path: '/recognition/kudos', icon: <Heart className="w-4 h-4" /> },
-        { label: 'Maple AI', path: '/ai', icon: <Sparkles className="w-4 h-4" /> },
       ],
     },
   ];

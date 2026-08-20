@@ -2,7 +2,6 @@ import React, { useState } from 'react';
 import { useAuth } from '../../context/AuthContext';
 import { useNotifications } from '../../context/NotificationContext';
 import { aiService } from '../../services/aiService';
-import { blockersService } from '../../services/blockersService';
 import { AIResponsePayload } from '../../types/database';
 import { GradientButton, Button } from '../../components/ui/Button';
 import {
@@ -16,7 +15,8 @@ import {
   ArrowRight,
   Shield,
   HelpCircle,
-  Lightbulb
+  Lightbulb,
+  ShieldAlert
 } from 'lucide-react';
 
 interface ChatMessage {
@@ -28,8 +28,31 @@ interface ChatMessage {
 }
 
 export const MapleAIPage: React.FC<{ onNavigate: (path: string) => void }> = ({ onNavigate }) => {
-  const { profile } = useAuth();
+  const { profile, currentRole, userPod } = useAuth();
   const { showToast } = useNotifications();
+
+  // Role Access Control: Members cannot access Ask Maple AI
+  if (currentRole === 'member') {
+    return (
+      <div className="max-w-2xl mx-auto glass-card p-12 text-center space-y-4 border border-slate-800 animate-in fade-in duration-300">
+        <div className="w-12 h-12 rounded-2xl bg-amber-500/10 text-amber-400 border border-amber-500/20 flex items-center justify-center mx-auto">
+          <ShieldAlert className="w-6 h-6" />
+        </div>
+        <h3 className="text-lg font-bold text-white">Maple AI Access Restricted</h3>
+        <p className="text-xs text-slate-400 leading-relaxed max-w-md mx-auto">
+          Ask Maple AI is reserved exclusively for Pod Leads and Organization Administrators to analyze pod health, deliverables, and blockers.
+        </p>
+        <div className="pt-2">
+          <Button variant="secondary" size="sm" onClick={() => onNavigate('/')}>
+            Return to Dashboard
+          </Button>
+        </div>
+      </div>
+    );
+  }
+
+  const isManager = currentRole === 'manager';
+  const podName = userPod?.name || 'Assigned Pod';
 
   const [inputQuery, setInputQuery] = useState('');
   const [isLoading, setIsLoading] = useState(false);
@@ -37,25 +60,35 @@ export const MapleAIPage: React.FC<{ onNavigate: (path: string) => void }> = ({ 
     {
       id: 'msg-welcome',
       sender: 'assistant',
-      text: `Hello ${profile.full_name.split(' ')[0]}! I am **Maple AI**, your intelligent standup and team coordination assistant for Maple Learning Solutions. I have scoped my data models to your **${profile.role.toUpperCase()}** permissions. Ask me anything about today's standup, deliverables, blocker risks, or sprint velocity.`,
+      text: isManager
+        ? `Hello **${profile?.full_name?.split(' ')[0] || 'Lead'}**! I am **Maple AI**. My analysis is strictly scoped to the **${podName}** pod. Ask me anything about today's standups, team member deliverables, or active blockers in ${podName}.`
+        : `Hello **${profile?.full_name?.split(' ')[0] || 'Admin'}**! I am **Maple AI**, your executive intelligence assistant across Maple Learning Solutions. Ask me anything about all pods, cross-pod deliverables, blockers, or sprint velocity.`,
       timestamp: new Date().toISOString(),
     },
   ]);
 
-  const quickPrompts = [
-    { label: "Today's Summary", query: "Give me today's standup summary across the team." },
-    { label: 'Team Blockers', query: 'What active blockers or dependencies are slowing us down?' },
-    { label: 'Pending Updates', query: 'Who has not submitted their standup update today?' },
-    { label: 'Weekly Summary', query: 'Summarize key deliverables and milestones completed this week.' },
-    { label: 'Sprint Summary', query: 'How is Sprint 56 tracking against our milestone targets?' },
-    { label: 'Web & Sales Pod', query: 'Give me the current progress and status for Web & Sales.' },
-    { label: 'eLearning Team', query: 'What is the eLearning team working on and are there any client review issues?' },
-    { label: 'At-Risk Items', query: 'Which updates are flagged as at-risk or have subtle blockers?' },
+  const managerPrompts = [
+    { label: `${podName} Summary`, query: `Give me today's standup summary for ${podName}.` },
+    { label: 'Active Pod Blockers', query: `What active blockers or dependencies are slowing down ${podName}?` },
+    { label: 'Pending Check-ins', query: `Who in ${podName} has not submitted their standup check-in today?` },
+    { label: 'Today\'s Deliverables', query: `What are the key deliverables in progress today in ${podName}?` },
   ];
+
+  const adminPrompts = [
+    { label: "Today's Org Summary", query: "Give me today's standup summary across all pods." },
+    { label: 'Org-wide Blockers', query: 'What active blockers or dependencies are slowing us down?' },
+    { label: 'Pending Submissions', query: 'Who has not submitted their standup update today?' },
+    { label: 'Web & Sales Pod', query: 'Give me the current progress and status for Web & Sales.' },
+    { label: 'Marketing Pod', query: 'What is the Marketing team working on today?' },
+    { label: 'eLearning Pod', query: 'What is the eLearning team working on today?' },
+    { label: 'HR Operations', query: 'What is the HR Operations team working on today?' },
+  ];
+
+  const quickPrompts = isManager ? managerPrompts : adminPrompts;
 
   const handleSendQuery = async (queryText?: string) => {
     const textToSend = (queryText || inputQuery).trim();
-    if (!textToSend || isLoading) return;
+    if (!textToSend || isLoading || !profile) return;
 
     setInputQuery('');
     const userMsg: ChatMessage = {
@@ -78,247 +111,203 @@ export const MapleAIPage: React.FC<{ onNavigate: (path: string) => void }> = ({ 
       };
       setMessages((prev) => [...prev, aiMsg]);
     } catch (err: any) {
-      showToast('error', 'AI Query Failed', 'Unable to reach the AI endpoint. Please try again.');
+      showToast('error', 'AI Assistant Notice', err.message || 'Unable to process query');
     } finally {
       setIsLoading(false);
     }
   };
 
-  const handleConvertSignalToBlocker = (signal: { profileName: string; podName: string; snippet: string; matchedKeyword: string }) => {
-    blockersService.createBlocker({
-      organization_id: profile?.organization_id || 'org-maple-01',
-      reported_by: profile?.id || '',
-      title: `Blocker: ${signal.matchedKeyword} (Detected by AI)`,
-      description: `AI Blocker Detector flagged snippet: "${signal.snippet}" from ${signal.profileName} (${signal.podName}).`,
-      category: 'Dependency',
-      severity: 'medium',
-      status: 'open',
-    });
-    showToast('success', 'Blocker Created', `Created new blocker from detected signal.`);
-  };
-
   return (
-    <div className="max-w-4xl mx-auto space-y-6 animate-in fade-in duration-300">
-      {/* Header card */}
-      <div className="glass-card p-6 border border-slate-800 flex flex-col md:flex-row md:items-center justify-between gap-4">
-        <div className="flex items-center gap-3">
-          <div className="p-3 rounded-2xl bg-maple-500/10 border border-maple-500/30 text-maple-400 shadow-glow-sm">
-            <Bot className="w-7 h-7" />
+    <div className="max-w-4xl mx-auto space-y-6 animate-in fade-in duration-300 pb-12">
+      {/* Header Banner */}
+      <div className="glass-card p-6 border border-slate-800 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+        <div>
+          <div className="flex items-center gap-2 mb-1">
+            <span className="text-xs font-bold uppercase tracking-wider text-maple-400 flex items-center gap-1.5">
+              <Sparkles className="w-3.5 h-3.5" />
+              {isManager ? `${podName} Intelligence Scope` : 'Executive AI Assistant'}
+            </span>
+            <span className="text-slate-600">•</span>
+            <span className="text-xs text-slate-400">
+              {isManager ? 'Strict Pod Isolation Active' : 'All Pods Access'}
+            </span>
           </div>
-          <div>
-            <div className="flex items-center gap-2 mb-0.5">
-              <span className="text-xs font-semibold uppercase tracking-wider text-maple-400">
-                Authorized Intelligence Engine
-              </span>
-              <span className="text-slate-600">•</span>
-              <span className="text-[10px] font-bold px-2 py-0.5 rounded bg-slate-800 text-slate-300 border border-slate-700">
-                Role: {profile.role.toUpperCase()}
-              </span>
-            </div>
-            <h2 className="text-xl font-bold text-white tracking-tight">Maple AI Assistant</h2>
-            <p className="text-xs text-slate-400">
-              Query standup updates, analyze blocker trends, and generate executive summaries with role-based security.
-            </p>
-          </div>
+          <h2 className="text-2xl font-bold text-white tracking-tight">
+            Ask Maple AI
+          </h2>
+          <p className="text-xs text-slate-300 mt-0.5">
+            {isManager
+              ? `Live operational intelligence strictly locked to ${podName}.`
+              : 'Synthesize standups, blockers, deliverables, and velocity in real time.'}
+          </p>
         </div>
       </div>
 
-      {/* Suggested Quick Action Chips */}
-      <div className="space-y-2">
-        <span className="text-xs font-semibold text-slate-400 flex items-center gap-1.5">
-          <Lightbulb className="w-3.5 h-3.5 text-yellow-400" />
-          <span>Suggested Inquiries</span>
+      {/* Suggested Prompts */}
+      <div className="flex flex-wrap items-center gap-2">
+        <span className="text-[11px] font-semibold text-slate-400 flex items-center gap-1">
+          <Lightbulb className="w-3.5 h-3.5 text-amber-400" /> Suggested:
         </span>
-        <div className="flex items-center gap-2 overflow-x-auto pb-1">
-          {quickPrompts.map((p) => (
-            <button
-              key={p.label}
-              onClick={() => handleSendQuery(p.query)}
-              className="px-3 py-1.5 rounded-xl bg-[#081426] hover:bg-[#0B1728] border border-slate-800 hover:border-maple-500/40 text-xs text-slate-300 hover:text-white font-medium whitespace-nowrap transition-all flex-shrink-0 shadow-sm"
-            >
-              {p.label}
-            </button>
-          ))}
-        </div>
+        {quickPrompts.map((p, idx) => (
+          <button
+            key={idx}
+            type="button"
+            onClick={() => handleSendQuery(p.query)}
+            className="px-3 py-1.5 rounded-lg bg-slate-900/80 hover:bg-slate-800 border border-slate-800 text-[11px] font-medium text-slate-300 hover:text-white transition-all shadow-sm"
+          >
+            {p.label}
+          </button>
+        ))}
       </div>
 
-      {/* Conversation Thread */}
-      <div className="space-y-4 min-h-[400px]">
-        {messages.map((msg) => (
-          <div
-            key={msg.id}
-            className={`flex gap-3 text-xs leading-relaxed ${
-              msg.sender === 'user' ? 'justify-end' : 'justify-start'
-            }`}
-          >
-            {msg.sender === 'assistant' && (
-              <div className="w-8 h-8 rounded-xl bg-gradient-to-br from-maple-400 to-maple-600 flex items-center justify-center text-slate-950 font-bold flex-shrink-0 mt-1 shadow-glow-sm">
-                <Bot className="w-4 h-4" />
+      {/* Chat Transcript Area */}
+      <div className="space-y-4">
+        {messages.map((m) => (
+          <div key={m.id} className="animate-in fade-in duration-200">
+            {m.sender === 'user' ? (
+              <div className="flex items-start justify-end gap-3">
+                <div className="max-w-xl p-4 rounded-2xl rounded-tr-none bg-gradient-to-r from-maple-600 to-maple-500 text-slate-950 font-medium text-xs shadow-glow-sm">
+                  {m.text}
+                </div>
+                <div className="w-8 h-8 rounded-full bg-slate-800 border border-slate-700 flex items-center justify-center text-white flex-shrink-0">
+                  <User className="w-4 h-4" />
+                </div>
               </div>
-            )}
-
-            <div
-              className={`max-w-2xl rounded-2xl p-5 ${
-                msg.sender === 'user'
-                  ? 'bg-maple-600/20 border border-maple-500/40 text-white shadow-md'
-                  : 'glass-card border border-slate-800/90 text-slate-200'
-              }`}
-            >
-              {msg.text && <p className="whitespace-pre-line text-sm">{msg.text}</p>}
-
-              {/* Structured AI Response Payload */}
-              {msg.payload && (
-                <div className="space-y-4">
-                  {/* Summary Title & Metric Badges */}
-                  <div className="border-b border-slate-800/80 pb-3">
-                    <div className="flex items-center justify-between">
-                      <h4 className="text-sm font-bold text-white flex items-center gap-1.5">
-                        <Sparkles className="w-4 h-4 text-maple-400" />
-                        {msg.payload.summaryTitle}
-                      </h4>
-                      <span className="text-[10px] text-slate-500">
-                        {new Date(msg.payload.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
-                      </span>
-                    </div>
-
-                    <div className="grid grid-cols-4 gap-2 mt-3 text-center">
-                      <div className="p-2 rounded-lg bg-slate-900 border border-slate-800">
-                        <span className="text-[10px] text-slate-400 block">Updates</span>
-                        <span className="font-bold text-white text-xs">{msg.payload.metrics.totalAnalyzed}</span>
-                      </div>
-                      <div className="p-2 rounded-lg bg-slate-900 border border-slate-800">
-                        <span className="text-[10px] text-emerald-400 block">On Track</span>
-                        <span className="font-bold text-emerald-400 text-xs">{msg.payload.metrics.onTrackCount}</span>
-                      </div>
-                      <div className="p-2 rounded-lg bg-slate-900 border border-slate-800">
-                        <span className="text-[10px] text-amber-400 block">At Risk</span>
-                        <span className="font-bold text-amber-400 text-xs">{msg.payload.metrics.atRiskCount}</span>
-                      </div>
-                      <div className="p-2 rounded-lg bg-slate-900 border border-slate-800">
-                        <span className="text-[10px] text-rose-400 block">Blockers</span>
-                        <span className="font-bold text-rose-400 text-xs">{msg.payload.metrics.activeBlockersCount}</span>
-                      </div>
-                    </div>
-                  </div>
-
-                  {/* Insights */}
-                  <div className="space-y-3">
-                    {msg.payload.insights.map((ins, i) => (
-                      <div
-                        key={i}
-                        className={`p-3.5 rounded-xl border space-y-1.5 ${
-                          ins.type === 'warning'
-                            ? 'bg-rose-950/20 border-rose-800/30'
-                            : ins.type === 'success'
-                            ? 'bg-emerald-950/20 border-emerald-800/30'
-                            : 'bg-slate-900/60 border-slate-800'
-                        }`}
-                      >
-                        <span
-                          className={`font-bold text-xs uppercase tracking-wider block ${
-                            ins.type === 'warning'
-                              ? 'text-rose-400'
-                              : ins.type === 'success'
-                              ? 'text-emerald-400'
-                              : 'text-blue-400'
-                          }`}
-                        >
-                          {ins.category}
-                        </span>
-                        <ul className="space-y-1 pl-4 list-disc text-slate-200">
-                          {ins.points.map((pt, pIdx) => (
-                            <li key={pIdx} className="leading-relaxed">{pt}</li>
-                          ))}
-                        </ul>
-                      </div>
-                    ))}
-                  </div>
-
-                  {/* Subtle Blocker Detection Signals */}
-                  {msg.payload.flaggedBlockerSignals && msg.payload.flaggedBlockerSignals.length > 0 && (
-                    <div className="p-3.5 rounded-xl bg-amber-950/30 border border-amber-800/40 space-y-2">
-                      <div className="flex items-center gap-1.5 font-bold text-xs text-amber-300">
-                        <AlertTriangle className="w-3.5 h-3.5" />
-                        <span>AI Blocker Signal Detected</span>
-                      </div>
-                      {msg.payload.flaggedBlockerSignals.map((sig, sIdx) => (
-                        <div key={sIdx} className="flex items-center justify-between gap-2 p-2 bg-slate-900/80 rounded-lg border border-slate-800">
-                          <div>
-                            <span className="font-semibold text-white">{sig.profileName} ({sig.podName}):</span>
-                            <p className="text-[11px] text-slate-300 italic mt-0.5">"{sig.snippet}"</p>
-                          </div>
-                          <Button
-                            variant="secondary"
-                            size="sm"
-                            onClick={() => handleConvertSignalToBlocker(sig)}
-                          >
-                            Track Blocker
-                          </Button>
-                        </div>
-                      ))}
+            ) : (
+              <div className="flex items-start gap-3">
+                <div className="w-8 h-8 rounded-full bg-maple-500/10 border border-maple-500/30 flex items-center justify-center text-maple-400 flex-shrink-0 shadow-glow-sm">
+                  <Bot className="w-4 h-4" />
+                </div>
+                <div className="flex-1 space-y-4">
+                  {m.text && (
+                    <div className="glass-card p-4 border border-slate-800 text-xs text-slate-200 leading-relaxed max-w-2xl">
+                      {m.text}
                     </div>
                   )}
 
-                  {/* Recommended Follow-ups */}
-                  {msg.payload.recommendedFollowUps && (
-                    <div className="p-3 bg-slate-900/40 rounded-xl border border-slate-800/80 space-y-1">
-                      <span className="font-semibold text-maple-400 text-[11px] uppercase tracking-wider block">
-                        Recommended Manager Actions
-                      </span>
-                      <ul className="space-y-0.5 text-slate-300 pl-4 list-disc">
-                        {msg.payload.recommendedFollowUps.map((fu, fIdx) => (
-                          <li key={fIdx}>{fu}</li>
+                  {m.payload && (
+                    <div className="glass-card p-6 border border-slate-800 space-y-5 shadow-2xl">
+                      {/* Response Title & Intent */}
+                      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 pb-3 border-b border-slate-800">
+                        <div>
+                          <h4 className="text-sm font-bold text-white tracking-tight">
+                            {m.payload.summaryTitle}
+                          </h4>
+                          <span className="text-[10px] text-slate-400">
+                            Generated at {new Date(m.payload.timestamp).toLocaleTimeString()}
+                          </span>
+                        </div>
+                        <span className="text-[10px] font-bold uppercase tracking-wider px-2 py-0.5 rounded-full bg-slate-800 text-maple-400 border border-slate-700 self-start sm:self-center">
+                          {m.payload.intent}
+                        </span>
+                      </div>
+
+                      {/* Key Metrics Grid */}
+                      <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5">
+                        <div className="p-3 rounded-xl bg-slate-900 border border-slate-800">
+                          <span className="text-[10px] uppercase font-bold text-slate-400 block">Analyzed</span>
+                          <span className="text-lg font-bold text-white">{m.payload.metrics.totalAnalyzed} Updates</span>
+                        </div>
+                        <div className="p-3 rounded-xl bg-slate-900 border border-slate-800">
+                          <span className="text-[10px] uppercase font-bold text-rose-400 block">Blockers</span>
+                          <span className="text-lg font-bold text-rose-300">{m.payload.metrics.activeBlockersCount} Active</span>
+                        </div>
+                        <div className="p-3 rounded-xl bg-slate-900 border border-slate-800">
+                          <span className="text-[10px] uppercase font-bold text-emerald-400 block">On Track</span>
+                          <span className="text-lg font-bold text-emerald-300">{m.payload.metrics.onTrackCount}</span>
+                        </div>
+                        <div className="p-3 rounded-xl bg-slate-900 border border-slate-800">
+                          <span className="text-[10px] uppercase font-bold text-amber-400 block">At Risk</span>
+                          <span className="text-lg font-bold text-amber-300">{m.payload.metrics.atRiskCount}</span>
+                        </div>
+                      </div>
+
+                      {/* Structured Insights */}
+                      <div className="space-y-3">
+                        {m.payload.insights.map((ins, iIdx) => (
+                          <div
+                            key={iIdx}
+                            className={`p-3.5 rounded-xl border text-xs space-y-1.5 ${
+                              ins.type === 'warning'
+                                ? 'bg-rose-950/20 border-rose-800/40 text-rose-200'
+                                : ins.type === 'success'
+                                ? 'bg-emerald-950/20 border-emerald-800/40 text-emerald-200'
+                                : 'bg-slate-900/90 border-slate-800 text-slate-200'
+                            }`}
+                          >
+                            <span className="font-bold text-[11px] uppercase tracking-wider block">
+                              {ins.category}
+                            </span>
+                            <ul className="space-y-1 pl-4 list-disc text-slate-300">
+                              {ins.points.map((pt, pIdx) => (
+                                <li key={pIdx} className="leading-relaxed">{pt}</li>
+                              ))}
+                            </ul>
+                          </div>
                         ))}
-                      </ul>
+                      </div>
+
+                      {/* Actionable Follow Ups */}
+                      {m.payload.recommendedFollowUps && m.payload.recommendedFollowUps.length > 0 && (
+                        <div className="p-3.5 rounded-xl bg-maple-500/5 border border-maple-500/20 space-y-2">
+                          <span className="text-[11px] font-bold text-maple-400 uppercase tracking-wider block">
+                            Recommended Next Steps
+                          </span>
+                          <div className="space-y-1.5">
+                            {m.payload.recommendedFollowUps.map((act, aIdx) => (
+                              <div key={aIdx} className="flex items-center gap-2 text-xs text-slate-200">
+                                <ArrowRight className="w-3.5 h-3.5 text-maple-400 flex-shrink-0" />
+                                <span>{act}</span>
+                              </div>
+                            ))}
+                          </div>
+                        </div>
+                      )}
                     </div>
                   )}
                 </div>
-              )}
-            </div>
-
-            {msg.sender === 'user' && (
-              <div className="w-8 h-8 rounded-xl bg-slate-800 border border-slate-700 flex items-center justify-center text-slate-200 font-bold flex-shrink-0 mt-1">
-                <User className="w-4 h-4" />
               </div>
             )}
           </div>
         ))}
 
         {isLoading && (
-          <div className="flex items-center gap-3 text-xs text-slate-400 py-4 pl-2 animate-pulse">
-            <div className="w-8 h-8 rounded-xl bg-maple-500/20 border border-maple-500/40 flex items-center justify-center text-maple-400">
-              <Sparkles className="w-4 h-4 animate-spin" />
+          <div className="flex items-center gap-3">
+            <div className="w-8 h-8 rounded-full bg-maple-500/10 border border-maple-500/30 flex items-center justify-center text-maple-400 animate-pulse">
+              <Sparkles className="w-4 h-4" />
             </div>
-            <span>Analyzing standup data & generating structured executive insights...</span>
+            <div className="p-4 rounded-xl bg-slate-900 border border-slate-800 text-xs text-slate-400 flex items-center gap-2">
+              <span className="inline-block w-2 h-2 rounded-full bg-maple-400 animate-ping" />
+              <span>Analyzing live {isManager ? podName : 'organization'} records...</span>
+            </div>
           </div>
         )}
       </div>
 
-      {/* Input Bar */}
-      <div className="sticky bottom-4 glass-card p-2 border border-slate-700 shadow-2xl bg-[#081426]/95 backdrop-blur-xl">
-        <form
-          onSubmit={(e) => {
-            e.preventDefault();
-            handleSendQuery();
+      {/* Query Input Bar */}
+      <div className="glass-card p-3 border border-slate-800 flex items-center gap-3">
+        <input
+          type="text"
+          value={inputQuery}
+          onChange={(e) => setInputQuery(e.target.value)}
+          onKeyDown={(e) => {
+            if (e.key === 'Enter') handleSendQuery();
           }}
-          className="flex items-center gap-2"
+          placeholder={
+            isManager
+              ? `Ask Maple AI about ${podName} standups, blockers, or deliverables...`
+              : "Ask Maple AI about team standups, blockers, deliverables, or pods..."
+          }
+          className="flex-1 px-4 py-3 bg-slate-900 border border-slate-800 rounded-xl text-xs text-white placeholder-slate-500 focus:outline-none focus:border-maple-500/50"
+        />
+        <GradientButton
+          size="md"
+          onClick={() => handleSendQuery()}
+          isLoading={isLoading}
+          leftIcon={<Send className="w-4 h-4" />}
         >
-          <input
-            type="text"
-            value={inputQuery}
-            onChange={(e) => setInputQuery(e.target.value)}
-            placeholder="Ask anything about Maple Learning standups, blockers, or deliverables..."
-            className="flex-1 px-4 py-3 bg-transparent text-sm text-white placeholder-slate-500 focus:outline-none"
-          />
-          <GradientButton
-            type="submit"
-            disabled={!inputQuery.trim() || isLoading}
-            size="md"
-            rightIcon={<Send className="w-4 h-4" />}
-          >
-            Ask AI
-          </GradientButton>
-        </form>
+          Ask AI
+        </GradientButton>
       </div>
     </div>
   );

@@ -253,9 +253,10 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   };
 
   const isAuthenticated = !!profile;
-  const currentRole: UserRole = profile?.role || 'member';
+  const managedPod = profile?.id ? dataStore.getPods().find((p) => p.manager_id === profile.id) : undefined;
+  const currentRole: UserRole = profile?.role === 'admin' ? 'admin' : managedPod ? 'manager' : (profile?.role || 'member');
+  const userPod = managedPod || (profile?.pod_id ? dataStore.getPods().find((p) => p.id === profile.pod_id) : undefined);
   const isAssignedToOrg = !!profile?.organization_id;
-  const userPod = profile?.pod_id ? dataStore.getPods().find((p) => p.id === profile.pod_id) : undefined;
 
   return (
     <AuthContext.Provider
