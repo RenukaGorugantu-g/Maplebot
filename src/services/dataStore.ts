@@ -262,7 +262,46 @@ class MapleDataStore {
   }
 
   public getProfileById(id: string): Profile | undefined {
-    return this.getProfiles().find((p) => p.id === id);
+    if (!id) return undefined;
+    const lower = id.toLowerCase().trim();
+    return this.getProfiles().find(
+      (p) => p.id === id || (p.auth_user_id && p.auth_user_id === id) || p.email.toLowerCase() === lower
+    );
+  }
+
+  public async refreshFromSupabase() {
+    try {
+      const { data: dbUpdates, error: updError } = await supabase
+        .from('updates')
+        .select('*')
+        .order('submitted_at', { ascending: false });
+
+      if (!updError && dbUpdates) {
+        this.updates = dbUpdates;
+      }
+
+      const { data: dbBlockers, error: blkError } = await supabase
+        .from('blockers')
+        .select('*')
+        .order('created_at', { ascending: false });
+
+      if (!blkError && dbBlockers) {
+        this.blockers = dbBlockers;
+      }
+
+      const { data: dbKudos, error: kudError } = await supabase
+        .from('kudos')
+        .select('*')
+        .order('created_at', { ascending: false });
+
+      if (!kudError && dbKudos) {
+        this.kudos = dbKudos;
+      }
+
+      this.notify();
+    } catch (e) {
+      console.warn('Supabase refresh notice:', e);
+    }
   }
 
   public createProfile(profile: Omit<Profile, 'id' | 'created_at' | 'updated_at'>): Profile {

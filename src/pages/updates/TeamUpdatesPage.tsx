@@ -29,9 +29,25 @@ export const TeamUpdatesPage: React.FC<{
   const { showToast } = useNotifications();
 
   const [searchQuery, setSearchQuery] = useState('');
-  const [selectedPod, setSelectedPod] = useState<string>(initialPodId || '');
+  const [selectedPod, setSelectedPod] = useState<string>(
+    initialPodId || (currentRole === 'manager' ? (profile?.pod_id || '') : '')
+  );
   const [statusFilter, setStatusFilter] = useState<string>('');
   const [onlyBlockers, setOnlyBlockers] = useState<boolean>(false);
+  const [, setTick] = useState(0);
+
+  // Sync with Supabase on mount and poll
+  React.useEffect(() => {
+    dataStore.refreshFromSupabase();
+    const unsub = dataStore.subscribe(() => setTick((t) => t + 1));
+    const interval = setInterval(() => {
+      dataStore.refreshFromSupabase();
+    }, 4000);
+    return () => {
+      unsub();
+      clearInterval(interval);
+    };
+  }, []);
 
   // Comments state
   const [expandedComments, setExpandedComments] = useState<Record<string, boolean>>({});

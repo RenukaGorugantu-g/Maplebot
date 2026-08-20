@@ -202,6 +202,13 @@ export const MapleAIPage: React.FC<{ onNavigate: (path: string) => void }> = ({ 
                         </span>
                       </div>
 
+                      {/* Main Prose / Markdown Answer */}
+                      {m.payload.answerText && (
+                        <div className="p-4 rounded-xl bg-slate-900/90 border border-slate-800/80 text-xs text-slate-200 leading-relaxed whitespace-pre-wrap font-sans">
+                          {m.payload.answerText}
+                        </div>
+                      )}
+
                       {/* Key Metrics Grid */}
                       <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5">
                         <div className="p-3 rounded-xl bg-slate-900 border border-slate-800">

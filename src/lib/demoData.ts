@@ -218,20 +218,6 @@ export const INITIAL_PROFILES: Profile[] = [
   // ============================================================================
   // 3. POD 2: MARKETING (Lead: Nithin Guggilla)
   // ============================================================================
-  {
-    id: 'prof-abhishek',
-    organization_id: 'org-maple-01',
-    full_name: 'Abhishek Guna',
-    email: 'abhishek@maplelearningsolutions.com',
-    role: 'member',
-    pod_id: 'pod-marketing',
-    manager_id: 'prof-nithin',
-    timezone: 'America/Toronto',
-    status: 'active',
-    avatar_url: 'https://images.unsplash.com/photo-1522075469751-3a6694fb2f61?w=128&auto=format&fit=crop&q=80',
-    created_at: '2026-02-01T00:00:00Z',
-    updated_at: '2026-08-20T00:00:00Z',
-  },
 
   // ============================================================================
   // 4. POD 3: ELEARNING (Lead: Dhana Sekhar)
@@ -362,6 +348,20 @@ export const INITIAL_PROFILES: Profile[] = [
     status: 'active',
     avatar_url: 'https://images.unsplash.com/photo-1544005313-94ddf0286df2?w=128&auto=format&fit=crop&q=80',
     created_at: '2026-01-10T00:00:00Z',
+    updated_at: '2026-08-20T00:00:00Z',
+  },
+  {
+    id: 'prof-abhishek',
+    organization_id: 'org-maple-01',
+    full_name: 'Abhishek Guna',
+    email: 'abhishek@maplelearningsolutions.com',
+    role: 'member',
+    pod_id: 'pod-hr',
+    manager_id: 'prof-swetha',
+    timezone: 'America/Toronto',
+    status: 'active',
+    avatar_url: 'https://images.unsplash.com/photo-1522075469751-3a6694fb2f61?w=128&auto=format&fit=crop&q=80',
+    created_at: '2026-02-01T00:00:00Z',
     updated_at: '2026-08-20T00:00:00Z',
   },
 ];

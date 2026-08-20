@@ -232,6 +232,7 @@ export interface AIResponsePayload {
   question: string;
   timestamp: string;
   summaryTitle: string;
+  answerText?: string;
   metrics: {
     totalAnalyzed: number;
     activeBlockersCount: number;

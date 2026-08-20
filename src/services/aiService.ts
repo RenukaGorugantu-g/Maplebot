@@ -11,8 +11,8 @@ export const aiService = {
     const isAdmin = currentProfile?.role === 'admin';
     const authorizedPodId = isManager ? currentProfile?.pod_id : undefined;
 
-    // Small latency for natural response feel
-    await new Promise((res) => setTimeout(res, 350));
+    // Small latency for natural conversational feel
+    await new Promise((res) => setTimeout(res, 300));
 
     // 1. REJECT ACCESS FOR NORMAL MEMBERS
     if (isMember) {
@@ -21,6 +21,7 @@ export const aiService = {
         question: query,
         timestamp: new Date().toISOString(),
         summaryTitle: 'Maple AI Access Restricted',
+        answerText: 'Maple AI Ask is reserved exclusively for Pod Leads and Organization Administrators. Team members can view their submissions and team updates directly in My Check-in and Team Updates.',
         metrics: {
           totalAnalyzed: 0,
           activeBlockersCount: 0,
@@ -31,10 +32,7 @@ export const aiService = {
           {
             category: 'Permission Notice',
             type: 'warning',
-            points: [
-              'Maple AI Ask is reserved exclusively for Pod Leads and Organization Administrators.',
-              'Team members can access their check-in submissions and team updates directly from My Check-in and Team Updates.',
-            ],
+            points: ['Ask Maple AI is only accessible by Pod Leads and Organization Admins.'],
           },
         ],
         recommendedFollowUps: ['Return to Home Dashboard.'],
@@ -60,10 +58,11 @@ export const aiService = {
     const today = new Date().toISOString().split('T')[0];
     const todayUpdates = updates.filter((u) => u.update_date === today);
     const activeBlockers = blockers.filter((b) => b.status === 'open' || b.status === 'in_progress');
+    const myPod = isManager ? pods.find((p) => p.id === authorizedPodId) : undefined;
+    const podName = myPod?.name || 'Maple Learning Solutions';
 
-    // 3. DETECT CROSS-POD VIOLATION FOR POD LEADS
+    // 3. CROSS-POD SECURITY GUARD
     if (isManager && authorizedPodId) {
-      const myPod = pods.find((p) => p.id === authorizedPodId);
       const isAskingOtherPod =
         (lowerQ.includes('elearning') && authorizedPodId !== 'pod-elearning') ||
         (lowerQ.includes('marketing') && authorizedPodId !== 'pod-marketing') ||
@@ -75,7 +74,8 @@ export const aiService = {
           intent: 'CROSS_POD_RESTRICTED',
           question: query,
           timestamp: new Date().toISOString(),
-          summaryTitle: `Cross-Pod Data Access Restricted`,
+          summaryTitle: `Cross-Pod Access Restricted`,
+          answerText: `As the **${podName} Pod Lead**, your intelligence scope is strictly locked to **${podName}**. Updates, deliverables, and blockers from other pods are isolated and accessible only to Organization Administrators.`,
           metrics: {
             totalAnalyzed: updates.length,
             activeBlockersCount: activeBlockers.length,
@@ -86,13 +86,10 @@ export const aiService = {
             {
               category: 'Pod Isolation Policy',
               type: 'warning',
-              points: [
-                `As the **${myPod?.name || 'Assigned'} Pod Lead**, your intelligence scope is strictly locked to **${myPod?.name || 'your pod'}**.`,
-                'Updates, deliverables, and blockers from other pods are isolated and accessible only to Organization Administrators.',
-              ],
+              points: [`Data from other pods is restricted. You have full access to all updates within ${podName}.`],
             },
           ],
-          recommendedFollowUps: [`Ask about ${myPod?.name || 'your pod'} standups, team deliverables, or blockers.`],
+          recommendedFollowUps: [`Ask about ${podName} standups, team deliverables, or blockers.`],
           flaggedBlockerSignals: [],
         };
       }
@@ -114,7 +111,8 @@ export const aiService = {
       return lowerQ.includes(pName);
     });
 
-    let summaryTitle = 'MapleBot Live Intelligence Response';
+    let summaryTitle = 'MapleBot Standup Intelligence';
+    let answerText = '';
     const insights: AIResponsePayload['insights'] = [];
     const followUps: string[] = [];
     let intent = 'DYNAMIC_QUERY';
@@ -122,168 +120,158 @@ export const aiService = {
     // SCENARIO A: Member-Specific Query
     if (mentionedMember) {
       intent = 'PERSON_SUMMARY';
-      summaryTitle = `Status & Deliverables for ${mentionedMember.full_name}`;
+      summaryTitle = `${mentionedMember.full_name} — Standup & Deliverables Briefing`;
       const memberUpdates = updates.filter((u) => u.profile_id === mentionedMember.id);
       const latestUpdate = memberUpdates[0];
       const memberBlockers = blockers.filter((b) => b.reported_by === mentionedMember.id && b.status === 'open');
 
       if (latestUpdate) {
+        const blockerStr = latestUpdate.has_blocker && latestUpdate.blocker
+          ? `🔴 **Active Blocker:** ${latestUpdate.blocker} *(Support Needed: ${latestUpdate.support_needed || 'None specified'})*`
+          : '🟢 **No Blockers:** Work is progressing smoothly.';
+
+        answerText = `### 👤 ${mentionedMember.full_name} (${mentionedMember.role.toUpperCase()} • ${podName})
+- **Status:** ${latestUpdate.status.toUpperCase().replace('_', ' ')} (${latestUpdate.progress_percent}% Progress)
+- **Completed Yesterday:**\n${latestUpdate.yesterday}
+- **Today's Focus:**\n${latestUpdate.today}
+- ${blockerStr}`;
+
         insights.push({
-          category: `Today's Focus (${new Date(latestUpdate.update_date).toLocaleDateString()})`,
+          category: "Today's Deliverables",
           type: 'info',
-          points: [
-            latestUpdate.today || 'No focus deliverables specified.',
-            `Progress: ${latestUpdate.progress_percent}% • Status: ${latestUpdate.status.toUpperCase().replace('_', ' ')}`
-          ],
-        });
-
-        if (latestUpdate.yesterday) {
-          insights.push({
-            category: 'Completed Yesterday',
-            type: 'success',
-            points: [latestUpdate.yesterday],
-          });
-        }
-
-        insights.push({
-          category: 'Blockers & Impediments',
-          type: latestUpdate.has_blocker ? 'warning' : 'success',
-          points: [
-            latestUpdate.has_blocker && latestUpdate.blocker
-              ? `🔴 Active Blocker: ${latestUpdate.blocker} (${latestUpdate.blocker_category || 'General'}) — Support Needed: ${latestUpdate.support_needed || 'None specified'}`
-              : '🟢 No active blockers reported.'
-          ],
+          points: [latestUpdate.today || 'No focus deliverables specified.'],
         });
 
         if (latestUpdate.has_blocker && latestUpdate.blocker) {
-          followUps.push(`Check in with ${mentionedMember.full_name} regarding "${latestUpdate.blocker}".`);
+          insights.push({
+            category: 'Blocker Reported',
+            type: 'warning',
+            points: [`${latestUpdate.blocker} (${latestUpdate.blocker_category || 'General'})`],
+          });
+          followUps.push(`Unblock ${mentionedMember.full_name} regarding "${latestUpdate.blocker}".`);
         }
       } else {
+        answerText = `**${mentionedMember.full_name}** has not submitted a standup check-in for today yet.`;
         insights.push({
-          category: 'Standup Submission Status',
+          category: 'Pending Submission',
           type: 'warning',
-          points: [`${mentionedMember.full_name} has not submitted a standup check-in for today yet.`],
+          points: [`${mentionedMember.full_name} is yet to submit their daily update.`],
         });
         followUps.push(`Ping standup reminder to ${mentionedMember.full_name}.`);
       }
 
       if (memberBlockers.length > 0) {
         insights.push({
-          category: 'Open Blockers in Queue',
+          category: 'Open Blocker Tickets',
           type: 'warning',
           points: memberBlockers.map((b) => `${b.title} [${b.severity.toUpperCase()}]`),
         });
       }
     }
-    // SCENARIO B: Pod-Specific Query (Admin or Manager for own pod)
-    else if (mentionedPod && (isAdmin || mentionedPod.id === authorizedPodId)) {
-      intent = 'POD_SUMMARY';
-      summaryTitle = `${mentionedPod.name} Pod Health & Standup Status`;
-      const podMembers = allProfiles.filter((p) => p.pod_id === mentionedPod.id);
-      const podUpdatesToday = todayUpdates.filter((u) => u.pod_id === mentionedPod.id);
-      const podBlockers = activeBlockers.filter((b) => b.pod_id === mentionedPod.id);
+    // SCENARIO B: Who has NOT submitted / Pending updates
+    else if (lowerQ.includes('not submit') || lowerQ.includes('pending') || lowerQ.includes('who has not') || lowerQ.includes('who didn') || lowerQ.includes('missing')) {
+      intent = 'PENDING_SUBMISSIONS';
+      summaryTitle = `Pending Check-in Submissions — ${podName}`;
+      const submittedIds = new Set(todayUpdates.map((u) => u.profile_id));
+      const pendingMembers = allProfiles.filter((p) => p.status === 'active' && !submittedIds.has(p.id));
 
-      insights.push({
-        category: 'Participation & Submissions',
-        type: podUpdatesToday.length === podMembers.length ? 'success' : 'info',
-        points: [
-          `${podUpdatesToday.length} of ${podMembers.length} members submitted today (${podMembers.length > 0 ? Math.round((podUpdatesToday.length / podMembers.length) * 100) : 0}% completion).`,
-          `Pod Lead: ${mentionedPod.manager?.full_name || 'Assigned Lead'}`
-        ],
-      });
-
-      if (podUpdatesToday.length > 0) {
+      if (pendingMembers.length === 0) {
+        answerText = `🎉 **100% Submission Rate!** All ${allProfiles.length} active members in **${podName}** have completed their standup check-in today.`;
         insights.push({
-          category: 'Live Deliverables in Progress',
-          type: 'info',
-          points: podUpdatesToday.map((u) => `${u.profile?.full_name}: ${u.today}`),
-        });
-      }
-
-      if (podBlockers.length > 0) {
-        insights.push({
-          category: 'Pod Impediments',
-          type: 'warning',
-          points: podBlockers.map((b) => `${b.title} (${b.severity.toUpperCase()}) — Reported by ${b.reporter?.full_name}`),
-        });
-        followUps.push(`Unblock ${podBlockers[0].reporter?.full_name} on "${podBlockers[0].title}".`);
-      } else {
-        insights.push({
-          category: 'Blockers',
+          category: 'Standup Completion',
           type: 'success',
-          points: ['Zero active blockers in this pod.'],
+          points: ['All members submitted on time.'],
         });
+        followUps.push('Review team priorities in Team Updates feed.');
+      } else {
+        answerText = `### ⏳ Pending Standups (${pendingMembers.length} of ${allProfiles.length} Members)
+The following team members in **${podName}** have not submitted their standup check-in for today yet:
+${pendingMembers.map((m) => `- **${m.full_name}** (${m.email})`).join('\n')}`;
+
+        insights.push({
+          category: 'Pending Team Members',
+          type: 'warning',
+          points: pendingMembers.map((m) => `${m.full_name} (${m.role})`),
+        });
+        followUps.push('Send automated standup reminders via Google Chat.');
       }
     }
-    // SCENARIO C: Blockers & Risk Query
-    else if (lowerQ.includes('blocker') || lowerQ.includes('stuck') || lowerQ.includes('risk') || lowerQ.includes('delay')) {
+    // SCENARIO C: Blockers & Risk Analysis
+    else if (lowerQ.includes('blocker') || lowerQ.includes('stuck') || lowerQ.includes('risk') || lowerQ.includes('impediment')) {
       intent = 'BLOCKER_SUMMARY';
-      summaryTitle = isManager ? `${currentProfile.pod_id} Active Blockers Analysis` : 'Organization Active Blockers Analysis';
+      summaryTitle = `Active Impediments & Blockers Analysis — ${podName}`;
 
       if (activeBlockers.length > 0) {
+        answerText = `### 🚨 Active Blockers (${activeBlockers.length} Open)
+${activeBlockers.map((b, idx) => `${idx + 1}. **${b.title}** [${b.severity.toUpperCase()}]\n   - *Reported by:* ${b.reporter?.full_name || 'Member'}\n   - *Details:* ${b.description || 'No additional details'}`).join('\n\n')}`;
+
         insights.push({
-          category: 'Active Impediments in System',
+          category: 'Critical Impediments',
           type: 'warning',
-          points: activeBlockers.map(
-            (b) => `${b.title} [${b.severity.toUpperCase()}] — ${b.reporter?.full_name || 'Member'} (${b.pod?.name || 'Pod'})`
-          ),
+          points: activeBlockers.map((b) => `${b.title} (${b.severity.toUpperCase()}) — ${b.reporter?.full_name}`),
         });
         activeBlockers.forEach((b) => {
-          followUps.push(`Resolve blocker "${b.title}" assigned to ${b.assignee?.full_name || 'Lead'}.`);
+          followUps.push(`Resolve blocker "${b.title}" with ${b.reporter?.full_name}.`);
         });
       } else {
+        answerText = `🟢 **All Clear!** There are currently **0 active blockers** in **${podName}**. All workflows and deliverables are proceeding smoothly.`;
         insights.push({
-          category: 'Blocker Velocity',
+          category: 'Zero Blockers',
           type: 'success',
-          points: ['No open blockers in the database. All workflows are unblocked.'],
+          points: ['No open blockers or impediments in the system.'],
         });
-        followUps.push('Keep sprint tempo steady across teams.');
+        followUps.push('Sprint tempo is optimal.');
       }
     }
-    // SCENARIO D: General Summary
+    // SCENARIO D: Pod Summary / General Standup Overview
     else {
-      const myPod = isManager ? pods.find((p) => p.id === authorizedPodId) : undefined;
-      summaryTitle = isManager ? `${myPod?.name || 'Pod'} Real-Time Operational Summary` : 'Maple Learning Solutions Real-Time Operational Summary';
+      intent = 'STANDUP_SUMMARY';
+      summaryTitle = `Standup Briefing — ${podName}`;
+      const totalMembers = allProfiles.filter((p) => p.status === 'active').length;
       const submittedCount = todayUpdates.length;
-      const totalMembers = allProfiles.filter((p) => p.status === 'active' && p.role === 'member').length;
       const rate = totalMembers > 0 ? Math.round((submittedCount / totalMembers) * 100) : 0;
 
-      insights.push({
-        category: 'Daily Standup Participation',
-        type: rate >= 80 ? 'success' : 'info',
-        points: [
-          `Submissions Today: ${submittedCount} / ${totalMembers} expected (${rate}% participation rate).`,
-          isManager ? `Scope: ${myPod?.name || 'Assigned Pod'}` : `Active Pods: ${pods.map((p) => p.name).join(', ')}.`
-        ],
-      });
+      if (todayUpdates.length === 0) {
+        answerText = `### 📋 Daily Standup Summary (${new Date().toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })})
+**Scope:** ${podName} | **Participation:** 0 / ${totalMembers} Submitted (0%)
 
-      if (todayUpdates.length > 0) {
-        insights.push({
-          category: "Today's Work Underway",
-          type: 'info',
-          points: todayUpdates.map((u) => `${u.profile?.full_name}: ${u.today}`),
-        });
-      } else {
-        insights.push({
-          category: 'Live Submissions',
-          type: 'warning',
-          points: ['No standup submissions logged yet for today. New check-ins will appear here in real time.'],
-        });
-      }
+*No standup updates have been submitted yet today.* As team members complete their check-ins, their deliverables, progress, and blockers will be synthesized here in real time.`;
 
-      if (activeBlockers.length > 0) {
         insights.push({
-          category: 'Active Blockers',
+          category: 'Standup Status',
           type: 'warning',
-          points: activeBlockers.map((b) => `${b.title} (${b.reporter?.full_name})`),
+          points: ['No submissions logged yet today. Submissions will appear in real time.'],
         });
-        followUps.push(`Review open blocker from ${activeBlockers[0].reporter?.full_name}.`);
+        followUps.push('Ping morning standup reminder to team members.');
       } else {
+        const updateBlocks = todayUpdates
+          .map((u) => {
+            const statusEmoji = u.status === 'on_track' ? '🟢' : u.status === 'at_risk' ? '🟡' : '🔴';
+            const blockerInfo = u.has_blocker && u.blocker ? `\n  - 🚨 *Blocker:* ${u.blocker}` : '';
+            return `#### ${statusEmoji} **${u.profile?.full_name || 'Team Member'}** (${u.progress_percent}% Progress)
+- **Yesterday:** ${u.yesterday.replace(/\n/g, ' ')}
+- **Today:** ${u.today.replace(/\n/g, ' ')}${blockerInfo}`;
+          })
+          .join('\n\n');
+
+        answerText = `### 📋 Daily Standup Summary (${new Date().toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })})
+**Scope:** ${podName} | **Participation:** ${submittedCount} / ${totalMembers} Submitted (${rate}%)
+
+${updateBlocks}`;
+
         insights.push({
-          category: 'Blockers',
-          type: 'success',
-          points: ['Zero active blockers reported in this scope.'],
+          category: 'Participation Rate',
+          type: rate >= 75 ? 'success' : 'info',
+          points: [`${submittedCount} of ${totalMembers} members checked in (${rate}%).`],
         });
+
+        if (activeBlockers.length > 0) {
+          insights.push({
+            category: 'Blockers in Pod',
+            type: 'warning',
+            points: activeBlockers.map((b) => `${b.title} (${b.reporter?.full_name})`),
+          });
+        }
       }
     }
 
@@ -294,6 +282,7 @@ export const aiService = {
       question: query,
       timestamp: new Date().toISOString(),
       summaryTitle,
+      answerText,
       metrics: {
         totalAnalyzed: updates.length,
         activeBlockersCount: activeBlockers.length,
@@ -301,7 +290,7 @@ export const aiService = {
         atRiskCount: todayUpdates.filter((u) => u.status === 'at_risk').length,
       },
       insights,
-      recommendedFollowUps: followUps.length > 0 ? followUps : ['Team operations healthy.'],
+      recommendedFollowUps: followUps.length > 0 ? followUps : ['Team operations running smoothly.'],
       flaggedBlockerSignals: flaggedSignals,
     };
   },

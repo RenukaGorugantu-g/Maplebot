@@ -281,11 +281,27 @@ export const MyUpdatePage: React.FC<{ onNavigate: (path: string) => void }> = ({
           )}
         </div>
 
-        <div className="pt-2">
+        <div className="pt-2 flex items-center gap-3">
+          <button
+            type="button"
+            onClick={() => {
+              setYesterday('');
+              setToday('');
+              setHasBlocker(false);
+              setBlocker('');
+              setSupportNeeded('');
+              setProgressPercent(75);
+              setStatus('on_track');
+              showToast('info', 'Form Cleared', 'Standup inputs have been cleared.');
+            }}
+            className="px-4 py-3 rounded-xl border border-slate-800 bg-slate-900/80 text-slate-400 hover:text-white hover:bg-slate-800 transition-all font-semibold"
+          >
+            Clear Form
+          </button>
           <GradientButton
             type="submit"
             isLoading={isSubmitting}
-            className="w-full py-3"
+            className="flex-1 py-3"
             rightIcon={<Send className="w-4 h-4" />}
           >
             {existingUpdate ? 'Update Daily Standup' : 'Submit Daily Standup'}
