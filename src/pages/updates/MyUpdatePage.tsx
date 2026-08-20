@@ -145,7 +145,7 @@ export const MyUpdatePage: React.FC<{ onNavigate: (path: string) => void }> = ({
             rows={3}
             value={yesterday}
             onChange={(e) => setYesterday(e.target.value)}
-            placeholder="• Completed the user profile settings form&#10;• Tested responsive breakpoints on mobile devices"
+            placeholder="Type what you completed yesterday..."
             className="w-full p-3.5 bg-slate-900 border border-slate-800 rounded-xl text-slate-200 placeholder-slate-500 focus:outline-none focus:border-maple-500/50"
           />
         </div>
@@ -160,7 +160,7 @@ export const MyUpdatePage: React.FC<{ onNavigate: (path: string) => void }> = ({
             rows={3}
             value={today}
             onChange={(e) => setToday(e.target.value)}
-            placeholder="• Integrating Google Chat space webhook notifications&#10;• Running sprint velocity reports for executive review"
+            placeholder="Type what you are working on today..."
             className="w-full p-3.5 bg-slate-900 border border-slate-800 rounded-xl text-slate-200 placeholder-slate-500 focus:outline-none focus:border-maple-500/50"
           />
         </div>

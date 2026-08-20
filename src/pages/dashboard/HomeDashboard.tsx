@@ -207,7 +207,7 @@ export const HomeDashboard: React.FC<{
                   rows={2}
                   value={yesterday}
                   onChange={(e) => setYesterday(e.target.value)}
-                  placeholder="• Finalized the quarterly marketing campaign assets&#10;• Reviewed code pull requests for client portal"
+                  placeholder="Type what you completed yesterday..."
                   className="w-full p-3 bg-slate-900 border border-slate-800 rounded-xl text-slate-200 placeholder-slate-500 focus:outline-none focus:border-maple-500/50"
                 />
               </div>
@@ -222,7 +222,7 @@ export const HomeDashboard: React.FC<{
                   rows={2}
                   value={today}
                   onChange={(e) => setToday(e.target.value)}
-                  placeholder="• Implementing the courseware pagination component&#10;• Testing Google Chat space integration webhooks"
+                  placeholder="Type what you are working on today..."
                   className="w-full p-3 bg-slate-900 border border-slate-800 rounded-xl text-slate-200 placeholder-slate-500 focus:outline-none focus:border-maple-500/50"
                 />
               </div>

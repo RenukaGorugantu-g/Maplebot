@@ -8,25 +8,46 @@ import { EmptyState } from '../../components/ui/EmptyState';
 import {
   FileSpreadsheet,
   Download,
-  Printer
+  Printer,
+  ShieldAlert
 } from 'lucide-react';
 
 export const ReportsPage: React.FC = () => {
-  const { currentRole, userPod } = useAuth();
+  const { currentRole, userPod, profile } = useAuth();
   const isManager = currentRole === 'manager';
+  const isAdmin = currentRole === 'admin';
+
+  // Access Control: Only Pod Leads and Admins can see reports
+  if (!isManager && !isAdmin) {
+    return (
+      <div className="max-w-2xl mx-auto glass-card p-12 text-center space-y-4 border border-slate-800 animate-in fade-in duration-300">
+        <div className="w-12 h-12 rounded-2xl bg-amber-500/10 text-amber-400 border border-amber-500/20 flex items-center justify-center mx-auto">
+          <ShieldAlert className="w-6 h-6" />
+        </div>
+        <h3 className="text-lg font-bold text-white">Restricted Access to Reports</h3>
+        <p className="text-xs text-slate-400 leading-relaxed max-w-md mx-auto">
+          Standup summary reports and XLSX data exports are reserved for Pod Leads and Organization Administrators. Team members can view and submit their updates under My Check-in and Team Updates.
+        </p>
+      </div>
+    );
+  }
+
+  // Strict pod scoping: Managers can ONLY see their own pod
+  const podIdForScope = isManager ? (userPod?.id || profile?.pod_id || 'pod-web-sales') : '';
 
   const [reportType, setReportType] = useState<'daily' | 'weekly' | 'sprint' | 'custom'>('daily');
-  const [selectedPod, setSelectedPod] = useState<string>(isManager && userPod ? userPod.id : '');
+  const [selectedPod, setSelectedPod] = useState<string>(podIdForScope);
   const [selectedMember, setSelectedMember] = useState<string>('');
   const [selectedStatus, setSelectedStatus] = useState<string>('');
   const [hasBlockerOnly, setHasBlockerOnly] = useState<boolean>(false);
 
   const pods = dataStore.getPods();
-  const members = dataStore.getProfiles().filter((m) => !isManager || m.pod_id === userPod?.id);
+  const effectivePodId = isManager ? podIdForScope : (selectedPod || undefined);
+  const members = dataStore.getProfiles().filter((m) => !effectivePodId || m.pod_id === effectivePodId);
 
   const reportData = reportsService.generateReportData({
     reportType,
-    podId: isManager && userPod ? userPod.id : (selectedPod || undefined),
+    podId: effectivePodId,
     profileId: selectedMember || undefined,
     status: selectedStatus || undefined,
     hasBlocker: hasBlockerOnly ? true : undefined,
@@ -58,7 +79,9 @@ export const ReportsPage: React.FC = () => {
             {isManager ? `${userPod?.name || 'Pod'} Standup Reports` : 'Reports & Excel Exports'}
           </h2>
           <p className="text-xs text-slate-300 mt-0.5">
-            Download XLSX spreadsheets or CSV data feeds.
+            {isManager
+              ? `Real-time standup exports strictly scoped to your pod (${userPod?.name || 'Assigned Pod'}).`
+              : 'Download organization-wide XLSX spreadsheets or CSV data feeds.'}
           </p>
         </div>
 
@@ -107,7 +130,7 @@ export const ReportsPage: React.FC = () => {
 
         {/* Filters */}
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3 pt-1">
-          {!isManager && (
+          {isAdmin && (
             <div>
               <label className="text-[11px] font-semibold text-slate-400 block mb-1">Filter by Pod</label>
               <select
@@ -130,7 +153,7 @@ export const ReportsPage: React.FC = () => {
               onChange={(e) => setSelectedMember(e.target.value)}
               className="w-full px-3 py-2 bg-slate-900 border border-slate-800 rounded-xl text-xs text-slate-200 focus:outline-none focus:border-maple-500/50 cursor-pointer"
             >
-              <option value="">All Pod Members ({members.length})</option>
+              <option value="">{isManager ? `All ${userPod?.name || 'Pod'} Members` : 'All Members'} ({members.length})</option>
               {members.map((m) => (
                 <option key={m.id} value={m.id}>{m.full_name}</option>
               ))}
@@ -151,99 +174,73 @@ export const ReportsPage: React.FC = () => {
             </select>
           </div>
 
-          <div className="flex items-end">
-            <button
-              onClick={() => setHasBlockerOnly(!hasBlockerOnly)}
-              className={`w-full py-2 px-3 rounded-xl border text-xs font-semibold transition-all ${
-                hasBlockerOnly
-                  ? 'bg-rose-500/20 border-rose-500 text-rose-300'
-                  : 'bg-slate-900 border-slate-800 text-slate-400 hover:text-white'
-              }`}
-            >
-              {hasBlockerOnly ? 'Showing: With Blockers Only' : 'Show Only Blockers'}
-            </button>
+          <div className="flex items-end pb-0.5">
+            <label className="flex items-center gap-2 cursor-pointer text-xs text-slate-300 select-none">
+              <input
+                type="checkbox"
+                checked={hasBlockerOnly}
+                onChange={(e) => setHasBlockerOnly(e.target.checked)}
+                className="rounded bg-slate-900 border-slate-700 text-maple-500 focus:ring-maple-500/30"
+              />
+              <span>Only show active blockers</span>
+            </label>
           </div>
         </div>
       </div>
 
-      {/* Online Preview Table */}
-      <div className="border border-slate-800/80 rounded-2xl overflow-hidden bg-[#081426]/90 backdrop-blur-md">
-        <div className="p-4 border-b border-slate-800 bg-[#0B1728] flex items-center justify-between">
-          <div className="flex items-center gap-2">
-            <FileSpreadsheet className="w-4 h-4 text-maple-400" />
-            <h3 className="text-xs font-bold text-white uppercase tracking-wider">
-              Report Data Preview ({reportData.length} rows)
+      {/* Report Table Preview */}
+      <div className="glass-card p-6 border border-slate-800 space-y-4">
+        <div className="flex items-center justify-between">
+          <div>
+            <h3 className="text-sm font-bold text-white">
+              Report Data Preview ({reportData.length} entries)
             </h3>
+            <p className="text-[11px] text-slate-400 mt-0.5">
+              Live records ready for export.
+            </p>
           </div>
-          <span className="text-[11px] text-slate-400">
-            Export ready with XLSX / CSV compatibility
-          </span>
+          <Button variant="ghost" size="sm" onClick={handlePrint} leftIcon={<Printer className="w-3.5 h-3.5" />}>
+            Print / PDF
+          </Button>
         </div>
 
-        <div className="overflow-x-auto">
-          <table className="w-full text-left text-xs text-slate-300">
-            <thead className="bg-[#0B1728]/80 border-b border-slate-800 text-[11px] font-semibold uppercase text-slate-400">
-              <tr>
-                <th className="px-4 py-3">Date</th>
-                <th className="px-4 py-3">Member</th>
-                <th className="px-4 py-3">Pod</th>
-                <th className="px-4 py-3">Completed Yesterday</th>
-                <th className="px-4 py-3">Working on Today</th>
-                <th className="px-4 py-3">Status</th>
-                <th className="px-4 py-3">Progress</th>
-                <th className="px-4 py-3">Blocker</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-slate-800/60">
-              {reportData.length === 0 ? (
-                <tr>
-                  <td colSpan={8} className="px-6 py-12">
-                    <EmptyState
-                      title="No report records"
-                      description="Adjust your filters to see data in this report."
-                    />
-                  </td>
+        {reportData.length === 0 ? (
+          <EmptyState
+            title="No records found"
+            description="No standup updates match the current report filter criteria."
+          />
+        ) : (
+          <div className="overflow-x-auto rounded-xl border border-slate-800">
+            <table className="w-full text-left text-xs border-collapse">
+              <thead>
+                <tr className="bg-slate-900/80 border-b border-slate-800 text-slate-400 text-[11px]">
+                  <th className="py-3 px-4 font-semibold">Date</th>
+                  <th className="py-3 px-4 font-semibold">Member</th>
+                  <th className="py-3 px-4 font-semibold">Pod</th>
+                  <th className="py-3 px-4 font-semibold">Status</th>
+                  <th className="py-3 px-4 font-semibold">Yesterday</th>
+                  <th className="py-3 px-4 font-semibold">Today</th>
+                  <th className="py-3 px-4 font-semibold">Blocker</th>
+                  <th className="py-3 px-4 font-semibold text-right">Progress</th>
                 </tr>
-              ) : (
-                reportData.map((row) => (
-                  <tr key={row.id} className="hover:bg-slate-800/40 transition-colors">
-                    <td className="px-4 py-3.5 whitespace-nowrap text-slate-400 font-mono text-[11px]">
-                      {row.update_date}
-                    </td>
-                    <td className="px-4 py-3.5 whitespace-nowrap">
-                      <span className="font-semibold text-white block">{row.profile?.full_name}</span>
-                      <span className="text-[10px] text-slate-500">{row.profile?.email}</span>
-                    </td>
-                    <td className="px-4 py-3.5 whitespace-nowrap font-medium text-slate-300">
-                      {row.pod?.name}
-                    </td>
-                    <td className="px-4 py-3.5 max-w-xs text-slate-300 line-clamp-2">
-                      {row.yesterday}
-                    </td>
-                    <td className="px-4 py-3.5 max-w-xs text-slate-200 line-clamp-2 font-medium">
-                      {row.today}
-                    </td>
-                    <td className="px-4 py-3.5 whitespace-nowrap">
-                      <StatusBadge status={row.status} />
-                    </td>
-                    <td className="px-4 py-3.5 whitespace-nowrap font-bold text-maple-400">
-                      {row.progress_percent}%
-                    </td>
-                    <td className="px-4 py-3.5 max-w-xs">
-                      {row.has_blocker ? (
-                        <span className="text-rose-400 font-medium line-clamp-1">
-                          [{row.blocker_category}] {row.blocker}
-                        </span>
-                      ) : (
-                        <span className="text-slate-500">—</span>
-                      )}
-                    </td>
+              </thead>
+              <tbody className="divide-y divide-slate-800/60">
+                {reportData.map((row) => (
+                  <tr key={row.id} className="hover:bg-slate-900/40 transition-colors">
+                    <td className="py-3 px-4 text-slate-400 font-mono text-[11px]">{row.update_date}</td>
+                    <td className="py-3 px-4 text-white font-medium">{row.profile?.full_name || 'Member'}</td>
+                    <td className="py-3 px-4 text-slate-400">{row.pod?.name || 'Pod'}</td>
+                    <td className="py-3 px-4"><StatusBadge status={row.status} /></td>
+                    <td className="py-3 px-4 text-slate-300 max-w-xs truncate" title={row.yesterday}>{row.yesterday}</td>
+                    <td className="py-3 px-4 text-slate-300 max-w-xs truncate" title={row.today}>{row.today}</td>
+                    <td className="py-3 px-4 text-rose-300">{row.blocker || '—'}</td>
+                    <td className="py-3 px-4 text-right font-mono font-bold text-maple-400">{row.progress_percent}%</td>
                   </tr>
-                ))
-              )}
-            </tbody>
-          </table>
-        </div>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
       </div>
     </div>
   );
