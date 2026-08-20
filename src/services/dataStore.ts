@@ -70,7 +70,10 @@ class MapleDataStore {
     this.kudos = savedKudos ? JSON.parse(savedKudos) : INITIAL_KUDOS;
     this.sprint = INITIAL_SPRINT;
     this.notifications = savedNotifs ? JSON.parse(savedNotifs) : INITIAL_NOTIFICATIONS;
-    this.googleChatSettings = savedGChat ? JSON.parse(savedGChat) : INITIAL_GOOGLE_CHAT;
+    this.googleChatSettings = INITIAL_GOOGLE_CHAT;
+    try {
+      localStorage.setItem('maplebot_gchat', JSON.stringify(INITIAL_GOOGLE_CHAT));
+    } catch (e) {}
     this.auditLogs = savedAudit ? JSON.parse(savedAudit) : INITIAL_AUDIT_LOGS;
 
     // Attach real-time listener attempt to Supabase

@@ -32,13 +32,24 @@ export const updatesService = {
 
   submitUpdate(data: Omit<Update, 'id' | 'submitted_at' | 'updated_at' | 'created_at'>): Update {
     const update = dataStore.submitUpdate(data);
-    const profile = dataStore.getProfileById(data.profile_id);
+    const profile =
+      dataStore.getProfileById(data.profile_id) ||
+      dataStore.getProfiles().find((p) => p.email.toLowerCase() === data.profile_id.toLowerCase()) ||
+      ({
+        id: data.profile_id,
+        full_name: 'Team Member',
+        email: '',
+        role: 'member',
+        organization_id: 'org-maple-01',
+        timezone: 'America/Toronto',
+        status: 'active',
+      } as any);
+
     const pod = data.pod_id ? dataStore.getPodById(data.pod_id) : undefined;
 
-    if (profile) {
-      // Async dispatch to Google Chat space
-      googleChatService.sendDailyUpdateCard(update, profile, pod?.name || 'General');
-    }
+    // Async dispatch to Google Chat space
+    googleChatService.sendDailyUpdateCard(update, profile, pod?.name || 'All Departments');
+
     return update;
   },
 
