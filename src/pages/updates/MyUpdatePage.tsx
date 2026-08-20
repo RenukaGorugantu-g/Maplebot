@@ -145,8 +145,7 @@ export const MyUpdatePage: React.FC<{ onNavigate: (path: string) => void }> = ({
             rows={3}
             value={yesterday}
             onChange={(e) => setYesterday(e.target.value)}
-            placeholder="Type what you completed yesterday..."
-            className="w-full p-3.5 bg-slate-900 border border-slate-800 rounded-xl text-slate-200 placeholder-slate-500 focus:outline-none focus:border-maple-500/50"
+            className="w-full p-3.5 bg-slate-900 border border-slate-800 rounded-xl text-slate-200 focus:outline-none focus:border-maple-500/50"
           />
         </div>
 
@@ -160,8 +159,7 @@ export const MyUpdatePage: React.FC<{ onNavigate: (path: string) => void }> = ({
             rows={3}
             value={today}
             onChange={(e) => setToday(e.target.value)}
-            placeholder="Type what you are working on today..."
-            className="w-full p-3.5 bg-slate-900 border border-slate-800 rounded-xl text-slate-200 placeholder-slate-500 focus:outline-none focus:border-maple-500/50"
+            className="w-full p-3.5 bg-slate-900 border border-slate-800 rounded-xl text-slate-200 focus:outline-none focus:border-maple-500/50"
           />
         </div>
 
@@ -260,8 +258,7 @@ export const MyUpdatePage: React.FC<{ onNavigate: (path: string) => void }> = ({
                   required
                   value={blocker}
                   onChange={(e) => setBlocker(e.target.value)}
-                  placeholder="Describe what is blocking your progress..."
-                  className="w-full px-3 py-2 bg-slate-900 border border-rose-800/60 rounded-lg text-white placeholder-slate-500 focus:outline-none focus:border-rose-500 text-xs"
+                  className="w-full px-3 py-2 bg-slate-900 border border-rose-800/60 rounded-lg text-white focus:outline-none focus:border-rose-500 text-xs"
                 />
               </div>
 
@@ -273,8 +270,7 @@ export const MyUpdatePage: React.FC<{ onNavigate: (path: string) => void }> = ({
                   type="text"
                   value={supportNeeded}
                   onChange={(e) => setSupportNeeded(e.target.value)}
-                  placeholder="e.g. Need access permissions, design sign-off, or API review"
-                  className="w-full px-3 py-2 bg-slate-900 border border-rose-800/60 rounded-lg text-white placeholder-slate-500 focus:outline-none focus:border-rose-500 text-xs"
+                  className="w-full px-3 py-2 bg-slate-900 border border-rose-800/60 rounded-lg text-white focus:outline-none focus:border-rose-500 text-xs"
                 />
               </div>
             </div>
