@@ -5,11 +5,14 @@ import { dataStore } from '../../services/dataStore';
 import { StatusBadge } from '../../components/ui/StatusBadge';
 import { Button, GradientButton } from '../../components/ui/Button';
 import { EmptyState } from '../../components/ui/EmptyState';
+import { StandupBackfillModal } from '../../components/updates/StandupBackfillModal';
 import {
   FileSpreadsheet,
   Download,
   Printer,
-  ShieldAlert
+  ShieldAlert,
+  PlusCircle,
+  Calendar,
 } from 'lucide-react';
 
 export const ReportsPage: React.FC = () => {
@@ -40,6 +43,7 @@ export const ReportsPage: React.FC = () => {
   const [selectedMember, setSelectedMember] = useState<string>('');
   const [selectedStatus, setSelectedStatus] = useState<string>('');
   const [hasBlockerOnly, setHasBlockerOnly] = useState<boolean>(false);
+  const [isBackfillOpen, setIsBackfillOpen] = useState<boolean>(false);
 
   const pods = dataStore.getPods();
   const effectivePodId = isManager ? podIdForScope : (selectedPod || undefined);
@@ -88,6 +92,14 @@ export const ReportsPage: React.FC = () => {
         </div>
 
         <div className="flex flex-wrap items-center gap-3">
+          <Button
+            variant="secondary"
+            size="sm"
+            onClick={() => setIsBackfillOpen(true)}
+            leftIcon={<PlusCircle className="w-4 h-4 text-maple-400" />}
+          >
+            Import / Backfill Standup
+          </Button>
           <Button
             variant="secondary"
             size="sm"
@@ -244,6 +256,11 @@ export const ReportsPage: React.FC = () => {
           </div>
         )}
       </div>
+
+      <StandupBackfillModal
+        isOpen={isBackfillOpen}
+        onClose={() => setIsBackfillOpen(false)}
+      />
     </div>
   );
 };
