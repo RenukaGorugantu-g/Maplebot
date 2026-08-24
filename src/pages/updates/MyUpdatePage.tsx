@@ -117,7 +117,7 @@ export const MyUpdatePage: React.FC<{ onNavigate: (path: string) => void }> = ({
 
         <div className="flex items-center gap-2 px-3 py-1.5 rounded-xl bg-slate-900 border border-slate-800 text-xs">
           <Calendar className="w-4 h-4 text-maple-400" />
-          <span className="font-semibold text-white">9:00 AM – 11:00 AM</span>
+          <span className="font-semibold text-white">9:00 AM – 11:30 AM IST</span>
         </div>
       </div>
 

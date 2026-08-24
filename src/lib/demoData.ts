@@ -380,7 +380,7 @@ export const INITIAL_CHECKIN: Checkin = {
   deadline_time: '11:00',
   reminder_time: '09:30',
   days: ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday'],
-  timezone: 'America/Toronto',
+  timezone: 'Asia/Kolkata',
   created_at: '2026-01-01T00:00:00Z',
   updated_at: '2026-08-20T00:00:00Z',
   questions: [
