@@ -467,7 +467,7 @@ class MapleDataStore {
               progress_percent: resultUpdate.progress_percent,
               submitted_at: resultUpdate.submitted_at,
               updated_at: resultUpdate.updated_at,
-            })
+            }, { onConflict: 'profile_id,update_date' })
             .then(({ error }) => {
               if (error) console.warn('Supabase updates upsert note:', error);
             });
