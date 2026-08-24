@@ -317,6 +317,24 @@ class MapleDataStore {
       role: newProfile.role,
       email: newProfile.email,
     });
+
+    // Guarantee persistence to Supabase profiles table
+    supabase
+      .from('profiles')
+      .upsert({
+        id: newProfile.id,
+        organization_id: newProfile.organization_id || 'org-maple-01',
+        full_name: newProfile.full_name,
+        email: newProfile.email,
+        role: newProfile.role,
+        pod_id: newProfile.pod_id || null,
+        timezone: newProfile.timezone || 'America/Toronto',
+        status: newProfile.status || 'active',
+      })
+      .then(({ error }) => {
+        if (error) console.warn('Supabase profile insertion note:', error);
+      });
+
     this.notify();
     return newProfile;
   }
@@ -412,31 +430,49 @@ class MapleDataStore {
       }
     }
 
-    // Direct asynchronous persistence to Supabase
-    supabase
-      .from('updates')
-      .upsert({
-        id: resultUpdate.id,
-        organization_id: resultUpdate.organization_id,
-        checkin_id: resultUpdate.checkin_id || null,
-        profile_id: resultUpdate.profile_id,
-        pod_id: resultUpdate.pod_id || null,
-        update_date: resultUpdate.update_date,
-        yesterday: resultUpdate.yesterday,
-        today: resultUpdate.today,
-        has_blocker: resultUpdate.has_blocker,
-        blocker: resultUpdate.blocker || null,
-        blocker_category: resultUpdate.blocker_category || null,
-        support_needed: resultUpdate.support_needed || null,
-        status: resultUpdate.status,
-        priority: resultUpdate.priority,
-        progress_percent: resultUpdate.progress_percent,
-        submitted_at: resultUpdate.submitted_at,
-        updated_at: resultUpdate.updated_at,
-      })
-      .then(({ error }) => {
-        if (error) console.warn('Supabase updates upsert note:', error);
-      });
+    // Direct persistence to Supabase
+    const authorProfile = this.getProfileById(resultUpdate.profile_id);
+    if (authorProfile) {
+      // Ensure profile exists in Supabase
+      supabase
+        .from('profiles')
+        .upsert({
+          id: authorProfile.id,
+          organization_id: authorProfile.organization_id || 'org-maple-01',
+          full_name: authorProfile.full_name,
+          email: authorProfile.email,
+          role: authorProfile.role,
+          pod_id: authorProfile.pod_id || null,
+          timezone: authorProfile.timezone || 'America/Toronto',
+          status: authorProfile.status || 'active',
+        })
+        .then(() => {
+          supabase
+            .from('updates')
+            .upsert({
+              id: resultUpdate.id,
+              organization_id: resultUpdate.organization_id || 'org-maple-01',
+              checkin_id: resultUpdate.checkin_id || null,
+              profile_id: resultUpdate.profile_id,
+              pod_id: resultUpdate.pod_id || null,
+              update_date: resultUpdate.update_date,
+              yesterday: resultUpdate.yesterday,
+              today: resultUpdate.today,
+              has_blocker: resultUpdate.has_blocker,
+              blocker: resultUpdate.blocker || null,
+              blocker_category: resultUpdate.blocker_category || null,
+              support_needed: resultUpdate.support_needed || null,
+              status: resultUpdate.status,
+              priority: resultUpdate.priority,
+              progress_percent: resultUpdate.progress_percent,
+              submitted_at: resultUpdate.submitted_at,
+              updated_at: resultUpdate.updated_at,
+            })
+            .then(({ error }) => {
+              if (error) console.warn('Supabase updates upsert note:', error);
+            });
+        });
+    }
 
     this.notify();
     return resultUpdate;
