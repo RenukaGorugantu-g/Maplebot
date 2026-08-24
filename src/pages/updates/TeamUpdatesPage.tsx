@@ -33,6 +33,7 @@ export const TeamUpdatesPage: React.FC<{
     initialPodId || (currentRole === 'manager' ? (profile?.pod_id || '') : '')
   );
   const [statusFilter, setStatusFilter] = useState<string>('');
+  const [dateFilter, setDateFilter] = useState<string>('');
   const [onlyBlockers, setOnlyBlockers] = useState<boolean>(false);
   const [, setTick] = useState(0);
 
@@ -57,6 +58,7 @@ export const TeamUpdatesPage: React.FC<{
   const allUpdates = updatesService.getUpdates({
     podId: selectedPod || undefined,
     status: statusFilter || undefined,
+    date: dateFilter || undefined,
   });
 
   const filteredUpdates = allUpdates.filter((u) => {
@@ -140,6 +142,36 @@ export const TeamUpdatesPage: React.FC<{
               <option key={p.id} value={p.id}>{p.name}</option>
             ))}
           </select>
+        </div>
+
+        {/* Date Filter */}
+        <div className="flex items-center gap-2">
+          <select
+            value={dateFilter}
+            onChange={(e) => setDateFilter(e.target.value)}
+            className="px-3 py-2 bg-slate-900 border border-slate-800 rounded-xl text-xs text-slate-200 focus:outline-none focus:border-maple-500/50 cursor-pointer"
+          >
+            <option value="">All History (All Dates)</option>
+            <option value={new Date().toISOString().split('T')[0]}>Today ({new Date().toISOString().split('T')[0]})</option>
+            <option value="2026-08-21">Aug 21, 2026</option>
+            <option value="2026-08-20">Aug 20, 2026</option>
+          </select>
+          <input
+            type="date"
+            value={dateFilter}
+            onChange={(e) => setDateFilter(e.target.value)}
+            className="px-2.5 py-1.5 bg-slate-900 border border-slate-800 rounded-xl text-xs text-slate-300 focus:outline-none focus:border-maple-500/50 cursor-pointer"
+            title="Select specific date"
+          />
+          {dateFilter && (
+            <button
+              type="button"
+              onClick={() => setDateFilter('')}
+              className="text-[11px] text-maple-400 hover:text-maple-300 font-semibold px-1"
+            >
+              Clear
+            </button>
+          )}
         </div>
 
         {/* Status Filter */}

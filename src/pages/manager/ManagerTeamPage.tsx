@@ -26,18 +26,23 @@ export const ManagerTeamPage: React.FC<{ onNavigate: (path: string) => void }> =
   const { profile } = useAuth();
   const { showToast } = useNotifications();
 
-  const podId = profile.pod_id || 'pod-web-sales';
+  const podId = profile?.pod_id || 'pod-web-sales';
   const pod = dataStore.getPodById(podId);
 
-  const stats = updatesService.getSubmissionStats(podId);
+  const [selectedDate, setSelectedDate] = useState<string>(new Date().toISOString().split('T')[0]);
+  const [searchMember, setSearchMember] = useState('');
+  const [selectedStatus, setSelectedStatus] = useState('');
+
   const podMembers = dataStore
     .getProfiles()
     .filter((m) => (m.pod_id === podId || (m.pod_ids && m.pod_ids.includes(podId))) && m.status === 'active');
-  const podUpdates = updatesService.getTodayUpdates(podId);
+  const podUpdates = updatesService.getUpdates({ podId, date: selectedDate });
   const podBlockers = blockersService.getBlockers({ podId, status: 'open' });
 
-  const [searchMember, setSearchMember] = useState('');
-  const [selectedStatus, setSelectedStatus] = useState('');
+  const submittedCount = podUpdates.length;
+  const totalExpected = podMembers.length;
+  const pendingCount = Math.max(0, totalExpected - submittedCount);
+  const participationRate = totalExpected > 0 ? Math.round((submittedCount / totalExpected) * 100) : 100;
 
   const handleSendReminder = async (member: { email: string; full_name: string }) => {
     const res = await googleChatService.sendStandupReminder(member.email, member.full_name, pod?.name || 'Pod');
@@ -45,7 +50,7 @@ export const ManagerTeamPage: React.FC<{ onNavigate: (path: string) => void }> =
   };
 
   const handleRemindAllPending = async () => {
-    const pendingMembers = podMembers.filter((m) => !updatesService.getMemberUpdateToday(m.id));
+    const pendingMembers = podMembers.filter((m) => !podUpdates.some((u) => u.profile_id === m.id));
     for (const m of pendingMembers) {
       await googleChatService.sendStandupReminder(m.email, m.full_name, pod?.name || 'Pod');
     }
@@ -76,14 +81,14 @@ export const ManagerTeamPage: React.FC<{ onNavigate: (path: string) => void }> =
           </div>
 
           <div className="flex flex-wrap items-center gap-3">
-            {stats.pendingCount > 0 && (
+            {pendingCount > 0 && (
               <Button
                 variant="secondary"
                 size="sm"
                 onClick={handleRemindAllPending}
                 leftIcon={<Bell className="w-4 h-4 text-amber-400" />}
               >
-                Remind All Pending ({stats.pendingCount})
+                Remind All Pending ({pendingCount})
               </Button>
             )}
             <GradientButton
@@ -106,15 +111,15 @@ export const ManagerTeamPage: React.FC<{ onNavigate: (path: string) => void }> =
           icon={<Users className="w-5 h-5" />}
         />
         <MetricCard
-          title="Submitted Today"
-          value={`${stats.submittedCount} / ${stats.totalExpected}`}
-          progress={stats.participationRate}
+          title="Submitted Updates"
+          value={`${submittedCount} / ${totalExpected}`}
+          progress={participationRate}
           icon={<CheckCircle2 className="w-5 h-5" />}
         />
         <MetricCard
-          title="Pending Today"
-          value={stats.pendingCount}
-          subtitle={stats.pendingCount === 0 ? 'All checked in!' : 'Action needed'}
+          title="Pending Check-ins"
+          value={pendingCount}
+          subtitle={pendingCount === 0 ? 'All checked in!' : 'Action needed'}
           icon={<Clock className="w-5 h-5 text-amber-400" />}
         />
         <MetricCard
@@ -127,9 +132,31 @@ export const ManagerTeamPage: React.FC<{ onNavigate: (path: string) => void }> =
 
       {/* Pod Member Roster Table */}
       <div className="glass-card p-6 border border-slate-800 space-y-4">
-        <div className="flex items-center justify-between">
-          <h3 className="text-base font-bold text-white">Pod Member Roster & Today's Status</h3>
-          <span className="text-xs text-slate-400">{podMembers.length} members</span>
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+          <div>
+            <h3 className="text-base font-bold text-white">Pod Member Roster & Standup Status</h3>
+            <span className="text-xs text-slate-400">{podMembers.length} active members</span>
+          </div>
+
+          {/* Date Selector */}
+          <div className="flex items-center gap-2">
+            <span className="text-xs text-slate-400 font-semibold">Select Date:</span>
+            <select
+              value={selectedDate}
+              onChange={(e) => setSelectedDate(e.target.value)}
+              className="px-3 py-1.5 bg-slate-900 border border-slate-800 rounded-xl text-xs text-slate-200 focus:outline-none focus:border-maple-500/50 cursor-pointer"
+            >
+              <option value={new Date().toISOString().split('T')[0]}>Today ({new Date().toISOString().split('T')[0]})</option>
+              <option value="2026-08-21">Aug 21, 2026</option>
+              <option value="2026-08-20">Aug 20, 2026</option>
+            </select>
+            <input
+              type="date"
+              value={selectedDate}
+              onChange={(e) => setSelectedDate(e.target.value)}
+              className="px-2.5 py-1 bg-slate-900 border border-slate-800 rounded-xl text-xs text-slate-300 focus:outline-none focus:border-maple-500/50 cursor-pointer"
+            />
+          </div>
         </div>
 
         <div className="overflow-x-auto">
@@ -138,14 +165,14 @@ export const ManagerTeamPage: React.FC<{ onNavigate: (path: string) => void }> =
               <tr>
                 <th className="px-4 py-3">Member</th>
                 <th className="px-4 py-3">Role</th>
-                <th className="px-4 py-3">Today's Check-in</th>
-                <th className="px-4 py-3">Status</th>
+                <th className="px-4 py-3">Check-in Status ({selectedDate})</th>
+                <th className="px-4 py-3">Delivery Status</th>
                 <th className="px-4 py-3 text-right">Action</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-800/60">
               {podMembers.map((member) => {
-                const update = updatesService.getMemberUpdateToday(member.id);
+                const update = podUpdates.find((u) => u.profile_id === member.id);
                 const isSubmitted = !!update;
                 return (
                   <tr key={member.id} className="hover:bg-slate-800/40 transition-colors">
