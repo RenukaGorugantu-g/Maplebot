@@ -55,6 +55,8 @@ export const TeamUpdatesPage: React.FC<{
   const [commentInputs, setCommentInputs] = useState<Record<string, string>>({});
 
   const pods = dataStore.getPods();
+  const rawAllUpdates = updatesService.getUpdates();
+  const availableDates = Array.from(new Set(rawAllUpdates.map((u) => u.update_date))).filter(Boolean).sort().reverse();
   const allUpdates = updatesService.getUpdates({
     podId: selectedPod || undefined,
     status: statusFilter || undefined,
@@ -151,10 +153,15 @@ export const TeamUpdatesPage: React.FC<{
             onChange={(e) => setDateFilter(e.target.value)}
             className="px-3 py-2 bg-slate-900 border border-slate-800 rounded-xl text-xs text-slate-200 focus:outline-none focus:border-maple-500/50 cursor-pointer"
           >
-            <option value="">All History (All Dates)</option>
+            <option value="">All History ({availableDates.length} Dates)</option>
             <option value={new Date().toISOString().split('T')[0]}>Today ({new Date().toISOString().split('T')[0]})</option>
-            <option value="2026-08-21">Aug 21, 2026</option>
-            <option value="2026-08-20">Aug 20, 2026</option>
+            {availableDates
+              .filter((d) => d !== new Date().toISOString().split('T')[0])
+              .map((d) => (
+                <option key={d} value={d}>
+                  {new Date(d + 'T00:00:00').toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}
+                </option>
+              ))}
           </select>
           <input
             type="date"
@@ -231,17 +238,21 @@ export const TeamUpdatesPage: React.FC<{
                 {/* Card Header */}
                 <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-3 border-b border-slate-800/80">
                   <div className="flex items-center gap-3">
-                    <Avatar name={u.profile?.full_name || 'Member'} size="md" status="online" />
+                    <Avatar name={u.profile?.full_name || 'Team Member'} size="md" status="online" />
                     <div>
                       <div className="flex items-center gap-2">
-                        <span className="text-sm font-bold text-white tracking-tight">{u.profile?.full_name}</span>
-                        <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-slate-800 text-maple-400 border border-slate-700">
-                          {u.pod?.name}
+                        <span className="text-sm font-bold text-white tracking-tight">
+                          {u.profile?.full_name || 'Team Member'}
                         </span>
+                        {(u.pod?.name || u.profile?.pod?.name) && (
+                          <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-slate-800 text-maple-400 border border-slate-700">
+                            {u.pod?.name || u.profile?.pod?.name}
+                          </span>
+                        )}
                       </div>
                       <span className="text-[11px] text-slate-400 flex items-center gap-1 mt-0.5">
                         <Clock className="w-3 h-3 text-slate-500" />
-                        Submitted at {new Date(u.submitted_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })} • {new Date(u.update_date).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}
+                        Submitted at {new Date(u.submitted_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })} • {new Date(u.update_date + 'T00:00:00').toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}
                       </span>
                     </div>
                   </div>

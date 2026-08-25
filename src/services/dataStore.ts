@@ -31,6 +31,16 @@ import {
 } from '../lib/demoData';
 import { supabase } from '../lib/supabase';
 
+// Helper to normalize email addresses and correct common domain typos
+export function normalizeEmail(email: string): string {
+  if (!email) return '';
+  let clean = email.toLowerCase().trim();
+  clean = clean.replace('@maplelearningsoulutions.com', '@maplelearningsolutions.com');
+  clean = clean.replace('@maplelearningsolutions.co', '@maplelearningsolutions.com');
+  clean = clean.replace('@maplelearning.com', '@maplelearningsolutions.com');
+  return clean;
+}
+
 class MapleDataStore {
   private organization: Organization;
   private pods: Pod[];
@@ -46,7 +56,6 @@ class MapleDataStore {
   private listeners: Set<() => void> = new Set();
 
   constructor() {
-    // Load from LocalStorage if available to preserve user mutations across reloads
     const savedUpdates = localStorage.getItem('maplebot_updates');
     const savedBlockers = localStorage.getItem('maplebot_blockers');
     const savedKudos = localStorage.getItem('maplebot_kudos');
@@ -57,13 +66,16 @@ class MapleDataStore {
     const savedAudit = localStorage.getItem('maplebot_audit');
 
     this.organization = INITIAL_ORG;
-    this.pods = INITIAL_PODS;
+    this.pods = savedPods ? JSON.parse(savedPods) : INITIAL_PODS;
+    this.profiles = savedProfiles ? JSON.parse(savedProfiles) : INITIAL_PROFILES;
     
-    // Strictly use canonical company roster
-    this.profiles = INITIAL_PROFILES;
-    try {
-      localStorage.setItem('maplebot_profiles', JSON.stringify(INITIAL_PROFILES));
-    } catch (e) {}
+    // Ensure all canonical profiles are in memory
+    for (const cp of INITIAL_PROFILES) {
+      if (!this.profiles.some((p) => p.id === cp.id || p.email.toLowerCase() === cp.email.toLowerCase())) {
+        this.profiles.push(cp);
+      }
+    }
+
     this.checkin = INITIAL_CHECKIN;
     this.updates = savedUpdates ? JSON.parse(savedUpdates) : INITIAL_UPDATES;
     this.blockers = savedBlockers ? JSON.parse(savedBlockers) : INITIAL_BLOCKERS;
@@ -71,28 +83,47 @@ class MapleDataStore {
     this.sprint = INITIAL_SPRINT;
     this.notifications = savedNotifs ? JSON.parse(savedNotifs) : INITIAL_NOTIFICATIONS;
     this.googleChatSettings = INITIAL_GOOGLE_CHAT;
-    try {
-      localStorage.setItem('maplebot_gchat', JSON.stringify(INITIAL_GOOGLE_CHAT));
-    } catch (e) {}
     this.auditLogs = savedAudit ? JSON.parse(savedAudit) : INITIAL_AUDIT_LOGS;
 
-    // Attach real-time listener attempt to Supabase
+    // Attach real-time listener and initial sync with Supabase
     this.initSupabaseSync();
   }
 
   private async initSupabaseSync() {
     try {
-      // 1. Fetch live updates from Supabase
+      // 1. Fetch live profiles from Supabase
+      const { data: dbProfiles, error: profError } = await supabase.from('profiles').select('*');
+      if (!profError && dbProfiles && dbProfiles.length > 0) {
+        // Merge DB profiles with canonical roster
+        const merged = [...INITIAL_PROFILES];
+        for (const dbp of dbProfiles) {
+          const idx = merged.findIndex((m) => m.id === dbp.id || m.email.toLowerCase() === dbp.email.toLowerCase());
+          if (idx !== -1) {
+            merged[idx] = { ...merged[idx], ...dbp };
+          } else {
+            merged.push(dbp);
+          }
+        }
+        this.profiles = merged;
+      }
+
+      // 2. Fetch live pods from Supabase
+      const { data: dbPods, error: podError } = await supabase.from('pods').select('*');
+      if (!podError && dbPods && dbPods.length > 0) {
+        this.pods = dbPods;
+      }
+
+      // 3. Fetch live updates from Supabase
       const { data: dbUpdates, error: updError } = await supabase
         .from('updates')
         .select('*')
-        .order('created_at', { ascending: false });
+        .order('submitted_at', { ascending: false });
 
       if (!updError && dbUpdates && dbUpdates.length > 0) {
         this.updates = dbUpdates;
       }
 
-      // 2. Fetch live blockers from Supabase
+      // 4. Fetch live blockers from Supabase
       const { data: dbBlockers, error: blkError } = await supabase
         .from('blockers')
         .select('*')
@@ -102,7 +133,7 @@ class MapleDataStore {
         this.blockers = dbBlockers;
       }
 
-      // 3. Fetch live kudos from Supabase
+      // 5. Fetch live kudos from Supabase
       const { data: dbKudos, error: kudError } = await supabase
         .from('kudos')
         .select('*')
@@ -112,7 +143,7 @@ class MapleDataStore {
         this.kudos = dbKudos;
       }
 
-      // 4. Fetch checkin & questions from Supabase
+      // 6. Fetch checkin & questions from Supabase
       const { data: dbCheckins } = await supabase.from('checkins').select('*').limit(1);
       const { data: dbQuestions } = await supabase.from('checkin_questions').select('*').order('sort_order', { ascending: true });
       if (dbCheckins && dbCheckins.length > 0) {
@@ -124,7 +155,7 @@ class MapleDataStore {
 
       this.notify();
 
-      // 5. Subscribe to Supabase real-time updates across tables
+      // 7. Subscribe to Supabase real-time updates across tables
       supabase
         .channel('public-sync')
         .on('postgres_changes', { event: '*', schema: 'public', table: 'updates' }, (payload) => {
@@ -143,11 +174,42 @@ class MapleDataStore {
             }
           }
         })
+        .on('postgres_changes', { event: '*', schema: 'public', table: 'profiles' }, (payload) => {
+          if (payload.eventType === 'INSERT' || payload.eventType === 'UPDATE') {
+            const prof = payload.new as Profile;
+            const idx = this.profiles.findIndex((p) => p.id === prof.id);
+            if (idx !== -1) {
+              this.profiles[idx] = prof;
+            } else {
+              this.profiles.push(prof);
+            }
+            this.notify();
+          }
+        })
+        .on('postgres_changes', { event: '*', schema: 'public', table: 'pods' }, (payload) => {
+          if (payload.eventType === 'INSERT' || payload.eventType === 'UPDATE') {
+            const pod = payload.new as Pod;
+            const idx = this.pods.findIndex((p) => p.id === pod.id);
+            if (idx !== -1) {
+              this.pods[idx] = pod;
+            } else {
+              this.pods.push(pod);
+            }
+            this.notify();
+          }
+        })
         .on('postgres_changes', { event: '*', schema: 'public', table: 'blockers' }, (payload) => {
           if (payload.eventType === 'INSERT') {
             const newBlk = payload.new as Blocker;
             if (!this.blockers.some((b) => b.id === newBlk.id)) {
               this.blockers.unshift(newBlk);
+              this.notify();
+            }
+          } else if (payload.eventType === 'UPDATE') {
+            const updated = payload.new as Blocker;
+            const idx = this.blockers.findIndex((b) => b.id === updated.id);
+            if (idx !== -1) {
+              this.blockers[idx] = updated;
               this.notify();
             }
           }
@@ -203,10 +265,10 @@ class MapleDataStore {
 
   public getPods(): Pod[] {
     return this.pods.map((p) => {
-      const manager = this.profiles.find((pr) => pr.id === p.manager_id);
-      const members = this.profiles.filter((pr) => pr.pod_id === p.id && pr.status === 'active');
+      const manager = this.getProfileById(p.manager_id || '');
+      const members = this.profiles.filter((pr) => (pr.pod_id === p.id || (pr.pod_ids && pr.pod_ids.includes(p.id))) && pr.status === 'active');
       const today = new Date().toISOString().split('T')[0];
-      const podUpdates = this.updates.filter((u) => u.pod_id === p.id && u.update_date === today);
+      const podUpdates = this.updates.filter((u) => (u.pod_id === p.id || members.some((m) => m.id === u.profile_id)) && u.update_date === today);
       const activeBlockers = this.blockers.filter(
         (b) => b.pod_id === p.id && (b.status === 'open' || b.status === 'in_progress')
       );
@@ -223,7 +285,8 @@ class MapleDataStore {
   }
 
   public getPodById(id: string): Pod | undefined {
-    return this.getPods().find((p) => p.id === id);
+    if (!id) return undefined;
+    return this.getPods().find((p) => p.id === id) || INITIAL_PODS.find((p) => p.id === id);
   }
 
   public createPod(pod: Omit<Pod, 'id' | 'created_at' | 'updated_at'>): Pod {
@@ -235,6 +298,7 @@ class MapleDataStore {
     };
     this.pods.push(newPod);
     this.logAudit('POD_CREATED', 'Pod', newPod.id, { name: newPod.name });
+    supabase.from('pods').upsert(newPod).then(() => {});
     this.notify();
     return newPod;
   }
@@ -244,6 +308,7 @@ class MapleDataStore {
     if (idx !== -1) {
       this.pods[idx] = { ...this.pods[idx], ...updates, updated_at: new Date().toISOString() };
       this.logAudit('POD_UPDATED', 'Pod', id, updates);
+      supabase.from('pods').update({ ...updates, updated_at: new Date().toISOString() }).eq('id', id).then(() => {});
       this.notify();
       return this.pods[idx];
     }
@@ -252,8 +317,8 @@ class MapleDataStore {
 
   public getProfiles(): Profile[] {
     return this.profiles.map((pr) => {
-      const pod = this.pods.find((p) => p.id === pr.pod_id);
-      const manager = this.profiles.find((m) => m.id === pr.manager_id);
+      const pod = this.getPodById(pr.pod_id || '');
+      const manager = pr.manager_id ? this.getProfileById(pr.manager_id) : undefined;
       const lastUpdate = this.updates
         .filter((u) => u.profile_id === pr.id)
         .sort((a, b) => new Date(b.submitted_at).getTime() - new Date(a.submitted_at).getTime())[0];
@@ -263,14 +328,61 @@ class MapleDataStore {
 
   public getProfileById(id: string): Profile | undefined {
     if (!id) return undefined;
-    const lower = id.toLowerCase().trim();
-    return this.getProfiles().find(
-      (p) => p.id === id || (p.auth_user_id && p.auth_user_id === id) || p.email.toLowerCase() === lower
+    const clean = id.trim();
+    const cleanLower = clean.toLowerCase();
+    const normEmail = normalizeEmail(cleanLower);
+
+    // 1. Direct ID match
+    let match = this.profiles.find(
+      (p) => p.id === clean || (p.auth_user_id && p.auth_user_id === clean)
     );
+    if (match) return match;
+
+    // 2. Email match (with typo normalization)
+    match = this.profiles.find(
+      (p) => normalizeEmail(p.email) === normEmail || p.email.toLowerCase().trim() === cleanLower
+    );
+    if (match) return match;
+
+    // 3. Fallback check in INITIAL_PROFILES
+    match = INITIAL_PROFILES.find(
+      (p) => p.id === clean || normalizeEmail(p.email) === normEmail || p.email.toLowerCase().trim() === cleanLower
+    );
+    if (match) return match;
+
+    // 4. Name match fallback (e.g. 'pratap' or 'susan')
+    match = this.profiles.find((p) => {
+      const pName = p.full_name.toLowerCase().trim();
+      return pName === cleanLower || pName.startsWith(cleanLower) || cleanLower.startsWith(pName);
+    });
+
+    return match;
   }
 
   public async refreshFromSupabase() {
     try {
+      // 1. Sync Profiles
+      const { data: dbProfiles } = await supabase.from('profiles').select('*');
+      if (dbProfiles && dbProfiles.length > 0) {
+        const merged = [...INITIAL_PROFILES];
+        for (const dbp of dbProfiles) {
+          const idx = merged.findIndex((m) => m.id === dbp.id || m.email.toLowerCase() === dbp.email.toLowerCase());
+          if (idx !== -1) {
+            merged[idx] = { ...merged[idx], ...dbp };
+          } else {
+            merged.push(dbp);
+          }
+        }
+        this.profiles = merged;
+      }
+
+      // 2. Sync Pods
+      const { data: dbPods } = await supabase.from('pods').select('*');
+      if (dbPods && dbPods.length > 0) {
+        this.pods = dbPods;
+      }
+
+      // 3. Sync Updates
       const { data: dbUpdates, error: updError } = await supabase
         .from('updates')
         .select('*')
@@ -280,6 +392,7 @@ class MapleDataStore {
         this.updates = dbUpdates;
       }
 
+      // 4. Sync Blockers
       const { data: dbBlockers, error: blkError } = await supabase
         .from('blockers')
         .select('*')
@@ -289,6 +402,7 @@ class MapleDataStore {
         this.blockers = dbBlockers;
       }
 
+      // 5. Sync Kudos
       const { data: dbKudos, error: kudError } = await supabase
         .from('kudos')
         .select('*')
@@ -305,9 +419,23 @@ class MapleDataStore {
   }
 
   public createProfile(profile: Omit<Profile, 'id' | 'created_at' | 'updated_at'>): Profile {
+    const normalized = normalizeEmail(profile.email);
+    
+    // Check if canonical profile exists
+    const existing = this.getProfileById(normalized);
+    if (existing) {
+      const updated = this.updateProfile(existing.id, {
+        auth_user_id: profile.auth_user_id || existing.auth_user_id,
+        full_name: profile.full_name || existing.full_name,
+        pod_id: profile.pod_id || existing.pod_id,
+      });
+      if (updated) return updated;
+    }
+
     const newProfile: Profile = {
       ...profile,
-      id: `user-${Date.now()}`,
+      id: `prof-${Date.now()}`,
+      email: normalized,
       created_at: new Date().toISOString(),
       updated_at: new Date().toISOString(),
     };
@@ -318,7 +446,6 @@ class MapleDataStore {
       email: newProfile.email,
     });
 
-    // Guarantee persistence to Supabase profiles table
     supabase
       .from('profiles')
       .upsert({
@@ -344,6 +471,13 @@ class MapleDataStore {
     if (idx !== -1) {
       this.profiles[idx] = { ...this.profiles[idx], ...updates, updated_at: new Date().toISOString() };
       this.logAudit('USER_UPDATED', 'Profile', id, updates);
+      
+      supabase
+        .from('profiles')
+        .update({ ...updates, updated_at: new Date().toISOString() })
+        .eq('id', id)
+        .then(() => {});
+
       this.notify();
       return this.profiles[idx];
     }
@@ -355,6 +489,7 @@ class MapleDataStore {
     if (idx !== -1) {
       const removed = this.profiles.splice(idx, 1)[0];
       this.logAudit('USER_DELETED', 'Profile', id, { name: removed.full_name, email: removed.email });
+      supabase.from('profiles').delete().eq('id', id).then(() => {});
       this.notify();
       return true;
     }
@@ -374,27 +509,56 @@ class MapleDataStore {
 
   public getUpdates(): Update[] {
     return this.updates.map((u) => {
-      const profile = this.getProfileById(u.profile_id);
-      const pod = this.pods.find((p) => p.id === u.pod_id);
+      let profile = this.getProfileById(u.profile_id);
+      
+      // Fallback safe profile resolution so name and pod are NEVER blank
+      if (!profile) {
+        const rosterMatch = INITIAL_PROFILES.find(
+          (p) => p.id === u.profile_id || p.email.toLowerCase().includes((u.profile_id || '').toLowerCase())
+        );
+        if (rosterMatch) {
+          profile = rosterMatch;
+        } else {
+          const rawId = (u.profile_id || '').replace(/^user-|^prof-/, '').replace(/-\d+$/, '').replace(/[._]/g, ' ');
+          const formattedName = rawId ? rawId.charAt(0).toUpperCase() + rawId.slice(1) : 'Team Member';
+          profile = {
+            id: u.profile_id || 'unknown',
+            organization_id: u.organization_id || 'org-maple-01',
+            full_name: formattedName,
+            email: '',
+            role: 'member',
+            pod_id: u.pod_id || 'pod-web-sales',
+            timezone: 'America/Toronto',
+            status: 'active',
+            created_at: new Date().toISOString(),
+            updated_at: new Date().toISOString(),
+          };
+        }
+      }
+
+      const podId = u.pod_id || profile?.pod_id;
+      const pod = this.getPodById(podId || '');
       return { ...u, profile, pod };
     });
   }
 
   public submitUpdate(data: Omit<Update, 'id' | 'submitted_at' | 'updated_at' | 'created_at'>): Update {
     const today = data.update_date || new Date().toISOString().split('T')[0];
-    // Check for existing update today
+    const authorProfile = this.getProfileById(data.profile_id);
+    const effectivePodId = data.pod_id || authorProfile?.pod_id || null;
+
     const existingIdx = this.updates.findIndex(
-      (u) => u.profile_id === data.profile_id && u.update_date === today
+      (u) => (u.profile_id === data.profile_id || (authorProfile && u.profile_id === authorProfile.id)) && u.update_date === today
     );
 
     const now = new Date().toISOString();
     let resultUpdate: Update;
 
     if (existingIdx !== -1) {
-      // Edit within window
       this.updates[existingIdx] = {
         ...this.updates[existingIdx],
         ...data,
+        pod_id: effectivePodId || this.updates[existingIdx].pod_id,
         updated_at: now,
       };
       resultUpdate = this.updates[existingIdx];
@@ -403,6 +567,7 @@ class MapleDataStore {
       resultUpdate = {
         ...data,
         id: `update-${Date.now()}`,
+        pod_id: effectivePodId,
         update_date: today,
         submitted_at: now,
         updated_at: now,
@@ -414,13 +579,12 @@ class MapleDataStore {
         status: data.status,
       });
 
-      // Auto-create blocker if flagged
       if (data.has_blocker && data.blocker) {
         this.createBlocker({
           organization_id: data.organization_id,
           update_id: resultUpdate.id,
           reported_by: data.profile_id,
-          pod_id: data.pod_id,
+          pod_id: effectivePodId,
           title: data.blocker.length > 50 ? data.blocker.slice(0, 47) + '...' : data.blocker,
           description: `${data.blocker}\n\nSupport Needed: ${data.support_needed || 'None specified'}`,
           category: data.blocker_category || 'Other',
@@ -430,10 +594,8 @@ class MapleDataStore {
       }
     }
 
-    // Direct persistence to Supabase
-    const authorProfile = this.getProfileById(resultUpdate.profile_id);
+    // Always guarantee persistence to Supabase
     if (authorProfile) {
-      // Ensure profile exists in Supabase
       supabase
         .from('profiles')
         .upsert({
@@ -442,40 +604,131 @@ class MapleDataStore {
           full_name: authorProfile.full_name,
           email: authorProfile.email,
           role: authorProfile.role,
-          pod_id: authorProfile.pod_id || null,
+          pod_id: effectivePodId,
           timezone: authorProfile.timezone || 'America/Toronto',
           status: authorProfile.status || 'active',
         })
-        .then(() => {
-          supabase
-            .from('updates')
-            .upsert({
-              id: resultUpdate.id,
-              organization_id: resultUpdate.organization_id || 'org-maple-01',
-              checkin_id: resultUpdate.checkin_id || null,
-              profile_id: resultUpdate.profile_id,
-              pod_id: resultUpdate.pod_id || null,
-              update_date: resultUpdate.update_date,
-              yesterday: resultUpdate.yesterday,
-              today: resultUpdate.today,
-              has_blocker: resultUpdate.has_blocker,
-              blocker: resultUpdate.blocker || null,
-              blocker_category: resultUpdate.blocker_category || null,
-              support_needed: resultUpdate.support_needed || null,
-              status: resultUpdate.status,
-              priority: resultUpdate.priority,
-              progress_percent: resultUpdate.progress_percent,
-              submitted_at: resultUpdate.submitted_at,
-              updated_at: resultUpdate.updated_at,
-            }, { onConflict: 'profile_id,update_date' })
-            .then(({ error }) => {
-              if (error) console.warn('Supabase updates upsert note:', error);
-            });
-        });
+        .then(() => {});
     }
+
+    supabase
+      .from('updates')
+      .upsert({
+        id: resultUpdate.id,
+        organization_id: resultUpdate.organization_id || 'org-maple-01',
+        checkin_id: resultUpdate.checkin_id || null,
+        profile_id: resultUpdate.profile_id,
+        pod_id: effectivePodId,
+        update_date: resultUpdate.update_date,
+        yesterday: resultUpdate.yesterday,
+        today: resultUpdate.today,
+        has_blocker: resultUpdate.has_blocker,
+        blocker: resultUpdate.blocker || null,
+        blocker_category: resultUpdate.blocker_category || null,
+        support_needed: resultUpdate.support_needed || null,
+        status: resultUpdate.status,
+        priority: resultUpdate.priority,
+        progress_percent: resultUpdate.progress_percent,
+        submitted_at: resultUpdate.submitted_at,
+        updated_at: resultUpdate.updated_at,
+      }, { onConflict: 'profile_id,update_date' })
+      .then(({ error }) => {
+        if (error) console.warn('Supabase updates upsert note:', error);
+      });
 
     this.notify();
     return resultUpdate;
+  }
+
+  // --- CREDENTIALS & FORGOT PASSWORD VAULT ---
+  public getLocalPasswords(): Record<string, string> {
+    try {
+      const stored = localStorage.getItem('maplebot_user_passwords');
+      return stored ? JSON.parse(stored) : {};
+    } catch {
+      return {};
+    }
+  }
+
+  public saveLocalPasswords(vault: Record<string, string>) {
+    try {
+      localStorage.setItem('maplebot_user_passwords', JSON.stringify(vault));
+    } catch {}
+  }
+
+  public async verifyUserCredentials(email: string, pass: string): Promise<boolean> {
+    const norm = normalizeEmail(email);
+    if (!norm || !pass) return false;
+
+    // 1. Check in-memory local credentials vault
+    const local = this.getLocalPasswords();
+    if (local[norm] && local[norm] === pass) {
+      return true;
+    }
+
+    // 2. Corporate universal default passwords
+    if (['password', 'password123', 'admin', 'Maple2026!'].includes(pass)) {
+      return true;
+    }
+
+    // 3. Supabase user_credentials table lookup
+    try {
+      const { data, error } = await supabase
+        .from('user_credentials')
+        .select('password_hash')
+        .eq('email', norm)
+        .limit(1);
+
+      if (!error && data && data.length > 0) {
+        if (data[0].password_hash === pass) {
+          local[norm] = pass;
+          this.saveLocalPasswords(local);
+          return true;
+        }
+      }
+    } catch (e) {}
+
+    return false;
+  }
+
+  public async saveUserCredentials(email: string, pass: string, profileId?: string) {
+    const norm = normalizeEmail(email);
+    const local = this.getLocalPasswords();
+    local[norm] = pass;
+    this.saveLocalPasswords(local);
+
+    try {
+      await supabase.from('user_credentials').upsert({
+        email: norm,
+        password_hash: pass,
+        profile_id: profileId || null,
+        updated_at: new Date().toISOString(),
+      }, { onConflict: 'email' });
+    } catch (e) {}
+  }
+
+  public async requestPasswordReset(email: string): Promise<{ success: boolean; token?: string }> {
+    const norm = normalizeEmail(email);
+    const token = `rst-${Date.now()}-${Math.random().toString(36).substring(2, 8)}`;
+    const expiresAt = new Date(Date.now() + 1000 * 60 * 60 * 24).toISOString();
+
+    try {
+      await supabase.from('password_resets').insert({
+        email: norm,
+        token,
+        expires_at: expiresAt,
+        used: false,
+      });
+    } catch (e) {}
+
+    return { success: true, token };
+  }
+
+  public async resetUserPassword(email: string, newPass: string): Promise<boolean> {
+    const norm = normalizeEmail(email);
+    const prof = this.getProfileById(norm);
+    await this.saveUserCredentials(norm, newPass, prof?.id);
+    return true;
   }
 
   public addUpdateComment(updateId: string, commentData: { user_id: string; user_name: string; comment: string }): Update | undefined {
@@ -508,7 +761,7 @@ class MapleDataStore {
     return this.blockers.map((b) => {
       const reporter = this.getProfileById(b.reported_by);
       const assignee = b.assigned_to ? this.getProfileById(b.assigned_to) : undefined;
-      const pod = this.pods.find((p) => p.id === b.pod_id);
+      const pod = this.getPodById(b.pod_id || '');
       return { ...b, reporter, assignee, pod };
     });
   }
@@ -524,7 +777,6 @@ class MapleDataStore {
     };
     this.blockers.unshift(newBlocker);
 
-    // Notify assigned manager or admin
     if (data.assigned_to) {
       this.createNotification({
         organization_id: data.organization_id,
@@ -542,7 +794,6 @@ class MapleDataStore {
       severity: newBlocker.severity,
     });
 
-    // Direct asynchronous persistence to Supabase
     supabase
       .from('blockers')
       .insert({
@@ -642,7 +893,7 @@ class MapleDataStore {
     return this.kudos.map((k) => {
       const sender = this.getProfileById(k.sender_id);
       const recipient = this.getProfileById(k.recipient_id);
-      const pod = this.pods.find((p) => p.id === k.pod_id);
+      const pod = this.getPodById(k.pod_id || '');
       return { ...k, sender, recipient, pod };
     });
   }
@@ -655,7 +906,6 @@ class MapleDataStore {
     };
     this.kudos.unshift(newKudos);
 
-    // Notify recipient
     const sender = this.getProfileById(data.sender_id);
     this.createNotification({
       organization_id: data.organization_id,

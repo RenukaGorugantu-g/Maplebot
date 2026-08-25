@@ -31,6 +31,8 @@ export const ManagerTeamPage: React.FC<{ onNavigate: (path: string) => void }> =
 
   const [selectedDate, setSelectedDate] = useState<string>(new Date().toISOString().split('T')[0]);
   const [searchMember, setSearchMember] = useState('');
+  const rawAllUpdates = updatesService.getUpdates({ podId });
+  const availableDates = Array.from(new Set(rawAllUpdates.map((u) => u.update_date))).filter(Boolean).sort().reverse();
   const [selectedStatus, setSelectedStatus] = useState('');
 
   const podMembers = dataStore
@@ -147,8 +149,13 @@ export const ManagerTeamPage: React.FC<{ onNavigate: (path: string) => void }> =
               className="px-3 py-1.5 bg-slate-900 border border-slate-800 rounded-xl text-xs text-slate-200 focus:outline-none focus:border-maple-500/50 cursor-pointer"
             >
               <option value={new Date().toISOString().split('T')[0]}>Today ({new Date().toISOString().split('T')[0]})</option>
-              <option value="2026-08-21">Aug 21, 2026</option>
-              <option value="2026-08-20">Aug 20, 2026</option>
+              {availableDates
+                .filter((d) => d !== new Date().toISOString().split('T')[0])
+                .map((d) => (
+                  <option key={d} value={d}>
+                    {new Date(d + 'T00:00:00').toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}
+                  </option>
+                ))}
             </select>
             <input
               type="date"
@@ -172,7 +179,12 @@ export const ManagerTeamPage: React.FC<{ onNavigate: (path: string) => void }> =
             </thead>
             <tbody className="divide-y divide-slate-800/60">
               {podMembers.map((member) => {
-                const update = podUpdates.find((u) => u.profile_id === member.id);
+                const update = podUpdates.find(
+                  (u) =>
+                    u.profile_id === member.id ||
+                    u.profile?.id === member.id ||
+                    (u.profile?.email && u.profile.email.toLowerCase().trim() === member.email.toLowerCase().trim())
+                );
                 const isSubmitted = !!update;
                 return (
                   <tr key={member.id} className="hover:bg-slate-800/40 transition-colors">

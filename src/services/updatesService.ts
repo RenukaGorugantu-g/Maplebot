@@ -7,11 +7,14 @@ export const updatesService = {
     let list = dataStore.getUpdates();
     if (filters?.podId) {
       list = list.filter(
-        (u) => u.pod_id === filters.podId || (u.profile?.pod_ids && u.profile.pod_ids.includes(filters.podId))
+        (u) =>
+          u.pod_id === filters.podId ||
+          u.profile?.pod_id === filters.podId ||
+          (u.profile?.pod_ids && u.profile.pod_ids.includes(filters.podId))
       );
     }
     if (filters?.profileId) {
-      list = list.filter((u) => u.profile_id === filters.profileId);
+      list = list.filter((u) => u.profile_id === filters.profileId || u.profile?.id === filters.profileId);
     }
     if (filters?.date) {
       list = list.filter((u) => u.update_date === filters.date);
@@ -29,15 +32,25 @@ export const updatesService = {
 
   getMemberUpdateToday(profileId: string): Update | undefined {
     const today = new Date().toISOString().split('T')[0];
-    return dataStore.getUpdates().find((u) => u.profile_id === profileId && u.update_date === today);
+    return dataStore
+      .getUpdates()
+      .find((u) => (u.profile_id === profileId || u.profile?.id === profileId) && u.update_date === today);
   },
 
   submitUpdate(data: Omit<Update, 'id' | 'submitted_at' | 'updated_at' | 'created_at'>): Update {
-    const update = dataStore.submitUpdate(data);
-    const profile =
-      dataStore.getProfileById(data.profile_id) ||
-      dataStore.getProfiles().find((p) => p.email.toLowerCase() === data.profile_id.toLowerCase()) ||
-      ({
+    const profile = dataStore.getProfileById(data.profile_id);
+    const effectivePodId = data.pod_id || profile?.pod_id;
+    const update = dataStore.submitUpdate({
+      ...data,
+      pod_id: effectivePodId,
+    });
+
+    const pod = effectivePodId ? dataStore.getPodById(effectivePodId) : undefined;
+
+    // Async dispatch to Google Chat space
+    googleChatService.sendDailyUpdateCard(
+      update,
+      profile || ({
         id: data.profile_id,
         full_name: 'Team Member',
         email: '',
@@ -45,12 +58,9 @@ export const updatesService = {
         organization_id: 'org-maple-01',
         timezone: 'America/Toronto',
         status: 'active',
-      } as any);
-
-    const pod = data.pod_id ? dataStore.getPodById(data.pod_id) : undefined;
-
-    // Async dispatch to Google Chat space
-    googleChatService.sendDailyUpdateCard(update, profile, pod?.name || 'All Departments');
+      } as any),
+      pod?.name || 'Maple Learning Solutions'
+    );
 
     return update;
   },

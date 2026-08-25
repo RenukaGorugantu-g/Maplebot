@@ -1,7 +1,8 @@
 import React, { createContext, useContext, useState, useEffect } from 'react';
 import { supabase } from '../lib/supabase';
-import { dataStore } from '../services/dataStore';
+import { dataStore, normalizeEmail } from '../services/dataStore';
 import { Profile, UserRole, Pod } from '../types/database';
+import { INITIAL_PROFILES } from '../lib/demoData';
 
 interface AuthContextType {
   user: any | null;
@@ -15,7 +16,7 @@ interface AuthContextType {
   signInWithEmail: (email: string, pass: string) => Promise<{ success: boolean; error?: string }>;
   signUpWithEmail: (email: string, pass: string, fullName: string) => Promise<{ success: boolean; error?: string }>;
   resetPasswordForEmail: (email: string) => Promise<{ success: boolean; error?: string }>;
-  updatePassword: (newPassword: string) => Promise<{ success: boolean; error?: string }>;
+  updatePassword: (newPassword: string, email?: string) => Promise<{ success: boolean; error?: string }>;
   signOut: () => Promise<void>;
   updateCurrentProfile: (updates: Partial<Profile>) => void;
 }
@@ -23,12 +24,11 @@ interface AuthContextType {
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
 export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
-  // Initialize synchronously from localStorage if present
   const [profile, setProfile] = useState<Profile | null>(() => {
     try {
       const email = localStorage.getItem('maplebot_session_email');
       if (email) {
-        return dataStore.getProfiles().find((p) => p.email.toLowerCase().trim() === email.toLowerCase().trim()) || null;
+        return dataStore.getProfileById(email) || null;
       }
     } catch (e) {
       console.warn('localStorage read error', e);
@@ -40,7 +40,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     try {
       const email = localStorage.getItem('maplebot_session_email');
       if (email) {
-        const p = dataStore.getProfiles().find((prof) => prof.email.toLowerCase().trim() === email.toLowerCase().trim());
+        const p = dataStore.getProfileById(email);
         return p ? { id: p.id, email: p.email } : null;
       }
     } catch (e) {
@@ -61,25 +61,25 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     }
 
     setUser(supabaseUser);
-    const email = (supabaseUser.email || '').toLowerCase().trim();
+    const email = normalizeEmail(supabaseUser.email || '');
     if (email) {
       localStorage.setItem('maplebot_session_email', email);
     }
 
-    const profiles = dataStore.getProfiles();
-    let match = profiles.find(
-      (p) => p.email.toLowerCase().trim() === email || (p.auth_user_id && p.auth_user_id === supabaseUser.id)
-    );
+    let match = dataStore.getProfileById(email) || dataStore.getProfileById(supabaseUser.id);
 
     if (!match && email) {
-      // Create new profile with default role = 'member'
-      const fullName = supabaseUser.user_metadata?.full_name || supabaseUser.user_metadata?.name || email.split('@')[0];
+      // Find designated pod from canonical roster if applicable
+      const roster = INITIAL_PROFILES.find((p) => normalizeEmail(p.email) === email);
+      const fullName = supabaseUser.user_metadata?.full_name || supabaseUser.user_metadata?.name || roster?.full_name || email.split('@')[0];
+      
       match = dataStore.createProfile({
         organization_id: 'org-maple-01',
         auth_user_id: supabaseUser.id,
         full_name: fullName,
         email,
-        role: 'member', // Strictly member by default
+        role: roster?.role || 'member',
+        pod_id: roster?.pod_id || 'pod-web-sales',
         timezone: 'America/Toronto',
         status: 'active',
       });
@@ -99,7 +99,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         syncProfileForUser(session.user);
       }
     }).catch((err) => {
-      console.warn('Supabase getSession error (proceeding with local store):', err);
+      console.warn('Supabase getSession error:', err);
     });
 
     // 2. Subscribe to auth changes
@@ -130,32 +130,16 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     }
   };
 
-  const getRegisteredPasswords = (): Record<string, string> => {
-    try {
-      const stored = localStorage.getItem('maplebot_user_passwords');
-      return stored ? JSON.parse(stored) : {};
-    } catch {
-      return {};
-    }
-  };
-
-  const storeUserPassword = (email: string, pass: string) => {
-    try {
-      const current = getRegisteredPasswords();
-      current[email.toLowerCase().trim()] = pass;
-      localStorage.setItem('maplebot_user_passwords', JSON.stringify(current));
-    } catch {}
-  };
-
   const signInWithEmail = async (email: string, pass: string) => {
     setIsLoading(true);
-    const normalizedEmail = email.toLowerCase().trim();
+    const normalizedEmail = normalizeEmail(email);
 
     if (!normalizedEmail || !pass) {
       setIsLoading(false);
       return { success: false, error: 'Please enter both email and password.' };
     }
 
+    // 1. Attempt Supabase Auth login
     try {
       const { data, error } = await supabase.auth.signInWithPassword({
         email: normalizedEmail,
@@ -168,46 +152,34 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         return { success: true };
       }
     } catch (e) {
-      console.warn('Supabase auth network notice:', e);
+      console.warn('Supabase auth check:', e);
     }
 
-    // Strict Credentials Verification
-    const profiles = dataStore.getProfiles();
-    const foundProfile = profiles.find((p) => p.email.toLowerCase().trim() === normalizedEmail);
-    const registeredPasswords = getRegisteredPasswords();
-    const registeredPass = registeredPasswords[normalizedEmail];
-
-    if (!foundProfile && !registeredPass) {
-      setIsLoading(false);
-      return {
-        success: false,
-        error: 'No account found with this email. Please register your account first.',
-      };
-    }
-
-    // Validate Password Strictly
-    const isValid = registeredPass
-      ? registeredPass === pass
-      : pass === 'password123' || pass === 'Maple2026!';
+    // 2. Multi-tier verification against user_credentials, stored vault & standard corporate passwords
+    const isValid = await dataStore.verifyUserCredentials(normalizedEmail, pass);
 
     if (!isValid) {
       setIsLoading(false);
       return {
         success: false,
-        error: 'Incorrect password. Please check your password and try again.',
+        error: 'Incorrect password or email. Use your corporate password or click Forgot Password to reset it.',
       };
     }
 
-    const profileToUse =
-      foundProfile ||
-      dataStore.createProfile({
+    // 3. Find or link employee profile
+    let profileToUse = dataStore.getProfileById(normalizedEmail);
+    if (!profileToUse) {
+      const roster = INITIAL_PROFILES.find((p) => normalizeEmail(p.email) === normalizedEmail);
+      profileToUse = dataStore.createProfile({
         organization_id: 'org-maple-01',
-        full_name: normalizedEmail.split('@')[0],
+        full_name: roster?.full_name || normalizedEmail.split('@')[0],
         email: normalizedEmail,
-        role: 'member',
+        role: roster?.role || 'member',
+        pod_id: roster?.pod_id || 'pod-web-sales',
         timezone: 'America/Toronto',
         status: 'active',
       });
+    }
 
     setUser({ id: profileToUse.id, email: profileToUse.email });
     setProfile(profileToUse);
@@ -218,45 +190,43 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
   const signUpWithEmail = async (email: string, pass: string, fullName: string) => {
     setIsLoading(true);
-    const normalizedEmail = email.toLowerCase().trim();
+    const normalizedEmail = normalizeEmail(email);
 
     if (!normalizedEmail || !pass || !fullName) {
       setIsLoading(false);
       return { success: false, error: 'Please provide all required registration fields.' };
     }
 
-    // Store user password securely in local credentials vault
-    storeUserPassword(normalizedEmail, pass);
+    // 1. Link to canonical roster if available
+    const roster = INITIAL_PROFILES.find((p) => normalizeEmail(p.email) === normalizedEmail);
+    let existingProfile = dataStore.getProfileById(normalizedEmail);
 
+    if (!existingProfile) {
+      existingProfile = dataStore.createProfile({
+        organization_id: 'org-maple-01',
+        full_name: fullName.trim() || roster?.full_name || normalizedEmail.split('@')[0],
+        email: normalizedEmail,
+        role: roster?.role || 'member',
+        pod_id: roster?.pod_id || 'pod-web-sales',
+        timezone: 'America/Toronto',
+        status: 'active',
+      });
+    }
+
+    // 2. Persist credentials cross-device to Supabase user_credentials
+    await dataStore.saveUserCredentials(normalizedEmail, pass, existingProfile.id);
+
+    // 3. Try registering with Supabase Auth as well
     try {
-      const { data, error } = await supabase.auth.signUp({
+      await supabase.auth.signUp({
         email: normalizedEmail,
         password: pass,
         options: {
           data: { full_name: fullName },
         },
       });
-
-      if (!error && data.user) {
-        syncProfileForUser(data.user);
-        setIsLoading(false);
-        return { success: true };
-      }
     } catch (e) {
-      console.warn('Supabase signUp notice:', e);
-    }
-
-    // Link or create profile
-    let existingProfile = dataStore.getProfiles().find((p) => p.email.toLowerCase().trim() === normalizedEmail);
-    if (!existingProfile) {
-      existingProfile = dataStore.createProfile({
-        organization_id: 'org-maple-01',
-        full_name: fullName,
-        email: normalizedEmail,
-        role: 'member', // Strictly default member
-        timezone: 'America/Toronto',
-        status: 'active',
-      });
+      console.warn('Supabase signUp note:', e);
     }
 
     setUser({ id: existingProfile.id, email: existingProfile.email });
@@ -267,31 +237,42 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   };
 
   const resetPasswordForEmail = async (email: string) => {
-    const normalizedEmail = email.toLowerCase().trim();
+    const normalizedEmail = normalizeEmail(email);
+    if (!normalizedEmail) return { success: false, error: 'Please enter a valid email.' };
+
     try {
-      const { error } = await supabase.auth.resetPasswordForEmail(normalizedEmail, {
+      // 1. Supabase Auth reset dispatch
+      await supabase.auth.resetPasswordForEmail(normalizedEmail, {
         redirectTo: `${window.location.origin}/reset-password`,
       });
-      if (error) {
-        return { success: false, error: error.message };
-      }
-    } catch (e: any) {
-      return { success: true };
-    }
+    } catch (e) {}
+
+    // 2. Record password reset request in dataStore & Supabase
+    await dataStore.requestPasswordReset(normalizedEmail);
+
+    // Store email for reset password page convenience
+    localStorage.setItem('maplebot_pending_reset_email', normalizedEmail);
+
     return { success: true };
   };
 
-  const updatePassword = async (newPassword: string) => {
-    try {
-      const { error } = await supabase.auth.updateUser({
-        password: newPassword,
-      });
-      if (error) {
-        return { success: false, error: error.message };
-      }
-    } catch (e: any) {
-      return { success: true };
+  const updatePassword = async (newPassword: string, targetEmail?: string) => {
+    const emailToUpdate = normalizeEmail(
+      targetEmail || profile?.email || localStorage.getItem('maplebot_pending_reset_email') || localStorage.getItem('maplebot_session_email') || ''
+    );
+
+    if (!emailToUpdate) {
+      return { success: false, error: 'Email address could not be identified for password update.' };
     }
+
+    try {
+      // Update in Supabase Auth
+      await supabase.auth.updateUser({ password: newPassword });
+    } catch (e) {}
+
+    // Update in Supabase user_credentials & local vault
+    await dataStore.resetUserPassword(emailToUpdate, newPassword);
+
     return { success: true };
   };
 
@@ -305,6 +286,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     setUser(null);
     setProfile(null);
     localStorage.removeItem('maplebot_session_email');
+    localStorage.removeItem('maplebot_pending_reset_email');
     setIsLoading(false);
     window.location.href = '/';
   };

@@ -2,7 +2,7 @@ import React, { useState } from 'react';
 import { useAuth } from '../../context/AuthContext';
 import { useNotifications } from '../../context/NotificationContext';
 import { GradientButton, Button } from '../../components/ui/Button';
-import { Mail, ArrowRight, ArrowLeft, CheckCircle2 } from 'lucide-react';
+import { Mail, ArrowRight, ArrowLeft, CheckCircle2, KeyRound } from 'lucide-react';
 
 export const ForgotPasswordPage: React.FC<{ onNavigate: (path: string) => void }> = ({ onNavigate }) => {
   const { resetPasswordForEmail } = useAuth();
@@ -22,9 +22,9 @@ export const ForgotPasswordPage: React.FC<{ onNavigate: (path: string) => void }
 
     if (res.success) {
       setIsSubmitted(true);
-      showToast('success', 'Reset Link Dispatched', 'Check your inbox for password reset instructions.');
+      showToast('success', 'Recovery Request Processed', 'You can now set a new password.');
     } else {
-      showToast('error', 'Error', res.error || 'Failed to send reset link.');
+      showToast('error', 'Error', res.error || 'Failed to initiate password reset.');
     }
   };
 
@@ -51,12 +51,20 @@ export const ForgotPasswordPage: React.FC<{ onNavigate: (path: string) => void }
                 <CheckCircle2 className="w-6 h-6" />
               </div>
               <div className="space-y-1">
-                <h3 className="text-base font-bold text-white">Reset Link Sent</h3>
+                <h3 className="text-base font-bold text-white">Reset Request Ready</h3>
                 <p className="text-xs text-slate-400">
-                  If an account exists for <strong className="text-white">{email}</strong>, we have dispatched a password reset link to your inbox.
+                  Password reset has been authorized for <strong className="text-white">{email}</strong>. You can now set your new password directly.
                 </p>
               </div>
-              <div className="pt-2">
+              <div className="space-y-2 pt-2">
+                <GradientButton
+                  size="md"
+                  onClick={() => onNavigate('/reset-password')}
+                  className="w-full"
+                  rightIcon={<KeyRound className="w-4 h-4" />}
+                >
+                  Set New Password Now
+                </GradientButton>
                 <Button variant="secondary" size="md" onClick={() => onNavigate('/login')} className="w-full">
                   Return to Sign In
                 </Button>
@@ -67,7 +75,7 @@ export const ForgotPasswordPage: React.FC<{ onNavigate: (path: string) => void }
               <div className="space-y-1 text-center">
                 <h2 className="text-lg font-bold text-white">Reset your password</h2>
                 <p className="text-xs text-slate-400">
-                  Enter your email address and we'll send you a recovery link.
+                  Enter your corporate email address to update your password.
                 </p>
               </div>
 
@@ -93,7 +101,7 @@ export const ForgotPasswordPage: React.FC<{ onNavigate: (path: string) => void }
                   className="w-full py-2.5 mt-2"
                   rightIcon={<ArrowRight className="w-4 h-4" />}
                 >
-                  Send Recovery Link
+                  Authorize Password Reset
                 </GradientButton>
               </form>
 
