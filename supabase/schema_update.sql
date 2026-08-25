@@ -1,5 +1,5 @@
 -- ============================================================================
--- MAPLEBOT: SUPABASE CREDENTIALS, FORGOT PASSWORD & ROSTER SQL SCRIPT
+-- MAPLEBOT: SUPABASE CREDENTIALS, FORGOT PASSWORD, COMMENTS & ROSTER SQL SCRIPT
 -- Paste and execute this entire script in your Supabase SQL Editor.
 -- ============================================================================
 
@@ -23,9 +23,20 @@ CREATE TABLE IF NOT EXISTS password_resets (
     created_at TIMESTAMPTZ DEFAULT NOW()
 );
 
--- 3. Configure Row Level Security (RLS)
+-- 3. Create Standup Feed Comments Table
+CREATE TABLE IF NOT EXISTS update_comments (
+    id TEXT PRIMARY KEY DEFAULT ('comm-' || substr(md5(random()::text), 1, 8)),
+    update_id TEXT NOT NULL REFERENCES updates(id) ON DELETE CASCADE,
+    user_id TEXT NOT NULL,
+    user_name TEXT,
+    comment TEXT NOT NULL,
+    created_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+-- 4. Configure Row Level Security (RLS)
 ALTER TABLE user_credentials ENABLE ROW LEVEL SECURITY;
 ALTER TABLE password_resets ENABLE ROW LEVEL SECURITY;
+ALTER TABLE update_comments ENABLE ROW LEVEL SECURITY;
 
 DROP POLICY IF EXISTS "Allow anon all on user_credentials" ON user_credentials;
 CREATE POLICY "Allow anon all on user_credentials" ON user_credentials FOR ALL USING (true) WITH CHECK (true);
@@ -33,11 +44,14 @@ CREATE POLICY "Allow anon all on user_credentials" ON user_credentials FOR ALL U
 DROP POLICY IF EXISTS "Allow anon all on password_resets" ON password_resets;
 CREATE POLICY "Allow anon all on password_resets" ON password_resets FOR ALL USING (true) WITH CHECK (true);
 
--- 4. Lift Blocker Category Constraints so any category (like 'Task', 'External', 'Dependency') is saved
+DROP POLICY IF EXISTS "Allow anon all on update_comments" ON update_comments;
+CREATE POLICY "Allow anon all on update_comments" ON update_comments FOR ALL USING (true) WITH CHECK (true);
+
+-- 5. Lift Blocker Category Constraints so all categories (like 'Task', 'External', etc.) are saved
 ALTER TABLE updates DROP CONSTRAINT IF EXISTS updates_blocker_category_check;
 ALTER TABLE blockers DROP CONSTRAINT IF EXISTS blockers_category_check;
 
--- 5. Seed / Upsert Canonical Organization & Pods
+-- 6. Seed / Upsert Canonical Organization & Pods
 INSERT INTO organizations (id, name, slug, timezone)
 VALUES ('org-maple-01', 'Maple Learning Solutions', 'maple-learning-solutions', 'America/Toronto')
 ON CONFLICT (id) DO NOTHING;
@@ -54,7 +68,7 @@ ON CONFLICT (id) DO UPDATE SET
   manager_id = EXCLUDED.manager_id,
   status = EXCLUDED.status;
 
--- 6. Seed / Upsert All Canonical Member Profiles
+-- 7. Seed / Upsert All Canonical Member Profiles
 INSERT INTO profiles (id, organization_id, full_name, email, role, pod_id, status)
 VALUES 
   ('prof-admin', 'org-maple-01', 'Maple Edge Admin', 'info@maplelearningsolutions.com', 'admin', NULL, 'active'),
@@ -84,14 +98,14 @@ ON CONFLICT (id) DO UPDATE SET
   pod_id = EXCLUDED.pod_id,
   status = EXCLUDED.status;
 
--- 7. Clean up typo duplicate profiles & reassign updates
+-- 8. Clean up typo duplicate profiles & reassign updates
 UPDATE profiles SET full_name = 'Pratap Rudra', pod_id = 'pod-elearning', status = 'active' WHERE id = 'user-1787630983073' OR email LIKE 'pratap@%';
 UPDATE profiles SET full_name = 'Susan Vijaya', pod_id = 'pod-web-sales', status = 'active' WHERE id = 'user-1787631395149' OR email LIKE 'susan@%';
 
 UPDATE updates SET profile_id = 'prof-pratap', pod_id = 'pod-elearning' WHERE profile_id = 'user-1787630983073';
 UPDATE updates SET profile_id = 'prof-susan', pod_id = 'pod-web-sales' WHERE profile_id = 'user-1787631395149';
 
--- 8. Seed Default Passwords in user_credentials for all team members
+-- 9. Seed Default Passwords in user_credentials for all team members
 INSERT INTO user_credentials (email, password_hash, profile_id)
 VALUES 
   ('info@maplelearningsolutions.com', 'admin', 'prof-admin'),

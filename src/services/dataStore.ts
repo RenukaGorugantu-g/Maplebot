@@ -9,12 +9,14 @@ import {
   Profile,
   Checkin,
   Update,
+  UpdateComment,
   Blocker,
   Kudos,
   Sprint,
   NotificationItem,
   GoogleChatSettings,
-  AuditLog
+  AuditLog,
+  BlockerCategory
 } from '../types/database';
 import {
   INITIAL_ORG,
@@ -41,10 +43,11 @@ export function normalizeEmail(email: string): string {
   return clean;
 }
 
-export function sanitizeBlockerCategory(cat?: string): import('../types/database').BlockerCategory {
+export function sanitizeBlockerCategory(cat?: string): BlockerCategory {
   if (!cat) return 'Other';
-  const allowed: import('../types/database').BlockerCategory[] = ['Task', 'Project', 'Client', 'Team', 'Access', 'Dependency', 'Technical', 'Resource', 'Other'];
-  if (allowed.includes(cat as any)) return cat as import('../types/database').BlockerCategory;
+  const allowed: BlockerCategory[] = ['Task', 'Project', 'Client', 'Team', 'Access', 'Dependency', 'Technical', 'Resource', 'Other'];
+  if (allowed.includes(cat as any)) return cat as BlockerCategory;
+  if (cat.toLowerCase() === 'task' || cat.toLowerCase() === 'process') return 'Dependency';
   return 'Other';
 }
 
@@ -84,7 +87,8 @@ class MapleDataStore {
     }
 
     this.checkin = INITIAL_CHECKIN;
-    this.updates = savedUpdates ? JSON.parse(savedUpdates) : INITIAL_UPDATES;
+    const initialRawUpdates: Update[] = savedUpdates ? JSON.parse(savedUpdates) : INITIAL_UPDATES;
+    this.updates = this.mergeUpdatesWithComments(initialRawUpdates, []);
     this.blockers = savedBlockers ? JSON.parse(savedBlockers) : INITIAL_BLOCKERS;
     this.kudos = savedKudos ? JSON.parse(savedKudos) : INITIAL_KUDOS;
     this.sprint = INITIAL_SPRINT;
@@ -96,12 +100,57 @@ class MapleDataStore {
     this.initSupabaseSync();
   }
 
+  // --- COMMENTS VAULT STORAGE ---
+  private getStoredCommentsVault(): Record<string, UpdateComment[]> {
+    try {
+      const raw = localStorage.getItem('maplebot_comments_vault');
+      return raw ? JSON.parse(raw) : {};
+    } catch {
+      return {};
+    }
+  }
+
+  private saveStoredCommentsVault(vault: Record<string, UpdateComment[]>) {
+    try {
+      localStorage.setItem('maplebot_comments_vault', JSON.stringify(vault));
+    } catch {}
+  }
+
+  private mergeUpdatesWithComments(dbUpdates: Update[], dbComments: UpdateComment[] = []): Update[] {
+    const vault = this.getStoredCommentsVault();
+    const result = dbUpdates.map((u) => {
+      const fromDb = dbComments.filter((c) => c.update_id === u.id);
+      const fromVault = vault[u.id] || [];
+      const fromMemory = (this.updates || []).find((old) => old.id === u.id)?.comments || [];
+
+      const commentMap = new Map<string, UpdateComment>();
+      [...fromMemory, ...fromVault, ...fromDb].forEach((c) => {
+        if (c && c.id) commentMap.set(c.id, c);
+      });
+
+      const mergedComments = Array.from(commentMap.values()).sort(
+        (a, b) => new Date(a.created_at).getTime() - new Date(b.created_at).getTime()
+      );
+
+      if (mergedComments.length > 0) {
+        vault[u.id] = mergedComments;
+      }
+
+      return {
+        ...u,
+        comments: mergedComments,
+      };
+    });
+
+    this.saveStoredCommentsVault(vault);
+    return result;
+  }
+
   private async initSupabaseSync() {
     try {
       // 1. Fetch live profiles from Supabase
       const { data: dbProfiles, error: profError } = await supabase.from('profiles').select('*');
       if (!profError && dbProfiles && dbProfiles.length > 0) {
-        // Merge DB profiles with canonical roster
         const merged = [...INITIAL_PROFILES];
         for (const dbp of dbProfiles) {
           const idx = merged.findIndex((m) => m.id === dbp.id || m.email.toLowerCase() === dbp.email.toLowerCase());
@@ -120,17 +169,26 @@ class MapleDataStore {
         this.pods = dbPods;
       }
 
-      // 3. Fetch live updates from Supabase
+      // 3. Fetch live comments from Supabase (if table exists)
+      let dbComments: UpdateComment[] = [];
+      try {
+        const { data: cData, error: cErr } = await supabase.from('update_comments').select('*');
+        if (!cErr && cData) {
+          dbComments = cData;
+        }
+      } catch (e) {}
+
+      // 4. Fetch live updates from Supabase
       const { data: dbUpdates, error: updError } = await supabase
         .from('updates')
         .select('*')
         .order('submitted_at', { ascending: false });
 
       if (!updError && dbUpdates && dbUpdates.length > 0) {
-        this.updates = dbUpdates;
+        this.updates = this.mergeUpdatesWithComments(dbUpdates, dbComments);
       }
 
-      // 4. Fetch live blockers from Supabase
+      // 5. Fetch live blockers from Supabase
       const { data: dbBlockers, error: blkError } = await supabase
         .from('blockers')
         .select('*')
@@ -140,7 +198,7 @@ class MapleDataStore {
         this.blockers = dbBlockers;
       }
 
-      // 5. Fetch live kudos from Supabase
+      // 6. Fetch live kudos from Supabase
       const { data: dbKudos, error: kudError } = await supabase
         .from('kudos')
         .select('*')
@@ -150,7 +208,7 @@ class MapleDataStore {
         this.kudos = dbKudos;
       }
 
-      // 6. Fetch checkin & questions from Supabase
+      // 7. Fetch checkin & questions from Supabase
       const { data: dbCheckins } = await supabase.from('checkins').select('*').limit(1);
       const { data: dbQuestions } = await supabase.from('checkin_questions').select('*').order('sort_order', { ascending: true });
       if (dbCheckins && dbCheckins.length > 0) {
@@ -162,22 +220,40 @@ class MapleDataStore {
 
       this.notify();
 
-      // 7. Subscribe to Supabase real-time updates across tables
+      // 8. Subscribe to Supabase real-time updates across tables
       supabase
         .channel('public-sync')
         .on('postgres_changes', { event: '*', schema: 'public', table: 'updates' }, (payload) => {
           if (payload.eventType === 'INSERT') {
             const newUpd = payload.new as Update;
             if (!this.updates.some((u) => u.id === newUpd.id)) {
-              this.updates.unshift(newUpd);
+              const merged = this.mergeUpdatesWithComments([newUpd], [])[0];
+              this.updates.unshift(merged);
               this.notify();
             }
           } else if (payload.eventType === 'UPDATE') {
             const updated = payload.new as Update;
             const idx = this.updates.findIndex((u) => u.id === updated.id);
             if (idx !== -1) {
-              this.updates[idx] = updated;
+              const currentComments = this.updates[idx].comments || [];
+              this.updates[idx] = { ...updated, comments: currentComments };
               this.notify();
+            }
+          }
+        })
+        .on('postgres_changes', { event: '*', schema: 'public', table: 'update_comments' }, (payload) => {
+          if (payload.eventType === 'INSERT') {
+            const newComm = payload.new as UpdateComment;
+            const targetUpdate = this.updates.find((u) => u.id === newComm.update_id);
+            if (targetUpdate) {
+              const existing = targetUpdate.comments || [];
+              if (!existing.some((c) => c.id === newComm.id)) {
+                targetUpdate.comments = [...existing, newComm];
+                const vault = this.getStoredCommentsVault();
+                vault[newComm.update_id] = targetUpdate.comments;
+                this.saveStoredCommentsVault(vault);
+                this.notify();
+              }
             }
           }
         })
@@ -357,7 +433,7 @@ class MapleDataStore {
     );
     if (match) return match;
 
-    // 4. Name match fallback (e.g. 'pratap' or 'susan')
+    // 4. Name match fallback
     match = this.profiles.find((p) => {
       const pName = p.full_name.toLowerCase().trim();
       return pName === cleanLower || pName.startsWith(cleanLower) || cleanLower.startsWith(pName);
@@ -389,17 +465,24 @@ class MapleDataStore {
         this.pods = dbPods;
       }
 
-      // 3. Sync Updates
+      // 3. Sync Comments
+      let dbComments: UpdateComment[] = [];
+      try {
+        const { data: cData } = await supabase.from('update_comments').select('*');
+        if (cData) dbComments = cData;
+      } catch (e) {}
+
+      // 4. Sync Updates
       const { data: dbUpdates, error: updError } = await supabase
         .from('updates')
         .select('*')
         .order('submitted_at', { ascending: false });
 
       if (!updError && dbUpdates) {
-        this.updates = dbUpdates;
+        this.updates = this.mergeUpdatesWithComments(dbUpdates, dbComments);
       }
 
-      // 4. Sync Blockers
+      // 5. Sync Blockers
       const { data: dbBlockers, error: blkError } = await supabase
         .from('blockers')
         .select('*')
@@ -409,7 +492,7 @@ class MapleDataStore {
         this.blockers = dbBlockers;
       }
 
-      // 5. Sync Kudos
+      // 6. Sync Kudos
       const { data: dbKudos, error: kudError } = await supabase
         .from('kudos')
         .select('*')
@@ -428,7 +511,6 @@ class MapleDataStore {
   public createProfile(profile: Omit<Profile, 'id' | 'created_at' | 'updated_at'>): Profile {
     const normalized = normalizeEmail(profile.email);
     
-    // Check if canonical profile exists
     const existing = this.getProfileById(normalized);
     if (existing) {
       const updated = this.updateProfile(existing.id, {
@@ -518,7 +600,6 @@ class MapleDataStore {
     return this.updates.map((u) => {
       let profile = this.getProfileById(u.profile_id);
       
-      // Fallback safe profile resolution so name and pod are NEVER blank
       if (!profile) {
         const rosterMatch = INITIAL_PROFILES.find(
           (p) => p.id === u.profile_id || p.email.toLowerCase().includes((u.profile_id || '').toLowerCase())
@@ -579,6 +660,7 @@ class MapleDataStore {
         submitted_at: now,
         updated_at: now,
         created_at: now,
+        comments: [],
       };
       this.updates.unshift(resultUpdate);
       this.logAudit('UPDATE_SUBMITTED', 'Update', resultUpdate.id, {
@@ -601,7 +683,6 @@ class MapleDataStore {
       }
     }
 
-    // Always guarantee persistence to Supabase
     if (authorProfile) {
       supabase
         .from('profiles')
@@ -667,18 +748,15 @@ class MapleDataStore {
     const norm = normalizeEmail(email);
     if (!norm || !pass) return false;
 
-    // 1. Check in-memory local credentials vault
     const local = this.getLocalPasswords();
     if (local[norm] && local[norm] === pass) {
       return true;
     }
 
-    // 2. Corporate universal default passwords
     if (['password', 'password123', 'admin', 'Maple2026!'].includes(pass)) {
       return true;
     }
 
-    // 3. Supabase user_credentials table lookup
     try {
       const { data, error } = await supabase
         .from('user_credentials')
@@ -741,7 +819,7 @@ class MapleDataStore {
   public addUpdateComment(updateId: string, commentData: { user_id: string; user_name: string; comment: string }): Update | undefined {
     const idx = this.updates.findIndex((u) => u.id === updateId);
     if (idx !== -1) {
-      const newComment = {
+      const newComment: UpdateComment = {
         id: `comm-${Date.now()}`,
         update_id: updateId,
         user_id: commentData.user_id,
@@ -750,15 +828,38 @@ class MapleDataStore {
         created_at: new Date().toISOString(),
       };
       const existingComments = this.updates[idx].comments || [];
+      const updatedComments = [...existingComments, newComment];
       this.updates[idx] = {
         ...this.updates[idx],
-        comments: [...existingComments, newComment],
+        comments: updatedComments,
       };
+
+      // Guarantee persistence to persistent vault
+      const vault = this.getStoredCommentsVault();
+      vault[updateId] = updatedComments;
+      this.saveStoredCommentsVault(vault);
+
       this.logAudit('UPDATE_COMMENT_ADDED', 'Update', updateId, {
         userName: commentData.user_name,
         comment: commentData.comment,
       });
       this.notify();
+
+      // Persist to Supabase update_comments table
+      supabase
+        .from('update_comments')
+        .insert({
+          id: newComment.id,
+          update_id: updateId,
+          user_id: commentData.user_id,
+          user_name: commentData.user_name,
+          comment: commentData.comment,
+          created_at: newComment.created_at,
+        })
+        .then(({ error }) => {
+          if (error) console.warn('Supabase update comment insert note:', error);
+        });
+
       return this.updates[idx];
     }
     return undefined;
