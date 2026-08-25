@@ -37,9 +37,13 @@ import { supabase } from '../lib/supabase';
 export function normalizeEmail(email: string): string {
   if (!email) return '';
   let clean = email.toLowerCase().trim();
-  clean = clean.replace('@maplelearningsoulutions.com', '@maplelearningsolutions.com');
-  clean = clean.replace('@maplelearningsolutions.co', '@maplelearningsolutions.com');
-  clean = clean.replace('@maplelearning.com', '@maplelearningsolutions.com');
+  clean = clean.replace(/[\s\u200B-\u200D\uFEFF]/g, '');
+  clean = clean.replace(/@maplelearningsoulutions.*$/, '@maplelearningsolutions.com');
+  clean = clean.replace(/@maplelearning.*$/, '@maplelearningsolutions.com');
+  clean = clean.replace(/\.comm+$/, '.com');
+  clean = clean.replace(/\.co$/, '.com');
+  clean = clean.replace(/\.con$/, '.com');
+  clean = clean.replace(/\.cm$/, '.com');
   return clean;
 }
 
