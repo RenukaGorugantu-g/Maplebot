@@ -41,6 +41,13 @@ export function normalizeEmail(email: string): string {
   return clean;
 }
 
+export function sanitizeBlockerCategory(cat?: string): import('../types/database').BlockerCategory {
+  if (!cat) return 'Other';
+  const allowed: import('../types/database').BlockerCategory[] = ['Task', 'Project', 'Client', 'Team', 'Access', 'Dependency', 'Technical', 'Resource', 'Other'];
+  if (allowed.includes(cat as any)) return cat as import('../types/database').BlockerCategory;
+  return 'Other';
+}
+
 class MapleDataStore {
   private organization: Organization;
   private pods: Pod[];
@@ -587,7 +594,7 @@ class MapleDataStore {
           pod_id: effectivePodId,
           title: data.blocker.length > 50 ? data.blocker.slice(0, 47) + '...' : data.blocker,
           description: `${data.blocker}\n\nSupport Needed: ${data.support_needed || 'None specified'}`,
-          category: data.blocker_category || 'Other',
+          category: sanitizeBlockerCategory(data.blocker_category),
           severity: data.status === 'blocked' ? 'high' : 'medium',
           status: 'open',
         });
@@ -624,7 +631,7 @@ class MapleDataStore {
         today: resultUpdate.today,
         has_blocker: resultUpdate.has_blocker,
         blocker: resultUpdate.blocker || null,
-        blocker_category: resultUpdate.blocker_category || null,
+        blocker_category: resultUpdate.blocker_category ? sanitizeBlockerCategory(resultUpdate.blocker_category) : null,
         support_needed: resultUpdate.support_needed || null,
         status: resultUpdate.status,
         priority: resultUpdate.priority,
@@ -804,7 +811,7 @@ class MapleDataStore {
         pod_id: newBlocker.pod_id || null,
         title: newBlocker.title,
         description: newBlocker.description,
-        category: newBlocker.category,
+        category: sanitizeBlockerCategory(newBlocker.category),
         severity: newBlocker.severity,
         status: newBlocker.status,
         assigned_to: newBlocker.assigned_to || null,

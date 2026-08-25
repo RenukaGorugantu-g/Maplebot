@@ -8,7 +8,7 @@ export type UpdateStatus = 'on_track' | 'at_risk' | 'blocked';
 export type UpdatePriority = 'low' | 'medium' | 'high';
 export type BlockerSeverity = 'low' | 'medium' | 'high' | 'critical';
 export type BlockerStatus = 'open' | 'in_progress' | 'resolved' | 'closed';
-export type BlockerCategory = 'Task' | 'Project' | 'Client' | 'Team' | 'Access' | 'Dependency' | 'Other';
+export type BlockerCategory = 'Task' | 'Project' | 'Client' | 'Team' | 'Access' | 'Dependency' | 'Technical' | 'Resource' | 'Other';
 export type KudosCategory = 'Teamwork' | 'Ownership' | 'Innovation' | 'Customer Focus' | 'Helping Others' | 'Great Work';
 export type SprintStatus = 'upcoming' | 'active' | 'completed';
 

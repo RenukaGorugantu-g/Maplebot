@@ -23,7 +23,7 @@ CREATE TABLE IF NOT EXISTS password_resets (
     created_at TIMESTAMPTZ DEFAULT NOW()
 );
 
--- 3. Configure Row Level Security (RLS) for seamless web app access
+-- 3. Configure Row Level Security (RLS)
 ALTER TABLE user_credentials ENABLE ROW LEVEL SECURITY;
 ALTER TABLE password_resets ENABLE ROW LEVEL SECURITY;
 
@@ -33,7 +33,11 @@ CREATE POLICY "Allow anon all on user_credentials" ON user_credentials FOR ALL U
 DROP POLICY IF EXISTS "Allow anon all on password_resets" ON password_resets;
 CREATE POLICY "Allow anon all on password_resets" ON password_resets FOR ALL USING (true) WITH CHECK (true);
 
--- 4. Seed / Upsert Canonical Organization & Pods
+-- 4. Lift Blocker Category Constraints so any category (like 'Task', 'External', 'Dependency') is saved
+ALTER TABLE updates DROP CONSTRAINT IF EXISTS updates_blocker_category_check;
+ALTER TABLE blockers DROP CONSTRAINT IF EXISTS blockers_category_check;
+
+-- 5. Seed / Upsert Canonical Organization & Pods
 INSERT INTO organizations (id, name, slug, timezone)
 VALUES ('org-maple-01', 'Maple Learning Solutions', 'maple-learning-solutions', 'America/Toronto')
 ON CONFLICT (id) DO NOTHING;
@@ -50,7 +54,7 @@ ON CONFLICT (id) DO UPDATE SET
   manager_id = EXCLUDED.manager_id,
   status = EXCLUDED.status;
 
--- 5. Seed / Upsert All 16 Canonical Member Profiles
+-- 6. Seed / Upsert All Canonical Member Profiles
 INSERT INTO profiles (id, organization_id, full_name, email, role, pod_id, status)
 VALUES 
   ('prof-admin', 'org-maple-01', 'Maple Edge Admin', 'info@maplelearningsolutions.com', 'admin', NULL, 'active'),
@@ -80,14 +84,14 @@ ON CONFLICT (id) DO UPDATE SET
   pod_id = EXCLUDED.pod_id,
   status = EXCLUDED.status;
 
--- 6. Clean up any typo duplicate profiles & reassign updates to canonical profiles
+-- 7. Clean up typo duplicate profiles & reassign updates
 UPDATE profiles SET full_name = 'Pratap Rudra', pod_id = 'pod-elearning', status = 'active' WHERE id = 'user-1787630983073' OR email LIKE 'pratap@%';
 UPDATE profiles SET full_name = 'Susan Vijaya', pod_id = 'pod-web-sales', status = 'active' WHERE id = 'user-1787631395149' OR email LIKE 'susan@%';
 
 UPDATE updates SET profile_id = 'prof-pratap', pod_id = 'pod-elearning' WHERE profile_id = 'user-1787630983073';
 UPDATE updates SET profile_id = 'prof-susan', pod_id = 'pod-web-sales' WHERE profile_id = 'user-1787631395149';
 
--- 7. Seed Default Passwords in user_credentials for all team members
+-- 8. Seed Default Passwords in user_credentials for all team members
 INSERT INTO user_credentials (email, password_hash, profile_id)
 VALUES 
   ('info@maplelearningsolutions.com', 'admin', 'prof-admin'),
