@@ -1806,9 +1806,7 @@ class MapleDataStore {
       if (filter?.employeeId) {
         const targetProf = this.getProfileById(filter.employeeId);
         const nameMatch = targetProf && l.employee_name.toLowerCase().includes(targetProf.full_name.split(' ')[0].toLowerCase());
-        const idMatch = l.employee_id === filter.employeeId ||
-          (filter.employeeId === 'prof-sample-member' && (l.employee_id === 'prof-harshika' || l.employee_id === 'prof-sample-member')) ||
-          (filter.employeeId === 'prof-sample-podlead' && (l.employee_id === 'prof-renuka' || l.employee_id === 'prof-sample-podlead'));
+        const idMatch = l.employee_id === filter.employeeId;
         if (!idMatch && !nameMatch) return false;
       }
       if (filter?.podId && l.pod_id !== filter.podId) return false;
@@ -1825,7 +1823,7 @@ class MapleDataStore {
   }
 
   public applyLeave(leave: Partial<LeaveRequest>): LeaveRequest {
-    const empId = leave.employee_id || 'prof-sample-member';
+    const empId = leave.employee_id || '';
     const profile = this.getProfileById(empId);
     const pod = profile?.pod_id ? this.getPodById(profile.pod_id) : undefined;
 
@@ -1845,7 +1843,7 @@ class MapleDataStore {
       id: `leave-${Date.now()}-${Math.random().toString(36).substr(2, 6)}`,
       organization_id: profile?.organization_id || 'org-maple-01',
       employee_id: empId,
-      employee_name: profile?.full_name || leave.employee_name || 'Harshika Netha',
+      employee_name: profile?.full_name || leave.employee_name || 'Team Member',
       pod_id: profile?.pod_id || 'pod-web-sales',
       pod_name: pod?.name || 'Web & Sales',
       leave_type: leave.leave_type || 'Paid Time Off (PTO)',

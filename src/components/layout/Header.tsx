@@ -119,41 +119,6 @@ export const Header: React.FC<HeaderProps> = ({
 
       {/* Right Controls */}
       <div className="flex items-center gap-2 sm:gap-3">
-        {/* QUICK TEST ROLE SWITCHER */}
-        <div className="hidden md:flex items-center bg-slate-900/90 border border-slate-800 p-0.5 rounded-xl text-[11px]">
-          <span className="px-2 text-[10px] uppercase font-bold text-slate-400">Test Role:</span>
-          <button
-            onClick={() => switchProfile('member@maple.com')}
-            className={`px-2 py-1 rounded-lg font-medium transition-all ${
-              currentRole === 'member'
-                ? 'bg-maple-500 text-slate-950 font-bold shadow'
-                : 'text-slate-400 hover:text-white'
-            }`}
-          >
-            Member
-          </button>
-          <button
-            onClick={() => switchProfile('podlead@maple.com')}
-            className={`px-2 py-1 rounded-lg font-medium transition-all ${
-              currentRole === 'manager'
-                ? 'bg-maple-500 text-slate-950 font-bold shadow'
-                : 'text-slate-400 hover:text-white'
-            }`}
-          >
-            Pod Lead
-          </button>
-          <button
-            onClick={() => switchProfile('manager@maple.com')}
-            className={`px-2 py-1 rounded-lg font-medium transition-all ${
-              currentRole === 'admin'
-                ? 'bg-maple-500 text-slate-950 font-bold shadow'
-                : 'text-slate-400 hover:text-white'
-            }`}
-          >
-            Manager
-          </button>
-        </div>
-
         {/* Global Search */}
         <button
           onClick={onOpenSearch}
@@ -198,7 +163,7 @@ export const Header: React.FC<HeaderProps> = ({
         <div className="relative">
           <button
             onClick={() => setIsProfileMenuOpen(!isProfileMenuOpen)}
-            className="flex items-center gap-2 p-1 pl-2 rounded-xl hover:bg-slate-900 border border-transparent hover:border-slate-800 transition-colors"
+            className="flex items-center gap-2 p-1 pl-2 rounded-xl hover:bg-slate-900 border border-transparent hover:border-slate-800 transition-colors cursor-pointer"
           >
             <Avatar name={profile?.full_name || 'User'} src={profile?.avatar_url} size="sm" status="online" />
           </button>
@@ -206,11 +171,11 @@ export const Header: React.FC<HeaderProps> = ({
           {isProfileMenuOpen && (
             <div className="absolute right-0 mt-2 w-64 rounded-2xl bg-[#081426] border border-slate-700/80 shadow-2xl p-3 space-y-3 z-50 animate-in fade-in duration-150">
               <div className="pb-3 border-b border-slate-800">
-                <span className="font-bold text-white text-xs block truncate">{profile?.full_name || 'Member'}</span>
+                <span className="font-bold text-white text-xs block truncate">{profile?.full_name || 'Team Member'}</span>
                 <span className="text-[11px] text-slate-400 block truncate">{profile?.email || ''}</span>
                 <div className="flex items-center gap-1.5 mt-2">
                   <span className="text-[10px] font-bold uppercase px-2 py-0.5 rounded bg-maple-500/10 text-maple-400 border border-maple-500/20">
-                    {currentRole === 'admin' ? 'Admin / Manager' : currentRole === 'manager' ? 'Pod Lead' : 'Member'}
+                    {currentRole === 'admin' ? 'Organization Admin' : currentRole === 'manager' ? 'Pod Lead' : 'Team Member'}
                   </span>
                   {userPod && (
                     <span className="text-[10px] text-slate-300 font-medium truncate">
@@ -220,50 +185,13 @@ export const Header: React.FC<HeaderProps> = ({
                 </div>
               </div>
 
-              {/* In-Menu Role Switcher */}
               <div className="space-y-1 text-xs">
-                <span className="text-[10px] font-bold uppercase tracking-wider text-slate-400 px-2.5 block mb-1">
-                  Switch Test Account
-                </span>
-                <button
-                  onClick={() => {
-                    switchProfile('member@maple.com');
-                    setIsProfileMenuOpen(false);
-                  }}
-                  className="w-full flex items-center justify-between px-2.5 py-1.5 rounded-lg text-slate-300 hover:text-white hover:bg-slate-800 text-left transition-colors"
-                >
-                  <span>Harshika (Member)</span>
-                  <span className="text-[10px] text-purple-300 font-mono">member@maple.com</span>
-                </button>
-                <button
-                  onClick={() => {
-                    switchProfile('podlead@maple.com');
-                    setIsProfileMenuOpen(false);
-                  }}
-                  className="w-full flex items-center justify-between px-2.5 py-1.5 rounded-lg text-slate-300 hover:text-white hover:bg-slate-800 text-left transition-colors"
-                >
-                  <span>Renuka (Pod Lead)</span>
-                  <span className="text-[10px] text-sky-400 font-mono">podlead@maple.com</span>
-                </button>
-                <button
-                  onClick={() => {
-                    switchProfile('manager@maple.com');
-                    setIsProfileMenuOpen(false);
-                  }}
-                  className="w-full flex items-center justify-between px-2.5 py-1.5 rounded-lg text-slate-300 hover:text-white hover:bg-slate-800 text-left transition-colors"
-                >
-                  <span>Sandeep (Manager)</span>
-                  <span className="text-[10px] text-maple-400 font-mono">manager@maple.com</span>
-                </button>
-              </div>
-
-              <div className="space-y-1 text-xs pt-2 border-t border-slate-800">
                 <button
                   onClick={() => {
                     setIsProfileMenuOpen(false);
                     onNavigate('/profile');
                   }}
-                  className="w-full flex items-center gap-2 px-2.5 py-1.5 rounded-lg text-slate-300 hover:text-white hover:bg-slate-800 text-left transition-colors"
+                  className="w-full flex items-center gap-2 px-2.5 py-1.5 rounded-lg text-slate-300 hover:text-white hover:bg-slate-800 text-left transition-colors cursor-pointer"
                 >
                   <User className="w-3.5 h-3.5 text-slate-400" />
                   <span>My Profile</span>
@@ -272,11 +200,12 @@ export const Header: React.FC<HeaderProps> = ({
 
               <div className="pt-2 border-t border-slate-800">
                 <button
-                  onClick={() => {
+                  onClick={async () => {
                     setIsProfileMenuOpen(false);
-                    signOut();
+                    await signOut();
+                    onNavigate('/login');
                   }}
-                  className="w-full flex items-center gap-2 px-2.5 py-1.5 rounded-lg text-rose-400 hover:bg-rose-500/10 text-left transition-colors text-xs font-semibold"
+                  className="w-full flex items-center gap-2 px-2.5 py-1.5 rounded-lg text-rose-400 hover:bg-rose-500/10 text-left transition-colors text-xs font-semibold cursor-pointer"
                 >
                   <LogOut className="w-3.5 h-3.5" />
                   <span>Sign Out</span>

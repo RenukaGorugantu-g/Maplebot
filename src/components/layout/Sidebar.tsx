@@ -22,6 +22,7 @@ import {
   Award,
   Table,
   CalendarDays,
+  LogOut,
 } from 'lucide-react';
 
 interface SidebarProps {
@@ -37,7 +38,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
   isCollapsed,
   onToggleCollapse,
 }) => {
-  const { profile, currentRole, userPod } = useAuth();
+  const { profile, currentRole, userPod, signOut } = useAuth();
 
   // Role-Based Section Definitions
   const memberSections = [
@@ -229,7 +230,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
       </div>
 
       {/* User Footer Profile */}
-      <div className="p-3 border-t border-slate-800/80 bg-[#060F1D]">
+      <div className="p-3 border-t border-slate-800/80 bg-[#060F1D] space-y-1.5">
         <div
           onClick={() => onNavigate('/profile')}
           className="flex items-center gap-2.5 p-2 rounded-xl hover:bg-slate-800/60 transition-colors cursor-pointer"
@@ -251,6 +252,21 @@ export const Sidebar: React.FC<SidebarProps> = ({
             </div>
           )}
         </div>
+
+        <button
+          type="button"
+          onClick={async () => {
+            await signOut();
+            onNavigate('/login');
+          }}
+          className={`w-full flex items-center gap-2 px-2.5 py-1.5 rounded-lg text-xs font-medium text-slate-400 hover:text-rose-400 hover:bg-rose-500/10 transition-colors cursor-pointer ${
+            isCollapsed ? 'justify-center px-0' : ''
+          }`}
+          title="Sign Out"
+        >
+          <LogOut className="w-3.5 h-3.5" />
+          {!isCollapsed && <span>Sign Out</span>}
+        </button>
       </div>
     </aside>
   );

@@ -37,8 +37,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     } catch (e) {
       console.warn('localStorage read error', e);
     }
-    const defaultProfile = INITIAL_PROFILES[0]; // Maple Edge Admin (info@maplelearningsolutions.com)
-    return defaultProfile || null;
+    return null;
   });
 
   const [user, setUser] = useState<any | null>(() => {
@@ -48,11 +47,10 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         const p = dataStore.getProfileById(email);
         if (p) return { id: p.id, email: p.email };
       }
-      const defaultP = INITIAL_PROFILES[0];
-      return defaultP ? { id: defaultP.id, email: defaultP.email } : null;
     } catch (e) {
       return null;
     }
+    return null;
   });
 
   const [isLoading, setIsLoading] = useState<boolean>(false);
