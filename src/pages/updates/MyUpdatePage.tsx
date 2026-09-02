@@ -109,7 +109,7 @@ export const MyUpdatePage: React.FC<{ onNavigate: (path: string) => void }> = ({
   };
 
   return (
-    <div className="max-w-6xl mx-auto space-y-6 animate-in fade-in duration-300">
+    <div className="w-full max-w-[1720px] mx-auto space-y-6 animate-in fade-in duration-300">
       {/* Warm Uplifting Check-in Greeting Banner */}
       <WarmGreetingBanner
         variant="checkin"

@@ -43,7 +43,7 @@ export const AppLayout: React.FC<AppLayoutProps> = ({
           toggleSidebar={() => setIsSidebarCollapsed(!isSidebarCollapsed)}
         />
 
-        <main className="flex-1 p-4 lg:p-8 max-w-7xl w-full mx-auto pb-24">
+        <main className="flex-1 p-3 md:p-6 lg:p-8 max-w-[1720px] w-full mx-auto pb-24">
           {children}
         </main>
       </div>
