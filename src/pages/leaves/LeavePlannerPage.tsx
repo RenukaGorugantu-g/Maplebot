@@ -16,6 +16,7 @@ import {
 } from '../../types/leave';
 import { Modal } from '../../components/ui/Modal';
 import { Button } from '../../components/ui/Button';
+import { googleChatService } from '../../services/googleChatService';
 import * as XLSX from 'xlsx';
 import confetti from 'canvas-confetti';
 import {
@@ -137,8 +138,8 @@ export const LeavePlannerPage: React.FC<{ onNavigate?: (path: string) => void }>
 
     try {
       const newLeave = dataStore.applyLeave({
-        employee_id: profile?.id || 'prof-sample-member',
-        employee_name: profile?.full_name || 'Harshika Netha',
+        employee_id: profile?.id || '',
+        employee_name: profile?.full_name || 'Team Member',
         start_date: startDate,
         end_date: endDate,
         days_count: calculatedDays,
@@ -147,9 +148,18 @@ export const LeavePlannerPage: React.FC<{ onNavigate?: (path: string) => void }>
         status: isManager || isAdmin ? 'approved' : 'planned',
       });
 
+      // Dispatch to Google Chat for Pod Lead / Manager approval
+      if (profile) {
+        googleChatService.sendLeaveRequestApprovalCard({
+          leave: newLeave,
+          profile,
+          podName: userPod?.name || 'Web & Sales',
+        });
+      }
+
       setIsApplyModalOpen(false);
       setReason('');
-      showToast('success', `Planned leave for ${newLeave.days_count} day(s) recorded successfully!`);
+      showToast('success', `Planned leave for ${newLeave.days_count} day(s) requested & sent to Pod Lead!`);
 
       try {
         confetti({
@@ -166,8 +176,15 @@ export const LeavePlannerPage: React.FC<{ onNavigate?: (path: string) => void }>
 
   // Status Change for Leads / Managers
   const handleStatusChange = (id: string, newStatus: LeaveStatus) => {
-    dataStore.updateLeaveStatus(id, newStatus, profile?.full_name || 'Pod Lead');
-    showToast('success', `Leave request marked as ${newStatus}.`);
+    const updated = dataStore.updateLeaveStatus(id, newStatus, profile?.full_name || 'Pod Lead');
+    if (updated) {
+      googleChatService.sendLeaveStatusUpdateCard({
+        leave: updated,
+        approverName: profile?.full_name || 'Pod Lead',
+        status: newStatus,
+      });
+    }
+    showToast('success', `Leave request marked as ${newStatus} and synced to team chat.`);
   };
 
   // Filtered Leaves

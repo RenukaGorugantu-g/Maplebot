@@ -8,6 +8,7 @@ import { useAuth } from '../../../context/AuthContext';
 import { dataStore } from '../../../services/dataStore';
 import { performanceService } from '../../../services/performanceService';
 import { performanceExportService } from '../../../services/performanceExportService';
+import { googleChatService } from '../../../services/googleChatService';
 import {
   PerformanceWorkLog,
   QualityRating,
@@ -233,15 +234,30 @@ export const ManagerReviewTab: React.FC<ManagerReviewTabProps> = ({
 
     setIsSavingAssessment(true);
     try {
-      dataStore.saveManagerPerformance(assessingLog.id, {
+      const eff = efficiencyInput.includes('%') ? efficiencyInput.trim() : `${efficiencyInput.trim()}%`;
+      const tatVal = tatInput.trim() || '3 days';
+
+      const updated = dataStore.saveManagerPerformance(assessingLog.id, {
         quality: qualityRating,
-        tat: tatInput.trim() || '3 days',
-        efficiency: efficiencyInput.includes('%') ? efficiencyInput.trim() : `${efficiencyInput.trim()}%`,
+        tat: tatVal,
+        efficiency: eff,
         manager_comments: managerNotes.trim() || undefined,
         manager_id: profile?.id,
       });
 
-      setSuccessNotice(`Performance assessment saved for ${assessingLog.employee_name}: Quality ${qualityRating}, TAT ${tatInput}, Efficiency ${efficiencyInput}`);
+      if (updated) {
+        googleChatService.sendReviewEvaluationCard({
+          log: updated,
+          reviewerName: profile?.full_name || 'Manager',
+          reviewerRole: 'Manager',
+          quality: qualityRating,
+          tat: tatVal,
+          efficiency: eff,
+          comments: managerNotes.trim() || assessingLog.comments || 'Manager evaluation recorded.',
+        });
+      }
+
+      setSuccessNotice(`Performance assessment saved for ${assessingLog.employee_name}: Quality ${qualityRating}, TAT ${tatInput}, Efficiency ${efficiencyInput} & synced to team chat.`);
       setTimeout(() => setSuccessNotice(''), 4000);
       setAssessingLog(null);
     } finally {
@@ -286,7 +302,7 @@ export const ManagerReviewTab: React.FC<ManagerReviewTabProps> = ({
           {onGenerateReportForEmployee && (
             <GradientButton
               size="sm"
-              onClick={() => onGenerateReportForEmployee(selectedEmployeeId || 'prof-sample-member')}
+              onClick={() => onGenerateReportForEmployee(selectedEmployeeId || availableProfiles[0]?.id || '')}
               leftIcon={<Sparkles className="w-4 h-4" />}
             >
               Synthesize Executive Report

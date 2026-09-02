@@ -8,6 +8,7 @@ import React, { useState, useMemo } from 'react';
 import { useAuth } from '../../../context/AuthContext';
 import { dataStore } from '../../../services/dataStore';
 import { PerformanceWorkLog, WorkCategory, WorkPriority } from '../../../types/performance';
+import { googleChatService } from '../../../services/googleChatService';
 import { Modal } from '../../../components/ui/Modal';
 import { Button, GradientButton } from '../../../components/ui/Button';
 import { EmptyState } from '../../../components/ui/EmptyState';
@@ -35,7 +36,7 @@ export const PodLeadReviewTab: React.FC = () => {
   const [expectedCompletionDate, setExpectedCompletionDate] = useState<string>('');
   const [completedDate, setCompletedDate] = useState<string>('');
   const [reviewCompletedDate, setReviewCompletedDate] = useState<string>('');
-  const [reviewer, setReviewer] = useState<string>(profile?.full_name || 'Renuka Gorugantu');
+  const [reviewer, setReviewer] = useState<string>(profile?.full_name || 'Pod Lead');
   const [errorCount, setErrorCount] = useState<number>(0);
   const [isSavingReview, setIsSavingReview] = useState<boolean>(false);
   const [reviewErrorMsg, setReviewErrorMsg] = useState<string>('');
@@ -110,7 +111,7 @@ export const PodLeadReviewTab: React.FC = () => {
     setReviewErrorMsg('');
 
     try {
-      dataStore.savePodLeadReview(reviewingLog.id, {
+      const updated = dataStore.savePodLeadReview(reviewingLog.id, {
         expected_completion_date: expectedCompletionDate,
         completed_date: completedDate,
         review_completed_date: reviewCompletedDate,
@@ -118,7 +119,17 @@ export const PodLeadReviewTab: React.FC = () => {
         error_count: Number(errorCount),
       });
 
-      setSuccessNotice(`Review saved for ${reviewingLog.employee_name}. Record advanced to Manager Review.`);
+      if (updated) {
+        googleChatService.sendReviewEvaluationCard({
+          log: updated,
+          reviewerName: reviewer.trim() || profile?.full_name || 'Pod Lead',
+          reviewerRole: 'Pod Lead',
+          errorCount: Number(errorCount),
+          comments: reviewingLog.comments || 'Deliverable verified and advanced to manager review.',
+        });
+      }
+
+      setSuccessNotice(`Review saved for ${reviewingLog.employee_name}. Record advanced to Manager Review & synced to team chat.`);
       setTimeout(() => setSuccessNotice(''), 4000);
       setReviewingLog(null);
     } catch (err: any) {

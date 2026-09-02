@@ -321,10 +321,221 @@ export const googleChatService = {
   },
 
   /**
+   * Dispatches an interactive Leave Request Card to Google Chat for Pod Lead / Manager approval
+   */
+  async sendLeaveRequestApprovalCard(params: {
+    leave: any;
+    profile: Profile;
+    podName: string;
+    leadName?: string;
+  }): Promise<boolean> {
+    const host = typeof window !== 'undefined' ? window.location.origin : 'http://localhost:5173';
+    const redirectUrl = `${host}/leave-planner`;
+
+    const payload = {
+      cardsV2: [
+        {
+          cardId: `leave-req-${params.leave.id}-${Date.now()}`,
+          card: {
+            header: {
+              title: `🏖️ Leave Request — ${params.profile.full_name}`,
+              subtitle: `Pod: ${params.podName} • Status: ⏳ Pending Approval (${params.leave.days_count} Day${params.leave.days_count === 1 ? '' : 's'})`,
+              imageUrl: 'https://cdn-icons-png.flaticon.com/512/2693/2693507.png',
+              imageType: 'CIRCLE',
+            },
+            sections: [
+              {
+                header: '📅 Leave Request Details',
+                widgets: [
+                  {
+                    textParagraph: {
+                      text: `<b>Leave Type:</b> <font color="#00DC82">${params.leave.leave_type}</font><br/>` +
+                        `<b>Duration:</b> ${params.leave.days_count} working day(s)<br/>` +
+                        `<b>Dates:</b> ${params.leave.start_date} &nbsp;➔&nbsp; ${params.leave.end_date}<br/>` +
+                        `<b>Reason / Notes:</b> <i>"${params.leave.reason || 'Planned vacation / leave'}"</i>`,
+                    },
+                  },
+                ],
+              },
+              {
+                widgets: [
+                  {
+                    buttonList: {
+                      buttons: [
+                        {
+                          text: '✅ Review & Approve in MapleBot',
+                          onClick: {
+                            openLink: {
+                              url: redirectUrl,
+                            },
+                          },
+                        },
+                      ],
+                    },
+                  },
+                ],
+              },
+            ],
+          },
+        },
+      ],
+    };
+
+    const sent = await this.dispatchToSpace(payload);
+    dataStore.logAudit('GOOGLE_CHAT_LEAVE_REQ_SENT', 'LeaveRequest', params.leave.id, {
+      employee: params.profile.full_name,
+      dates: `${params.leave.start_date} to ${params.leave.end_date}`,
+      type: params.leave.leave_type,
+      sent,
+    });
+    return sent;
+  },
+
+  /**
+   * Dispatches a Leave Status Update Card (Approved / Rejected)
+   */
+  async sendLeaveStatusUpdateCard(params: {
+    leave: any;
+    approverName: string;
+    status: string;
+  }): Promise<boolean> {
+    const isApproved = params.status === 'approved';
+    const statusLabel = isApproved ? 'Approved ✅' : params.status.toUpperCase();
+    const host = typeof window !== 'undefined' ? window.location.origin : 'http://localhost:5173';
+
+    const payload = {
+      cardsV2: [
+        {
+          cardId: `leave-status-${params.leave.id}-${Date.now()}`,
+          card: {
+            header: {
+              title: `${isApproved ? '✅ Leave Approved' : '📋 Leave Update'} — ${params.leave.employee_name}`,
+              subtitle: `Approver: ${params.approverName} • Status: ${statusLabel}`,
+              imageUrl: isApproved
+                ? 'https://cdn-icons-png.flaticon.com/512/190/190411.png'
+                : 'https://cdn-icons-png.flaticon.com/512/2693/2693507.png',
+              imageType: 'CIRCLE',
+            },
+            sections: [
+              {
+                widgets: [
+                  {
+                    textParagraph: {
+                      text: `<b>Employee:</b> ${params.leave.employee_name}<br/>` +
+                        `<b>Leave Type:</b> ${params.leave.leave_type}<br/>` +
+                        `<b>Dates:</b> ${params.leave.start_date} to ${params.leave.end_date} (${params.leave.days_count} days)<br/>` +
+                        `<b>Status:</b> <font color="${isApproved ? '#00DC82' : '#F59E0B'}"><b>${statusLabel}</b></font>`,
+                    },
+                  },
+                ],
+              },
+            ],
+          },
+        },
+      ],
+    };
+
+    return await this.dispatchToSpace(payload);
+  },
+
+  /**
+   * Dispatches task review comments / evaluations from Pod Lead or Manager to Google Chat
+   */
+  async sendReviewEvaluationCard(params: {
+    log: any;
+    reviewerName: string;
+    reviewerRole: 'Pod Lead' | 'Manager';
+    comments?: string;
+    quality?: any;
+    tat?: string;
+    efficiency?: string;
+    errorCount?: number;
+  }): Promise<boolean> {
+    const host = typeof window !== 'undefined' ? window.location.origin : 'http://localhost:5173';
+    const redirectUrl = `${host}/performance`;
+
+    const metricItems: string[] = [];
+    if (params.errorCount !== undefined) {
+      metricItems.push(`<b>Error Count:</b> ${params.errorCount}`);
+    }
+    if (params.quality) {
+      const qVal = typeof params.quality === 'number' ? `${params.quality}/5` : params.quality;
+      metricItems.push(`<b>Quality:</b> <font color="#00DC82">⭐ ${qVal}</font>`);
+    }
+    if (params.tat) {
+      metricItems.push(`<b>TAT:</b> ⏱️ ${params.tat}`);
+    }
+    if (params.efficiency) {
+      metricItems.push(`<b>Efficiency:</b> ⚡ ${params.efficiency}`);
+    }
+
+    const metricsHtml = metricItems.length > 0 ? metricItems.join('&nbsp;&nbsp;|&nbsp;&nbsp;') : '';
+
+    const payload = {
+      cardsV2: [
+        {
+          cardId: `review-eval-${params.log.id}-${Date.now()}`,
+          card: {
+            header: {
+              title: `🔍 ${params.reviewerRole} Review — ${params.log.employee_name}`,
+              subtitle: `Project: ${params.log.project_name || params.log.project || 'General'} • Evaluator: ${params.reviewerName}`,
+              imageUrl: params.reviewerRole === 'Manager'
+                ? 'https://cdn-icons-png.flaticon.com/512/3135/3135715.png'
+                : 'https://cdn-icons-png.flaticon.com/512/1077/1077063.png',
+              imageType: 'CIRCLE',
+            },
+            sections: [
+              {
+                header: '📌 Task Evaluation & Feedback',
+                widgets: [
+                  {
+                    textParagraph: {
+                      text: `<b>Task:</b> ${params.log.task || params.log.task_title}<br/>` +
+                        `<b>Hours Spent:</b> ${params.log.time_invested || params.log.duration_hours || 0}h &nbsp;|&nbsp; <b>Deliverables:</b> ${params.log.unit_count_completed || 0} unit(s)<br/>` +
+                        (metricsHtml ? `${metricsHtml}<br/><br/>` : '<br/>') +
+                        `📝 <b>Reviewer Comments & Feedback:</b><br/><i>"${params.comments || params.log.comments || 'Reviewed and approved without additional notes.'}"</i>`,
+                    },
+                  },
+                ],
+              },
+              {
+                widgets: [
+                  {
+                    buttonList: {
+                      buttons: [
+                        {
+                          text: '🔗 Open Work Performance Ledger',
+                          onClick: {
+                            openLink: {
+                              url: redirectUrl,
+                            },
+                          },
+                        },
+                      ],
+                    },
+                  },
+                ],
+              },
+            ],
+          },
+        },
+      ],
+    };
+
+    const sent = await this.dispatchToSpace(payload);
+    dataStore.logAudit('GOOGLE_CHAT_REVIEW_EVAL_SENT', 'PerformanceWorkLog', params.log.id, {
+      reviewer: params.reviewerName,
+      role: params.reviewerRole,
+      employee: params.log.employee_name,
+      sent,
+    });
+    return sent;
+  },
+
+  /**
    * Dispatches an executive Work Deliverables summary to Google Chat:
-   * Displays only Task Name, Project, Hours Spent, and Highlighted Blockers.
-   * Internal granular comments/evaluations are kept secure in MapleBot.
-   * Includes a direct clickable link for Managers & Admins to view the full 17-column report & evaluate.
+   * Displays Task Name, Project, Hours Spent, Deliverables Count, separate Member Comments,
+   * and highlights active Blockers prominently in RED.
    */
   async sendWorkDeliverablesSummaryCard(params: {
     memberName: string;
@@ -343,14 +554,14 @@ export const googleChatService = {
     const totalHours = params.tasks.reduce((sum, t) => sum + (Number(t.timeInvested) || 0), 0);
     const totalUnits = params.tasks.reduce((sum, t) => sum + (Number(t.unitCountCompleted) || 1), 0);
 
-    // Format tasks overview: only Project, Task Name, Hours, Units
+    // Format tasks overview: Project, Task Name, Hours, Units
     const taskLines = params.tasks
       .map((t, idx) => {
         return `<b>${idx + 1}. [${t.projectName}]</b> ${t.task}<br/>&nbsp;&nbsp;&nbsp;&nbsp;⏱️ <b>${t.timeInvested}h</b> &nbsp;|&nbsp; 📦 <b>${t.unitCountCompleted} item(s)</b>`;
       })
       .join('<br/><br/>');
 
-    // Detect blockers from comments
+    // Separate general comments and blockers
     const blockerTasks = params.tasks.filter((t) => {
       if (!t.comments) return false;
       const c = t.comments.toLowerCase();
@@ -361,20 +572,89 @@ export const googleChatService = {
         c.includes('delay') ||
         c.includes('stuck') ||
         c.includes('error') ||
-        c.includes('help')
+        c.includes('help') ||
+        c.includes('impediment')
       );
+    });
+
+    const generalCommentTasks = params.tasks.filter((t) => {
+      if (!t.comments) return false;
+      return !blockerTasks.includes(t);
     });
 
     let blockerSectionText = `🟢 <b>No Blockers Reported</b> — All deliverables progressing smoothly.`;
     if (blockerTasks.length > 0) {
       const blockerList = blockerTasks
-        .map((t) => `• <b>${t.projectName}:</b> <font color="#F43F5E">${t.comments}</font>`)
+        .map((t) => `• <b>${t.projectName}:</b> <font color="#EF4444"><b>🚨 ${t.comments}</b></font>`)
         .join('<br/>');
-      blockerSectionText = `🚨 <b><font color="#F43F5E">Active Blockers Highlighted:</font></b><br/>${blockerList}`;
+      blockerSectionText = `🚨 <b><font color="#EF4444">ACTIVE BLOCKERS (ATTENTION REQUIRED):</font></b><br/>${blockerList}`;
+    }
+
+    let generalCommentsText = '';
+    if (generalCommentTasks.length > 0) {
+      generalCommentsText = generalCommentTasks
+        .map((t) => `• <b>${t.projectName}:</b> <i>"${t.comments}"</i>`)
+        .join('<br/>');
     }
 
     const host = typeof window !== 'undefined' ? window.location.origin : 'http://localhost:5173';
     const redirectUrl = params.portalUrl || `${host}/performance`;
+
+    const sections: any[] = [
+      {
+        header: `💼 Work Tasks Overview (${totalHours}h Total • ${totalUnits} items)`,
+        widgets: [
+          {
+            textParagraph: {
+              text: taskLines || 'No task descriptions logged.',
+            },
+          },
+        ],
+      },
+    ];
+
+    if (generalCommentsText) {
+      sections.push({
+        header: '📝 Member Notes & Comments',
+        widgets: [
+          {
+            textParagraph: {
+              text: generalCommentsText,
+            },
+          },
+        ],
+      });
+    }
+
+    sections.push({
+      header: '🛑 Blocker & Impediment Status',
+      widgets: [
+        {
+          textParagraph: {
+            text: blockerSectionText,
+          },
+        },
+      ],
+    });
+
+    sections.push({
+      widgets: [
+        {
+          buttonList: {
+            buttons: [
+              {
+                text: '🔗 Open Full 17-Column Report & Evaluate',
+                onClick: {
+                  openLink: {
+                    url: redirectUrl,
+                  },
+                },
+              },
+            ],
+          },
+        },
+      ],
+    });
 
     const payload = {
       cardsV2: [
@@ -387,46 +667,7 @@ export const googleChatService = {
               imageUrl: 'https://cdn-icons-png.flaticon.com/512/906/906334.png',
               imageType: 'CIRCLE',
             },
-            sections: [
-              {
-                header: `💼 Work Tasks Overview (${totalHours}h Total • ${totalUnits} items)`,
-                widgets: [
-                  {
-                    textParagraph: {
-                      text: taskLines || 'No task descriptions logged.',
-                    },
-                  },
-                ],
-              },
-              {
-                header: '🛑 Blocker & Impediment Status',
-                widgets: [
-                  {
-                    textParagraph: {
-                      text: blockerSectionText,
-                    },
-                  },
-                ],
-              },
-              {
-                widgets: [
-                  {
-                    buttonList: {
-                      buttons: [
-                        {
-                          text: '🔗 Open Full 17-Column Report & Evaluate',
-                          onClick: {
-                            openLink: {
-                              url: redirectUrl,
-                            },
-                          },
-                        },
-                      ],
-                    },
-                  },
-                ],
-              },
-            ],
+            sections,
           },
         },
       ],

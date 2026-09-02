@@ -190,24 +190,25 @@ export const performanceExportService = {
    */
   exportStructuredWorkLogsToXLSX(logs: PerformanceWorkLog[], filename = 'MapleBot_Consolidated_Work_Performance_17Col') {
     const rows = logs.map((l) => ({
-      '1. Date': l.date,
-      'Check-in Time': l.submission_time || l.checkin_time || '10:00 AM',
-      '2. Name': l.employee_name,
-      '3. Project Name': l.project_name || l.project,
-      '4. Task': l.task || l.task_title,
-      '5. Assigned Date': l.assigned_date,
-      '6. Expected Completion Date': l.expected_completion_date || 'Pending',
-      '7. Completed Date': l.completed_date || 'Pending',
-      '8. Time Invested (Hours)': l.time_invested || l.duration_hours,
-      '9. Unit Count Completed': l.unit_count_completed || 0,
-      '10. Review Assigned Date': l.review_assigned_date,
-      '11. Review Completed Date': l.review_completed_date || 'Pending',
-      '12. Reviewer': l.reviewer || l.reviewer_name || 'Not assigned',
-      '13. Error': l.error_count ?? 0,
-      '14. Quality': typeof l.quality === 'number' ? `${l.quality}/5` : l.quality || 'Pending',
-      '15. TAT': l.tat || 'Not Available',
-      '16. Efficiency': l.efficiency || 'Not Available',
-      '17. Comments': l.comments || '',
+      Date: l.date,
+      'Check-in Time (Update Given Time)': l.submission_time || l.checkin_time || '10:00 AM',
+      'Employee Name': l.employee_name,
+      'Department / Pod': l.department || l.pod_name || 'Web & Sales',
+      'Project Name': l.project_name || l.project,
+      'Task Deliverable': l.task || l.task_title,
+      'Assigned Date': l.assigned_date,
+      'Expected Completion Date': l.expected_completion_date || 'Pending',
+      'Completed Date': l.completed_date || 'Pending',
+      'Hours Invested': l.time_invested || l.duration_hours,
+      'Deliverables Count (Units)': l.unit_count_completed || 0,
+      'Review Assigned Date': l.review_assigned_date,
+      'Review Completed Date': l.review_completed_date || 'Pending',
+      'Reviewer (Lead / Manager)': l.reviewer || l.reviewer_name || 'Not assigned',
+      'Error Count': l.error_count ?? 0,
+      'Quality Score (1-5)': typeof l.quality === 'number' ? `${l.quality}/5` : l.quality || 'Pending',
+      'TAT (Turnaround Time)': l.tat || 'Not Available',
+      'Efficiency %': l.efficiency || 'Not Available',
+      'Comments & Impediment Notes': l.comments || '',
       'Delivery Status': l.delivery_status,
       'Workflow Status': l.workflow_status,
     }));
@@ -218,23 +219,24 @@ export const performanceExportService = {
 
     ws['!cols'] = [
       { wch: 12 }, // Date
-      { wch: 15 }, // Check-in Time
-      { wch: 20 }, // Name
-      { wch: 22 }, // Project
-      { wch: 35 }, // Task
+      { wch: 28 }, // Check-in Time (Update Given Time)
+      { wch: 22 }, // Employee Name
+      { wch: 20 }, // Department / Pod
+      { wch: 22 }, // Project Name
+      { wch: 38 }, // Task Deliverable
       { wch: 14 }, // Assigned Date
-      { wch: 16 }, // Expected Date
+      { wch: 18 }, // Expected Completion Date
       { wch: 16 }, // Completed Date
-      { wch: 14 }, // Time
-      { wch: 14 }, // Units
-      { wch: 16 }, // Review Assigned
-      { wch: 16 }, // Review Completed
-      { wch: 20 }, // Reviewer
-      { wch: 10 }, // Error
-      { wch: 12 }, // Quality
-      { wch: 14 }, // TAT
+      { wch: 15 }, // Hours Invested
+      { wch: 18 }, // Deliverables Count
+      { wch: 16 }, // Review Assigned Date
+      { wch: 18 }, // Review Completed Date
+      { wch: 22 }, // Reviewer
+      { wch: 12 }, // Error Count
+      { wch: 14 }, // Quality Score
+      { wch: 16 }, // TAT
       { wch: 14 }, // Efficiency
-      { wch: 35 }, // Comments
+      { wch: 40 }, // Comments & Notes
       { wch: 18 }, // Delivery Status
       { wch: 18 }, // Workflow Status
     ];
