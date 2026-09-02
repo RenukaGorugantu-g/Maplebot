@@ -664,15 +664,19 @@ export const googleChatService = {
       ],
     });
 
+    const hasBlockers = blockerEntries.length > 0;
+    const statusEmoji = hasBlockers ? '🔴' : '🟢';
+    const statusLabel = hasBlockers ? 'Impediment Reported' : 'On Track (100% Progress)';
+
     const payload = {
       cardsV2: [
         {
           cardId: `work-deliverables-${Date.now()}`,
           card: {
             header: {
-              title: `📋 Daily Work Update — ${params.memberName}`,
-              subtitle: `Pod: ${params.podName} • Check-in: ${params.checkinTime} • ${params.date}`,
-              imageUrl: 'https://cdn-icons-png.flaticon.com/512/906/906334.png',
+              title: `Daily Standup — ${params.memberName}`,
+              subtitle: `Pod: ${params.podName} • Status: ${statusEmoji} ${statusLabel} • Check-in: ${params.checkinTime} • ${params.date}`,
+              imageUrl: 'https://cdn-icons-png.flaticon.com/512/3233/3233508.png',
               imageType: 'CIRCLE',
             },
             sections,

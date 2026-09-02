@@ -40,7 +40,7 @@ interface TaskDraftRow {
 }
 
 export const MemberWorkTab: React.FC = () => {
-  const { profile } = useAuth();
+  const { profile, userPod } = useAuth();
   const todayStr = new Date().toISOString().split('T')[0];
 
   const getFormattedTime = () => {
@@ -177,10 +177,13 @@ export const MemberWorkTab: React.FC = () => {
       });
 
       // Dispatch high-level summary overview to Google Chat (with highlighted red blockers)
-      const memberPod = profile?.pod_id ? dataStore.getPodById(profile.pod_id) : undefined;
+      const memberPod = profile?.pod_id ? dataStore.getPodById(profile.pod_id) : userPod;
+      const podName = memberPod?.name || userPod?.name || 'eLearning';
+      const memberName = profile?.full_name || 'Team Member';
+
       googleChatService.sendWorkDeliverablesSummaryCard({
-        memberName: profile?.full_name || 'Team Member',
-        podName: memberPod?.name || 'General Pod',
+        memberName,
+        podName,
         date: workDate,
         checkinTime: checkinTime,
         tasks: validRows.map((r) => ({
