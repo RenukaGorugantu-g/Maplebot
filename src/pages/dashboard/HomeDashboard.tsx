@@ -21,8 +21,11 @@ import {
   Send,
   Heart,
   BarChart2,
-  FileSpreadsheet
+  FileSpreadsheet,
+  Table,
 } from 'lucide-react';
+
+import { WarmGreetingBanner } from '../../components/ui/WarmGreetingBanner';
 
 export const HomeDashboard: React.FC<{
   onNavigate: (path: string) => void;
@@ -102,33 +105,46 @@ export const HomeDashboard: React.FC<{
   if (currentRole === 'member') {
     return (
       <div className="max-w-4xl mx-auto space-y-6 animate-in fade-in duration-300">
-        {/* Welcome Greeting */}
-        <div className="glass-card p-6 border border-slate-800 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+        {/* Warm Welcome Greeting Banner */}
+        <WarmGreetingBanner
+          variant="dashboard"
+          actionLabel="Log Today's Work Tasks"
+          onActionClick={() => onNavigate('/performance')}
+        />
+
+        {/* Prominent Work Performance Ledger Quick Banner */}
+        <div className="glass-card p-5 border border-maple-500/40 bg-gradient-to-r from-[#081426] via-[#091a30] to-[#081426] relative overflow-hidden flex flex-col sm:flex-row sm:items-center justify-between gap-4 shadow-xl">
           <div className="space-y-1">
             <div className="flex items-center gap-2">
-              <span className="text-xs font-bold uppercase tracking-wider text-maple-400">
-                {userPod?.name || 'Maple Learning Solutions'}
-              </span>
-              <span className="text-slate-600">•</span>
-              <span className="text-xs text-slate-400">
-                {new Date().toLocaleDateString('en-US', { weekday: 'long', month: 'short', day: 'numeric' })}
+              <span className="w-2 h-2 rounded-full bg-maple-400 animate-pulse" />
+              <span className="text-[11px] font-extrabold uppercase tracking-wider text-maple-400">
+                Work Performance & Deliverables Ledger
               </span>
             </div>
-            <h2 className="text-2xl font-extrabold text-white tracking-tight">
-              Good morning, {(profile?.full_name || 'Team Member').split(' ')[0]}
-            </h2>
-            <p className="text-xs text-slate-300">
-              Keep your pod aligned by logging your daily progress and any blockers.
+            <h3 className="text-base font-bold text-white tracking-tight">
+              Structured Work Performance Table (9 Fields)
+            </h3>
+            <p className="text-xs text-slate-300 max-w-xl">
+              Track completed units, project deliverables, and hours invested with automated Pod Lead review and Maple AI executive reporting.
             </p>
           </div>
 
-          <div className="flex items-center gap-3 self-start sm:self-center">
-            <div className="p-3 rounded-xl bg-slate-900 border border-slate-800 text-center min-w-[100px]">
-              <span className="text-[10px] text-slate-400 uppercase font-semibold flex items-center justify-center gap-1">
-                <Flame className="w-3.5 h-3.5 text-amber-400" /> Streak
-              </span>
-              <p className="text-lg font-extrabold text-white mt-0.5">14 Days</p>
-            </div>
+          <div className="flex items-center gap-2.5 self-start sm:self-center">
+            <GradientButton
+              size="sm"
+              onClick={() => onNavigate('/performance')}
+              leftIcon={<Table className="w-4 h-4" />}
+            >
+              Open Work Ledger
+            </GradientButton>
+            <Button
+              variant="secondary"
+              size="sm"
+              onClick={() => onNavigate('/updates/my-update')}
+              leftIcon={<CheckSquare className="w-4 h-4 text-maple-400" />}
+            >
+              My Check-in
+            </Button>
           </div>
         </div>
 
@@ -410,6 +426,13 @@ export const HomeDashboard: React.FC<{
           </div>
 
           <div className="flex items-center gap-3">
+            <GradientButton
+              size="sm"
+              onClick={() => onNavigate('/performance')}
+              leftIcon={<Table className="w-4 h-4" />}
+            >
+              Work Performance Review (17 Cols)
+            </GradientButton>
             <Button
               variant="secondary"
               size="sm"
@@ -418,12 +441,33 @@ export const HomeDashboard: React.FC<{
             >
               Pod Updates Feed
             </Button>
+          </div>
+        </div>
+
+        {/* Work Performance System Highlight Card */}
+        <div className="glass-card p-5 border border-maple-500/40 bg-gradient-to-r from-[#081426] via-[#091a30] to-[#081426] relative overflow-hidden flex flex-col sm:flex-row sm:items-center justify-between gap-4 shadow-xl">
+          <div className="space-y-1">
+            <div className="flex items-center gap-2">
+              <span className="w-2 h-2 rounded-full bg-maple-400 animate-pulse" />
+              <span className="text-[11px] font-extrabold uppercase tracking-wider text-maple-400">
+                Performance Governance & Executive Intelligence
+              </span>
+            </div>
+            <h3 className="text-base font-bold text-white tracking-tight">
+              Pod Member Submission → Pod Lead Review → Manager Performance Assessment
+            </h3>
+            <p className="text-xs text-slate-300 max-w-2xl">
+              Inspect member deliverables, verify review dates & error counts, assess Quality ratings, and generate Maple AI corporate executive reports.
+            </p>
+          </div>
+
+          <div className="flex items-center gap-2.5 self-start sm:self-center">
             <GradientButton
               size="sm"
-              onClick={() => onNavigate('/updates/my-update')}
-              leftIcon={<CheckSquare className="w-4 h-4" />}
+              onClick={() => onNavigate('/performance')}
+              leftIcon={<Sparkles className="w-4 h-4" />}
             >
-              My Check-in
+              Open Performance Module
             </GradientButton>
           </div>
         </div>

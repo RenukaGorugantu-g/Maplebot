@@ -1,8 +1,8 @@
 import React, { useState } from 'react';
 import { useAuth } from '../../context/AuthContext';
 import { useNotifications } from '../../context/NotificationContext';
-import { GradientButton } from '../../components/ui/Button';
-import { Mail, Lock, ArrowRight, ArrowLeft } from 'lucide-react';
+import { GradientButton, Button } from '../../components/ui/Button';
+import { Mail, Lock, ArrowRight, ArrowLeft, ShieldCheck, UserCheck, Users, CheckCircle2 } from 'lucide-react';
 
 export const LoginPage: React.FC<{
   onNavigate: (path: string) => void;
@@ -32,7 +32,7 @@ export const LoginPage: React.FC<{
 
   return (
     <div className="min-h-screen bg-[#050505] flex items-center justify-center p-4 selection:bg-maple-500/30">
-      <div className="w-full max-w-md space-y-6">
+      <div className="w-full max-w-md space-y-5">
         {/* Brand Header */}
         <div className="text-center space-y-2">
           <div
@@ -46,10 +46,10 @@ export const LoginPage: React.FC<{
         </div>
 
         {/* Auth Card */}
-        <div className="glass-card p-6 sm:p-8 border border-slate-800 space-y-6 shadow-2xl">
+        <div className="glass-card p-6 sm:p-8 border border-slate-800 space-y-5 shadow-2xl">
           <div className="space-y-1 text-center">
-            <h2 className="text-lg font-bold text-white">Welcome back</h2>
-            <p className="text-xs text-slate-400">Sign in with your corporate email and password.</p>
+            <h2 className="text-base font-bold text-white">Sign In to MapleBot</h2>
+            <p className="text-xs text-slate-400">Enter your corporate email and password below.</p>
           </div>
 
           {/* Form */}
@@ -62,6 +62,7 @@ export const LoginPage: React.FC<{
                   required
                   type="email"
                   value={email}
+                  placeholder="name@maplelearningsolutions.com"
                   onChange={(e) => setEmail(e.target.value)}
                   className="w-full pl-9 pr-3 py-2.5 bg-slate-900 border border-slate-800 rounded-xl text-xs text-white focus:outline-none focus:border-maple-500/50"
                 />
@@ -85,6 +86,7 @@ export const LoginPage: React.FC<{
                   required
                   type="password"
                   value={password}
+                  placeholder="password"
                   onChange={(e) => setPassword(e.target.value)}
                   className="w-full pl-9 pr-3 py-2.5 bg-slate-900 border border-slate-800 rounded-xl text-xs text-white focus:outline-none focus:border-maple-500/50"
                 />

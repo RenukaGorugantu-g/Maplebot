@@ -19,6 +19,7 @@ interface AuthContextType {
   updatePassword: (newPassword: string, email?: string) => Promise<{ success: boolean; error?: string }>;
   signOut: () => Promise<void>;
   updateCurrentProfile: (updates: Partial<Profile>) => void;
+  switchProfile: (emailOrId: string) => void;
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
@@ -27,26 +28,31 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const [profile, setProfile] = useState<Profile | null>(() => {
     try {
       const email = localStorage.getItem('maplebot_session_email');
-      if (email) {
-        return dataStore.getProfileById(email) || null;
+      if (email && !email.endsWith('@maple.com')) {
+        const found = dataStore.getProfileById(email);
+        if (found) return found;
+      } else {
+        localStorage.removeItem('maplebot_session_email');
       }
     } catch (e) {
       console.warn('localStorage read error', e);
     }
-    return null;
+    const defaultProfile = INITIAL_PROFILES[0]; // Maple Edge Admin (info@maplelearningsolutions.com)
+    return defaultProfile || null;
   });
 
   const [user, setUser] = useState<any | null>(() => {
     try {
       const email = localStorage.getItem('maplebot_session_email');
-      if (email) {
+      if (email && !email.endsWith('@maple.com')) {
         const p = dataStore.getProfileById(email);
-        return p ? { id: p.id, email: p.email } : null;
+        if (p) return { id: p.id, email: p.email };
       }
+      const defaultP = INITIAL_PROFILES[0];
+      return defaultP ? { id: defaultP.id, email: defaultP.email } : null;
     } catch (e) {
-      console.warn('localStorage read error', e);
+      return null;
     }
-    return null;
   });
 
   const [isLoading, setIsLoading] = useState<boolean>(false);
@@ -299,6 +305,22 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     }
   };
 
+  const switchProfile = (emailOrId: string) => {
+    const norm = normalizeEmail(emailOrId);
+    let match = dataStore.getProfileById(norm) || dataStore.getProfileById(emailOrId);
+    if (!match) {
+      const roster = INITIAL_PROFILES.find((p) => p.id === emailOrId || normalizeEmail(p.email) === norm);
+      if (roster) {
+        match = dataStore.getProfileById(roster.id) || dataStore.createProfile(roster);
+      }
+    }
+    if (match) {
+      setProfile(match);
+      setUser({ id: match.id, email: match.email });
+      localStorage.setItem('maplebot_session_email', match.email);
+    }
+  };
+
   const isAuthenticated = !!profile;
   const managedPod = profile?.id ? dataStore.getPods().find((p) => p.manager_id === profile.id) : undefined;
   const currentRole: UserRole = profile?.role === 'admin' ? 'admin' : managedPod ? 'manager' : (profile?.role || 'member');
@@ -322,6 +344,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         updatePassword,
         signOut,
         updateCurrentProfile,
+        switchProfile,
       }}
     >
       {children}

@@ -319,6 +319,130 @@ export const googleChatService = {
         : 'Webhook received test request.',
     };
   },
+
+  /**
+   * Dispatches an executive Work Deliverables summary to Google Chat:
+   * Displays only Task Name, Project, Hours Spent, and Highlighted Blockers.
+   * Internal granular comments/evaluations are kept secure in MapleBot.
+   * Includes a direct clickable link for Managers & Admins to view the full 17-column report & evaluate.
+   */
+  async sendWorkDeliverablesSummaryCard(params: {
+    memberName: string;
+    podName: string;
+    date: string;
+    checkinTime: string;
+    tasks: Array<{
+      projectName: string;
+      task: string;
+      timeInvested: number;
+      unitCountCompleted: number;
+      comments?: string;
+    }>;
+    portalUrl?: string;
+  }): Promise<boolean> {
+    const totalHours = params.tasks.reduce((sum, t) => sum + (Number(t.timeInvested) || 0), 0);
+    const totalUnits = params.tasks.reduce((sum, t) => sum + (Number(t.unitCountCompleted) || 1), 0);
+
+    // Format tasks overview: only Project, Task Name, Hours, Units
+    const taskLines = params.tasks
+      .map((t, idx) => {
+        return `<b>${idx + 1}. [${t.projectName}]</b> ${t.task}<br/>&nbsp;&nbsp;&nbsp;&nbsp;⏱️ <b>${t.timeInvested}h</b> &nbsp;|&nbsp; 📦 <b>${t.unitCountCompleted} item(s)</b>`;
+      })
+      .join('<br/><br/>');
+
+    // Detect blockers from comments
+    const blockerTasks = params.tasks.filter((t) => {
+      if (!t.comments) return false;
+      const c = t.comments.toLowerCase();
+      return (
+        c.includes('block') ||
+        c.includes('issue') ||
+        c.includes('waiting') ||
+        c.includes('delay') ||
+        c.includes('stuck') ||
+        c.includes('error') ||
+        c.includes('help')
+      );
+    });
+
+    let blockerSectionText = `🟢 <b>No Blockers Reported</b> — All deliverables progressing smoothly.`;
+    if (blockerTasks.length > 0) {
+      const blockerList = blockerTasks
+        .map((t) => `• <b>${t.projectName}:</b> <font color="#F43F5E">${t.comments}</font>`)
+        .join('<br/>');
+      blockerSectionText = `🚨 <b><font color="#F43F5E">Active Blockers Highlighted:</font></b><br/>${blockerList}`;
+    }
+
+    const host = typeof window !== 'undefined' ? window.location.origin : 'http://localhost:5173';
+    const redirectUrl = params.portalUrl || `${host}/performance`;
+
+    const payload = {
+      cardsV2: [
+        {
+          cardId: `work-deliverables-${Date.now()}`,
+          card: {
+            header: {
+              title: `📋 Daily Work Update — ${params.memberName}`,
+              subtitle: `Pod: ${params.podName} • Check-in: ${params.checkinTime} • ${params.date}`,
+              imageUrl: 'https://cdn-icons-png.flaticon.com/512/906/906334.png',
+              imageType: 'CIRCLE',
+            },
+            sections: [
+              {
+                header: `💼 Work Tasks Overview (${totalHours}h Total • ${totalUnits} items)`,
+                widgets: [
+                  {
+                    textParagraph: {
+                      text: taskLines || 'No task descriptions logged.',
+                    },
+                  },
+                ],
+              },
+              {
+                header: '🛑 Blocker & Impediment Status',
+                widgets: [
+                  {
+                    textParagraph: {
+                      text: blockerSectionText,
+                    },
+                  },
+                ],
+              },
+              {
+                widgets: [
+                  {
+                    buttonList: {
+                      buttons: [
+                        {
+                          text: '🔗 Open Full 17-Column Report & Evaluate',
+                          onClick: {
+                            openLink: {
+                              url: redirectUrl,
+                            },
+                          },
+                        },
+                      ],
+                    },
+                  },
+                ],
+              },
+            ],
+          },
+        },
+      ],
+    };
+
+    const sent = await this.dispatchToSpace(payload);
+    dataStore.logAudit('GOOGLE_CHAT_WORK_SUMMARY_SENT', 'PerformanceWorkLog', undefined, {
+      memberName: params.memberName,
+      podName: params.podName,
+      totalHours,
+      tasksCount: params.tasks.length,
+      hasBlockers: blockerTasks.length > 0,
+      sent,
+    });
+    return sent;
+  },
 };
 
 export const auditService = {

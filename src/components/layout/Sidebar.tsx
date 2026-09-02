@@ -18,7 +18,10 @@ import {
   ChevronRight,
   TrendingUp,
   MessageSquare,
-  ListOrdered
+  ListOrdered,
+  Award,
+  Table,
+  CalendarDays,
 } from 'lucide-react';
 
 interface SidebarProps {
@@ -42,6 +45,8 @@ export const Sidebar: React.FC<SidebarProps> = ({
       title: 'Personal',
       items: [
         { label: 'Home', path: '/', icon: <Home className="w-4 h-4" /> },
+        { label: 'Work Performance Table', path: '/performance', icon: <Table className="w-4 h-4 text-maple-400" /> },
+        { label: 'Leave Planner & Holidays', path: '/leave-planner', icon: <CalendarDays className="w-4 h-4 text-emerald-400" /> },
         { label: 'My Check-in', path: '/updates/my-update', icon: <CheckSquare className="w-4 h-4" /> },
         { label: 'My Updates', path: '/updates/history', icon: <ListOrdered className="w-4 h-4" /> },
         { label: 'My Blockers', path: '/blockers', icon: <AlertTriangle className="w-4 h-4" /> },
@@ -60,6 +65,8 @@ export const Sidebar: React.FC<SidebarProps> = ({
       title: `${userPod?.name || 'Pod'} Cockpit`,
       items: [
         { label: 'Overview', path: '/', icon: <Home className="w-4 h-4" /> },
+        { label: 'Work Performance (17 Cols)', path: '/performance', icon: <Table className="w-4 h-4 text-maple-400" /> },
+        { label: 'Leave Planner & Holidays', path: '/leave-planner', icon: <CalendarDays className="w-4 h-4 text-emerald-400" /> },
         { label: 'Team Updates', path: '/updates/team', icon: <Users className="w-4 h-4" /> },
         { label: 'Check-ins', path: '/updates/my-update', icon: <CheckSquare className="w-4 h-4" /> },
         { label: 'Blockers', path: '/blockers', icon: <AlertTriangle className="w-4 h-4" /> },
@@ -87,6 +94,8 @@ export const Sidebar: React.FC<SidebarProps> = ({
       title: 'Executive Overview',
       items: [
         { label: 'Overview', path: '/', icon: <Home className="w-4 h-4" /> },
+        { label: 'Work Performance Table (17 Cols)', path: '/performance', icon: <Table className="w-4 h-4 text-maple-400" /> },
+        { label: 'Leave Planner & Holidays', path: '/leave-planner', icon: <CalendarDays className="w-4 h-4 text-emerald-400" /> },
         { label: 'Team Updates', path: '/updates/team', icon: <Users className="w-4 h-4" /> },
         { label: 'Check-ins', path: '/admin/checkins', icon: <CheckSquare className="w-4 h-4" /> },
         { label: 'Blockers', path: '/blockers', icon: <AlertTriangle className="w-4 h-4" /> },

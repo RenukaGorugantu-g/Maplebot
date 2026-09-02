@@ -26,6 +26,8 @@ import { DailyAnalyticsPage } from './pages/analytics/DailyAnalyticsPage';
 import { WeeklyAnalyticsPage } from './pages/analytics/WeeklyAnalyticsPage';
 import { SprintAnalyticsPage } from './pages/analytics/SprintAnalyticsPage';
 import { ReportsPage } from './pages/reports/ReportsPage';
+import { PerformanceModulePage } from './pages/performance/PerformanceModulePage';
+import { LeavePlannerPage } from './pages/leaves/LeavePlannerPage';
 import { MembersPage } from './pages/admin/MembersPage';
 import { PodsPage } from './pages/admin/PodsPage';
 import { CheckinsPage } from './pages/admin/CheckinsPage';
@@ -180,6 +182,19 @@ export const App: React.FC = () => {
           return <AccessDenied onNavigate={navigate} />;
         }
         return <ReportsPage />;
+      case '/performance':
+      case '/work-performance':
+      case '/performance/dashboard':
+      case '/performance/work-data':
+      case '/performance/individual':
+      case '/performance/team':
+      case '/performance/kpis':
+      case '/performance/history':
+        return <PerformanceModulePage />;
+      case '/leaves':
+      case '/leave-planner':
+      case '/holidays':
+        return <LeavePlannerPage onNavigate={navigate} />;
       case '/admin/members':
         if (isMember) {
           return <AccessDenied onNavigate={navigate} />;
