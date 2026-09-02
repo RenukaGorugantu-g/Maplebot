@@ -378,6 +378,7 @@ export const StructuredWorkDataTab: React.FC = () => {
                       {sortKey === 'date' && (sortOrder === 'asc' ? <ChevronUp className="w-3 h-3 text-maple-400" /> : <ChevronDown className="w-3 h-3 text-maple-400" />)}
                     </div>
                   </th>
+                  <th className="py-3 px-3.5 whitespace-nowrap">Check-in Time</th>
                   <th
                     onClick={() => handleSort('employee_name')}
                     className="py-3 px-3.5 cursor-pointer hover:text-white select-none whitespace-nowrap"
@@ -421,6 +422,9 @@ export const StructuredWorkDataTab: React.FC = () => {
                   <tr key={row.id} className="hover:bg-slate-800/40 transition-colors">
                     <td className="py-3 px-3.5 font-mono text-[11px] text-slate-400 whitespace-nowrap align-top">
                       {row.date}
+                    </td>
+                    <td className="py-3 px-3.5 font-mono text-[11px] text-emerald-400 font-semibold whitespace-nowrap align-top">
+                      {row.submission_time || row.checkin_time || '10:00 AM'}
                     </td>
                     <td className="py-3 px-3.5 font-semibold text-white whitespace-nowrap align-top">
                       {row.employee_name}

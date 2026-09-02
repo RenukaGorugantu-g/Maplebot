@@ -228,29 +228,39 @@ export const ReportsPage: React.FC = () => {
             <table className="w-full text-left text-xs border-collapse">
               <thead>
                 <tr className="bg-slate-900/80 border-b border-slate-800 text-slate-400 text-[11px]">
-                  <th className="py-3 px-4 font-semibold">Date</th>
-                  <th className="py-3 px-4 font-semibold">Member</th>
-                  <th className="py-3 px-4 font-semibold">Pod</th>
-                  <th className="py-3 px-4 font-semibold">Status</th>
-                  <th className="py-3 px-4 font-semibold">Yesterday</th>
-                  <th className="py-3 px-4 font-semibold">Today</th>
-                  <th className="py-3 px-4 font-semibold">Blocker</th>
-                  <th className="py-3 px-4 font-semibold text-right">Progress</th>
+                  <th className="py-3 px-3 font-semibold">Date</th>
+                  <th className="py-3 px-3 font-semibold">Check-in Time</th>
+                  <th className="py-3 px-3 font-semibold">Member</th>
+                  <th className="py-3 px-3 font-semibold">Pod</th>
+                  <th className="py-3 px-3 font-semibold">Status</th>
+                  <th className="py-3 px-3 font-semibold">Yesterday</th>
+                  <th className="py-3 px-3 font-semibold">Today</th>
+                  <th className="py-3 px-3 font-semibold">Blocker</th>
+                  <th className="py-3 px-3 font-semibold text-right">Progress</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-800/60">
-                {reportData.map((row) => (
-                  <tr key={row.id} className="hover:bg-slate-900/40 transition-colors">
-                    <td className="py-3 px-4 text-slate-400 font-mono text-[11px]">{row.update_date}</td>
-                    <td className="py-3 px-4 text-white font-medium">{row.profile?.full_name || 'Member'}</td>
-                    <td className="py-3 px-4 text-slate-400">{row.pod?.name || 'Pod'}</td>
-                    <td className="py-3 px-4"><StatusBadge status={row.status} /></td>
-                    <td className="py-3 px-4 text-slate-300 max-w-xs truncate" title={row.yesterday}>{row.yesterday}</td>
-                    <td className="py-3 px-4 text-slate-300 max-w-xs truncate" title={row.today}>{row.today}</td>
-                    <td className="py-3 px-4 text-rose-300">{row.blocker || '—'}</td>
-                    <td className="py-3 px-4 text-right font-mono font-bold text-maple-400">{row.progress_percent}%</td>
-                  </tr>
-                ))}
+                {reportData.map((row) => {
+                  const checkinFormatted = row.submitted_at
+                    ? new Date(row.submitted_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', hour12: true })
+                    : '10:00 AM';
+
+                  return (
+                    <tr key={row.id} className="hover:bg-slate-900/40 transition-colors">
+                      <td className="py-3 px-3 text-slate-400 font-mono text-[11px] whitespace-nowrap">{row.update_date}</td>
+                      <td className="py-3 px-3 font-mono text-[11px] text-emerald-400 font-semibold whitespace-nowrap">
+                        {checkinFormatted}
+                      </td>
+                      <td className="py-3 px-3 text-white font-medium whitespace-nowrap">{row.profile?.full_name || 'Member'}</td>
+                      <td className="py-3 px-3 text-slate-400 whitespace-nowrap">{row.pod?.name || 'Pod'}</td>
+                      <td className="py-3 px-3 whitespace-nowrap"><StatusBadge status={row.status} /></td>
+                      <td className="py-3 px-3 text-slate-300 max-w-xs truncate" title={row.yesterday}>{row.yesterday}</td>
+                      <td className="py-3 px-3 text-slate-300 max-w-xs truncate" title={row.today}>{row.today}</td>
+                      <td className="py-3 px-3 text-rose-300 font-medium">{row.blocker || '—'}</td>
+                      <td className="py-3 px-3 text-right font-mono font-bold text-maple-400">{row.progress_percent}%</td>
+                    </tr>
+                  );
+                })}
               </tbody>
             </table>
           </div>

@@ -36,6 +36,7 @@ interface TaskDraftRow {
   unitCountCompleted: number; // Deliverables count (e.g. 1 feature, 3 pages, 5 leads)
   reviewAssignedDate: string;
   comments: string;
+  blocker: string;
 }
 
 export const MemberWorkTab: React.FC = () => {
@@ -76,6 +77,7 @@ export const MemberWorkTab: React.FC = () => {
       unitCountCompleted: 1,
       reviewAssignedDate: todayStr,
       comments: '',
+      blocker: '',
     },
   ]);
 
@@ -99,6 +101,7 @@ export const MemberWorkTab: React.FC = () => {
         unitCountCompleted: 1,
         reviewAssignedDate: workDate,
         comments: '',
+        blocker: '',
       },
     ]);
   };
@@ -145,9 +148,16 @@ export const MemberWorkTab: React.FC = () => {
 
     try {
       validRows.forEach((r) => {
+        const combinedComments = [
+          r.comments.trim(),
+          r.blocker.trim() ? `🚨 BLOCKER: ${r.blocker.trim()}` : '',
+        ]
+          .filter(Boolean)
+          .join(' | ');
+
         dataStore.submitMemberWork({
-          employee_id: profile?.id || 'prof-sample-member',
-          employee_name: profile?.full_name || 'Harshika Netha (Pod Member)',
+          employee_id: profile?.id || '',
+          employee_name: profile?.full_name || 'Team Member',
           date: workDate,
           submission_time: checkinTime,
           checkin_time: checkinTime,
@@ -160,13 +170,13 @@ export const MemberWorkTab: React.FC = () => {
           duration_hours: Number(r.timeInvested) || 1.0,
           unit_count_completed: Number(r.unitCountCompleted) || 1,
           review_assigned_date: r.reviewAssignedDate || workDate,
-          comments: r.comments.trim(),
+          comments: combinedComments,
           category: r.category || 'Development',
-          priority: 'medium',
+          priority: r.blocker.trim() ? 'high' : 'medium',
         });
       });
 
-      // Dispatch high-level summary overview to Google Chat (excluding internal granular comments)
+      // Dispatch high-level summary overview to Google Chat (with highlighted red blockers)
       const memberPod = profile?.pod_id ? dataStore.getPodById(profile.pod_id) : undefined;
       googleChatService.sendWorkDeliverablesSummaryCard({
         memberName: profile?.full_name || 'Team Member',
@@ -179,10 +189,11 @@ export const MemberWorkTab: React.FC = () => {
           timeInvested: Number(r.timeInvested) || 1.0,
           unitCountCompleted: Number(r.unitCountCompleted) || 1,
           comments: r.comments.trim(),
+          blocker: r.blocker.trim(),
         })),
       }).catch((err) => console.warn('GChat summary notice:', err));
 
-      setSuccessNotice(`🎉 Fantastic work! Successfully submitted ${validRows.length} task deliverable(s) for ${workDate} at ${checkinTime}! High-level overview dispatched to Google Chat and assigned to Pod Lead for review.`);
+      setSuccessNotice(`🎉 Fantastic work! Successfully submitted ${validRows.length} task deliverable(s) for ${workDate} at ${checkinTime}! High-level overview dispatched to Google Chat with blockers highlighted.`);
       setTimeout(() => setSuccessNotice(''), 7000);
 
       // Reset empty rows
@@ -197,6 +208,7 @@ export const MemberWorkTab: React.FC = () => {
           unitCountCompleted: 1,
           reviewAssignedDate: workDate,
           comments: '',
+          blocker: '',
         },
       ]);
     } catch (err: any) {
@@ -294,11 +306,11 @@ export const MemberWorkTab: React.FC = () => {
               <thead>
                 <tr className="bg-[#0B1728] border-b border-slate-800 text-[11px] font-semibold uppercase tracking-wider text-slate-300">
                   <th className="py-2.5 px-2 w-8 text-center text-slate-500">#</th>
-                  <th className="py-2.5 px-2 w-[15%]">Project Name</th>
-                  <th className="py-2.5 px-2 w-[32%]">Task Deliverable (Specific activity)</th>
-                  <th className="py-2.5 px-2 w-[110px]">Assigned Date</th>
-                  <th className="py-2.5 px-2 w-[75px] text-left">Hours</th>
-                  <th className="py-2.5 px-2 w-[90px] text-left">
+                  <th className="py-2.5 px-2 w-[13%]">Project Name</th>
+                  <th className="py-2.5 px-2 w-[25%]">Task Deliverable (Specific activity)</th>
+                  <th className="py-2.5 px-2 w-[105px]">Assigned Date</th>
+                  <th className="py-2.5 px-2 w-[65px] text-left">Hours</th>
+                  <th className="py-2.5 px-2 w-[85px] text-left">
                     <div className="flex items-center gap-1">
                       <span>Units</span>
                       <span
@@ -309,8 +321,16 @@ export const MemberWorkTab: React.FC = () => {
                       </span>
                     </div>
                   </th>
-                  <th className="py-2.5 px-2 w-[110px]">Review Date</th>
-                  <th className="py-2.5 px-2 w-[16%]">Comments / Blocker</th>
+                  <th className="py-2.5 px-2 w-[105px]">Review Date</th>
+                  <th className="py-2.5 px-2 w-[16%]">Comments / Notes</th>
+                  <th className="py-2.5 px-2 w-[18%]">
+                    <div className="flex items-center gap-1.5 text-rose-400">
+                      <span>Blockers / Impediments</span>
+                      <span className="text-[9px] px-1.5 py-0.5 rounded bg-rose-500/20 text-rose-300 border border-rose-500/40 font-bold">
+                        🚨 Highlight
+                      </span>
+                    </div>
+                  </th>
                   <th className="py-2.5 px-2 w-8 text-center">Del</th>
                 </tr>
               </thead>
@@ -406,14 +426,29 @@ export const MemberWorkTab: React.FC = () => {
                       />
                     </td>
 
-                    {/* Comments */}
+                    {/* Comments / Notes */}
                     <td className="py-2 px-2">
                       <input
                         type="text"
                         value={row.comments}
                         onChange={(e) => handleUpdateRow(row.id, 'comments', e.target.value)}
-                        placeholder="Notes, blocker..."
+                        placeholder="Progress notes, links..."
                         className="w-full px-2.5 py-1.5 bg-slate-900 border border-slate-800 rounded-lg text-slate-200 placeholder-slate-600 focus:outline-none focus:border-maple-500 text-xs font-medium"
+                      />
+                    </td>
+
+                    {/* Blockers / Impediments - Highlighted */}
+                    <td className="py-2 px-2">
+                      <input
+                        type="text"
+                        value={row.blocker}
+                        onChange={(e) => handleUpdateRow(row.id, 'blocker', e.target.value)}
+                        placeholder="🚨 Blocker or impediment (if any)..."
+                        className={`w-full px-2.5 py-1.5 bg-slate-900 border ${
+                          row.blocker.trim()
+                            ? 'border-rose-500/80 bg-rose-950/20 text-rose-200 font-semibold'
+                            : 'border-slate-800 text-slate-300'
+                        } rounded-lg placeholder-slate-600 focus:outline-none focus:border-rose-500 text-xs`}
                       />
                     </td>
 

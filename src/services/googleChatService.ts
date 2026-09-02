@@ -548,6 +548,7 @@ export const googleChatService = {
       timeInvested: number;
       unitCountCompleted: number;
       comments?: string;
+      blocker?: string;
     }>;
     portalUrl?: string;
   }): Promise<boolean> {
@@ -561,31 +562,38 @@ export const googleChatService = {
       })
       .join('<br/><br/>');
 
-    // Separate general comments and blockers
-    const blockerTasks = params.tasks.filter((t) => {
-      if (!t.comments) return false;
-      const c = t.comments.toLowerCase();
-      return (
-        c.includes('block') ||
-        c.includes('issue') ||
-        c.includes('waiting') ||
-        c.includes('delay') ||
-        c.includes('stuck') ||
-        c.includes('error') ||
-        c.includes('help') ||
-        c.includes('impediment')
-      );
+    // Extract explicit blockers as well as blocker keywords
+    const blockerEntries: Array<{ project: string; text: string }> = [];
+    params.tasks.forEach((t) => {
+      if (t.blocker && t.blocker.trim()) {
+        blockerEntries.push({ project: t.projectName, text: t.blocker.trim() });
+      } else if (t.comments && t.comments.trim()) {
+        const c = t.comments.toLowerCase();
+        if (
+          c.includes('block') ||
+          c.includes('issue') ||
+          c.includes('waiting') ||
+          c.includes('delay') ||
+          c.includes('stuck') ||
+          c.includes('error') ||
+          c.includes('help') ||
+          c.includes('impediment')
+        ) {
+          blockerEntries.push({ project: t.projectName, text: t.comments.trim() });
+        }
+      }
     });
 
     const generalCommentTasks = params.tasks.filter((t) => {
-      if (!t.comments) return false;
-      return !blockerTasks.includes(t);
+      if (!t.comments || !t.comments.trim()) return false;
+      const isBlk = blockerEntries.some((b) => b.project === t.projectName && b.text === t.comments?.trim());
+      return !isBlk;
     });
 
     let blockerSectionText = `🟢 <b>No Blockers Reported</b> — All deliverables progressing smoothly.`;
-    if (blockerTasks.length > 0) {
-      const blockerList = blockerTasks
-        .map((t) => `• <b>${t.projectName}:</b> <font color="#EF4444"><b>🚨 ${t.comments}</b></font>`)
+    if (blockerEntries.length > 0) {
+      const blockerList = blockerEntries
+        .map((b) => `• <b>${b.project}:</b> <font color="#EF4444"><b>🚨 ${b.text}</b></font>`)
         .join('<br/>');
       blockerSectionText = `🚨 <b><font color="#EF4444">ACTIVE BLOCKERS (ATTENTION REQUIRED):</font></b><br/>${blockerList}`;
     }
@@ -679,7 +687,7 @@ export const googleChatService = {
       podName: params.podName,
       totalHours,
       tasksCount: params.tasks.length,
-      hasBlockers: blockerTasks.length > 0,
+      hasBlockers: blockerEntries.length > 0,
       sent,
     });
     return sent;
