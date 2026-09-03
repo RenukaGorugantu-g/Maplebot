@@ -260,9 +260,45 @@ class MapleDataStore {
         };
       }
 
+      // 8. Fetch live performance work logs from Supabase
+      try {
+        const { data: dbWorkLogs, error: logError } = await supabase
+          .from('performance_work_logs')
+          .select('*')
+          .order('date', { ascending: false });
+
+        if (!logError && dbWorkLogs && dbWorkLogs.length > 0) {
+          this.performanceWorkLogs = dbWorkLogs;
+        }
+      } catch (e) {}
+
+      // 9. Fetch live employee leaves from Supabase
+      try {
+        const { data: dbLeaves, error: leaveError } = await supabase
+          .from('employee_leaves')
+          .select('*')
+          .order('start_date', { ascending: false });
+
+        if (!leaveError && dbLeaves && dbLeaves.length > 0) {
+          this.leaveRequests = dbLeaves;
+        }
+      } catch (e) {}
+
+      // 10. Fetch live performance reports from Supabase
+      try {
+        const { data: dbReports, error: repError } = await supabase
+          .from('performance_reports')
+          .select('*')
+          .order('period_start', { ascending: false });
+
+        if (!repError && dbReports && dbReports.length > 0) {
+          this.performanceReports = dbReports;
+        }
+      } catch (e) {}
+
       this.notify();
 
-      // 8. Subscribe to Supabase real-time updates across tables
+      // 11. Subscribe to Supabase real-time updates across all tables
       supabase
         .channel('public-sync')
         .on('postgres_changes', { event: '*', schema: 'public', table: 'updates' }, (payload) => {
@@ -296,6 +332,66 @@ class MapleDataStore {
                 this.saveStoredCommentsVault(vault);
                 this.notify();
               }
+            }
+          }
+        })
+        .on('postgres_changes', { event: '*', schema: 'public', table: 'performance_work_logs' }, (payload) => {
+          if (payload.eventType === 'INSERT') {
+            const newLog = payload.new as PerformanceWorkLog;
+            if (!this.performanceWorkLogs.some((l) => l.id === newLog.id)) {
+              this.performanceWorkLogs.unshift(newLog);
+              this.notify();
+            }
+          } else if (payload.eventType === 'UPDATE') {
+            const updatedLog = payload.new as PerformanceWorkLog;
+            const idx = this.performanceWorkLogs.findIndex((l) => l.id === updatedLog.id);
+            if (idx !== -1) {
+              this.performanceWorkLogs[idx] = updatedLog;
+              this.notify();
+            }
+          } else if (payload.eventType === 'DELETE') {
+            const oldId = (payload.old as any)?.id;
+            if (oldId) {
+              this.performanceWorkLogs = this.performanceWorkLogs.filter((l) => l.id !== oldId);
+              this.notify();
+            }
+          }
+        })
+        .on('postgres_changes', { event: '*', schema: 'public', table: 'employee_leaves' }, (payload) => {
+          if (payload.eventType === 'INSERT') {
+            const newLeave = payload.new as LeaveRequest;
+            if (!this.leaveRequests.some((l) => l.id === newLeave.id)) {
+              this.leaveRequests.unshift(newLeave);
+              this.notify();
+            }
+          } else if (payload.eventType === 'UPDATE') {
+            const updatedLeave = payload.new as LeaveRequest;
+            const idx = this.leaveRequests.findIndex((l) => l.id === updatedLeave.id);
+            if (idx !== -1) {
+              this.leaveRequests[idx] = updatedLeave;
+              this.notify();
+            }
+          } else if (payload.eventType === 'DELETE') {
+            const oldId = (payload.old as any)?.id;
+            if (oldId) {
+              this.leaveRequests = this.leaveRequests.filter((l) => l.id !== oldId);
+              this.notify();
+            }
+          }
+        })
+        .on('postgres_changes', { event: '*', schema: 'public', table: 'performance_reports' }, (payload) => {
+          if (payload.eventType === 'INSERT') {
+            const newReport = payload.new as PerformanceReport;
+            if (!this.performanceReports.some((r) => r.id === newReport.id)) {
+              this.performanceReports.unshift(newReport);
+              this.notify();
+            }
+          } else if (payload.eventType === 'UPDATE') {
+            const updatedReport = payload.new as PerformanceReport;
+            const idx = this.performanceReports.findIndex((r) => r.id === updatedReport.id);
+            if (idx !== -1) {
+              this.performanceReports[idx] = updatedReport;
+              this.notify();
             }
           }
         })

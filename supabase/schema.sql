@@ -363,3 +363,246 @@ CREATE POLICY "Allow all on audit_logs" ON audit_logs FOR ALL USING (true) WITH 
 ALTER TABLE sprints ENABLE ROW LEVEL SECURITY;
 DROP POLICY IF EXISTS "Allow all on sprints" ON sprints;
 CREATE POLICY "Allow all on sprints" ON sprints FOR ALL USING (true) WITH CHECK (true);
+
+-- ============================================================================
+-- 17. PERFORMANCE WORK LOGS TABLE (17 EXACT COLUMNS + CHECK-IN TIME & WORKFLOW)
+-- ============================================================================
+CREATE TABLE IF NOT EXISTS public.performance_work_logs (
+    id TEXT PRIMARY KEY DEFAULT ('pwl-' || substr(md5(random()::text), 1, 10)),
+    organization_id TEXT NOT NULL DEFAULT 'org-maple-01' REFERENCES public.organizations(id) ON DELETE CASCADE,
+    employee_id TEXT NOT NULL REFERENCES public.profiles(id) ON DELETE CASCADE,
+    employee_name TEXT NOT NULL,
+    department_id TEXT,
+    department TEXT NOT NULL DEFAULT 'General',
+    pod_id TEXT REFERENCES public.pods(id) ON DELETE SET NULL,
+    pod_name TEXT,
+
+    -- 1. Member Inputs (9 Fields + Check-in Time)
+    date DATE NOT NULL DEFAULT CURRENT_DATE,
+    submission_time TEXT DEFAULT '10:00 AM',
+    checkin_time TEXT DEFAULT '10:00 AM',
+    project_name TEXT NOT NULL,
+    project TEXT NOT NULL,
+    task TEXT NOT NULL,
+    task_title TEXT NOT NULL,
+    task_description TEXT,
+    assigned_date DATE NOT NULL DEFAULT CURRENT_DATE,
+    time_invested NUMERIC(6,2) NOT NULL DEFAULT 1.0,
+    duration_hours NUMERIC(6,2) NOT NULL DEFAULT 1.0,
+    unit_count_completed INT NOT NULL DEFAULT 1,
+    review_assigned_date DATE NOT NULL DEFAULT CURRENT_DATE,
+    comments TEXT,
+    category TEXT DEFAULT 'Development',
+    priority TEXT DEFAULT 'medium',
+    deliverable TEXT,
+    outcome TEXT,
+    impact TEXT,
+
+    -- 2. Pod Lead Review Verification (5 Fields)
+    expected_completion_date DATE,
+    completed_date DATE,
+    review_completed_date DATE,
+    reviewer TEXT,
+    reviewer_name TEXT,
+    reviewer_id TEXT REFERENCES public.profiles(id) ON DELETE SET NULL,
+    error_count INT DEFAULT 0,
+    errors INT DEFAULT 0,
+
+    -- 3. Manager Performance & Evaluation (3 Fields)
+    quality NUMERIC(3,1) DEFAULT 4.0,
+    tat TEXT,
+    tat_days INT,
+    efficiency TEXT,
+
+    -- Status & Workflow Tracking
+    workflow_status TEXT DEFAULT 'submitted' CHECK (workflow_status IN ('draft', 'submitted', 'pod_lead_reviewed', 'manager_reviewed')),
+    delivery_status TEXT DEFAULT 'pending' CHECK (delivery_status IN ('pending', 'completed_early', 'completed_on_time', 'delayed')),
+    delay_days INT DEFAULT 0,
+    review_tat_days INT DEFAULT 0,
+    status TEXT DEFAULT 'completed',
+
+    -- Responsibility Audit
+    submitted_by TEXT,
+    submitted_at TIMESTAMPTZ,
+    pod_lead_reviewed_by TEXT,
+    pod_lead_reviewed_at TIMESTAMPTZ,
+    manager_reviewed_by TEXT,
+    manager_reviewed_at TIMESTAMPTZ,
+    source_update_id TEXT,
+    audit_trail JSONB DEFAULT '[]'::jsonb,
+
+    created_at TIMESTAMPTZ DEFAULT NOW(),
+    updated_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+-- ============================================================================
+-- 18. PERFORMANCE KPIS TABLE (KRA & KPI Targets)
+-- ============================================================================
+CREATE TABLE IF NOT EXISTS public.performance_kpis (
+    id TEXT PRIMARY KEY DEFAULT ('kpi-' || substr(md5(random()::text), 1, 8)),
+    organization_id TEXT NOT NULL DEFAULT 'org-maple-01' REFERENCES public.organizations(id) ON DELETE CASCADE,
+    pod_id TEXT REFERENCES public.pods(id) ON DELETE SET NULL,
+    employee_id TEXT REFERENCES public.profiles(id) ON DELETE CASCADE,
+    kra TEXT NOT NULL,
+    kpi TEXT NOT NULL,
+    target_value NUMERIC(10,2),
+    target_unit TEXT DEFAULT '%',
+    actual_value NUMERIC(10,2),
+    status TEXT NOT NULL DEFAULT 'met' CHECK (status IN ('exceeded', 'met', 'near_target', 'needs_attention', 'not_measured')),
+    measurement TEXT NOT NULL,
+    frequency TEXT NOT NULL DEFAULT 'monthly' CHECK (frequency IN ('daily', 'weekly', 'monthly', 'quarterly', 'annual')),
+    created_at TIMESTAMPTZ DEFAULT NOW(),
+    updated_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+-- ============================================================================
+-- 19. PERFORMANCE REPORTS TABLE (Executive & Manager Assessments)
+-- ============================================================================
+CREATE TABLE IF NOT EXISTS public.performance_reports (
+    id TEXT PRIMARY KEY DEFAULT ('prep-' || substr(md5(random()::text), 1, 8)),
+    organization_id TEXT NOT NULL DEFAULT 'org-maple-01' REFERENCES public.organizations(id) ON DELETE CASCADE,
+    employee_id TEXT REFERENCES public.profiles(id) ON DELETE CASCADE,
+    employee_name TEXT NOT NULL,
+    pod_id TEXT REFERENCES public.pods(id) ON DELETE SET NULL,
+    pod_name TEXT,
+    report_type TEXT NOT NULL,
+    period_start DATE NOT NULL,
+    period_end DATE NOT NULL,
+    period_label TEXT NOT NULL,
+    report_data JSONB NOT NULL DEFAULT '{}'::jsonb,
+    performance_score NUMERIC(5,2),
+    status TEXT NOT NULL DEFAULT 'approved' CHECK (status IN ('draft', 'reviewed', 'approved')),
+    manager_rating NUMERIC(3,1),
+    manager_comments TEXT,
+    key_strengths TEXT,
+    development_areas TEXT,
+    next_period_objectives TEXT,
+    reviewed_by TEXT,
+    reviewed_at TIMESTAMPTZ,
+    generated_at TIMESTAMPTZ DEFAULT NOW(),
+    updated_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+-- ============================================================================
+-- 20. EMPLOYEE LEAVES TABLE (Leave Planner & Approvals)
+-- ============================================================================
+CREATE TABLE IF NOT EXISTS public.employee_leaves (
+    id TEXT PRIMARY KEY DEFAULT ('leave-' || substr(md5(random()::text), 1, 8)),
+    organization_id TEXT NOT NULL DEFAULT 'org-maple-01' REFERENCES public.organizations(id) ON DELETE CASCADE,
+    employee_id TEXT NOT NULL REFERENCES public.profiles(id) ON DELETE CASCADE,
+    employee_name TEXT NOT NULL,
+    pod_id TEXT REFERENCES public.pods(id) ON DELETE SET NULL,
+    pod_name TEXT,
+    leave_type TEXT NOT NULL,
+    start_date DATE NOT NULL,
+    end_date DATE NOT NULL,
+    days_count INT NOT NULL DEFAULT 1,
+    quarter TEXT NOT NULL DEFAULT 'Q3',
+    half_year TEXT NOT NULL DEFAULT 'H2',
+    year INT NOT NULL DEFAULT 2026,
+    reason TEXT NOT NULL,
+    status TEXT NOT NULL DEFAULT 'pending' CHECK (status IN ('planned', 'pending', 'approved', 'rejected')),
+    approved_by TEXT,
+    approved_at TIMESTAMPTZ,
+    created_at TIMESTAMPTZ DEFAULT NOW(),
+    updated_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+-- ============================================================================
+-- 21. COMPANY HOLIDAYS TABLE
+-- ============================================================================
+CREATE TABLE IF NOT EXISTS public.company_holidays (
+    id TEXT PRIMARY KEY DEFAULT ('hol-' || substr(md5(random()::text), 1, 8)),
+    name TEXT NOT NULL,
+    date DATE NOT NULL,
+    day_of_week TEXT NOT NULL,
+    is_optional BOOLEAN DEFAULT FALSE,
+    quarter TEXT NOT NULL,
+    half_year TEXT NOT NULL,
+    year INT NOT NULL DEFAULT 2026,
+    description TEXT,
+    created_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+-- ============================================================================
+-- 22. USER CREDENTIALS & AUTHENTICATION TABLE
+-- ============================================================================
+CREATE TABLE IF NOT EXISTS public.user_credentials (
+    email TEXT PRIMARY KEY,
+    password_hash TEXT NOT NULL,
+    profile_id TEXT REFERENCES public.profiles(id) ON DELETE CASCADE,
+    created_at TIMESTAMPTZ DEFAULT NOW(),
+    updated_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+-- ============================================================================
+-- 23. UPDATE COMMENTS TABLE (Feedback from Managers & Pod Leads)
+-- ============================================================================
+CREATE TABLE IF NOT EXISTS public.update_comments (
+    id TEXT PRIMARY KEY DEFAULT ('comm-' || substr(md5(random()::text), 1, 10)),
+    update_id TEXT NOT NULL REFERENCES public.updates(id) ON DELETE CASCADE,
+    user_id TEXT NOT NULL REFERENCES public.profiles(id) ON DELETE CASCADE,
+    user_name TEXT NOT NULL,
+    comment TEXT NOT NULL,
+    created_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+-- Indexes for performance & leaves
+CREATE INDEX IF NOT EXISTS idx_work_logs_employee ON public.performance_work_logs(employee_id);
+CREATE INDEX IF NOT EXISTS idx_work_logs_pod ON public.performance_work_logs(pod_id);
+CREATE INDEX IF NOT EXISTS idx_work_logs_date ON public.performance_work_logs(date);
+CREATE INDEX IF NOT EXISTS idx_work_logs_workflow ON public.performance_work_logs(workflow_status);
+CREATE INDEX IF NOT EXISTS idx_leaves_employee ON public.employee_leaves(employee_id);
+CREATE INDEX IF NOT EXISTS idx_leaves_dates ON public.employee_leaves(start_date, end_date);
+CREATE INDEX IF NOT EXISTS idx_leaves_status ON public.employee_leaves(status);
+CREATE INDEX IF NOT EXISTS idx_update_comments_update ON public.update_comments(update_id);
+
+-- Enable RLS for newly added tables
+ALTER TABLE public.performance_work_logs ENABLE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS "Allow all on performance_work_logs" ON public.performance_work_logs;
+CREATE POLICY "Allow all on performance_work_logs" ON public.performance_work_logs FOR ALL USING (true) WITH CHECK (true);
+
+ALTER TABLE public.performance_kpis ENABLE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS "Allow all on performance_kpis" ON public.performance_kpis;
+CREATE POLICY "Allow all on performance_kpis" ON public.performance_kpis FOR ALL USING (true) WITH CHECK (true);
+
+ALTER TABLE public.performance_reports ENABLE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS "Allow all on performance_reports" ON public.performance_reports;
+CREATE POLICY "Allow all on performance_reports" ON public.performance_reports FOR ALL USING (true) WITH CHECK (true);
+
+ALTER TABLE public.employee_leaves ENABLE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS "Allow all on employee_leaves" ON public.employee_leaves;
+CREATE POLICY "Allow all on employee_leaves" ON public.employee_leaves FOR ALL USING (true) WITH CHECK (true);
+
+ALTER TABLE public.company_holidays ENABLE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS "Allow all on company_holidays" ON public.company_holidays;
+CREATE POLICY "Allow all on company_holidays" ON public.company_holidays FOR ALL USING (true) WITH CHECK (true);
+
+ALTER TABLE public.user_credentials ENABLE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS "Allow all on user_credentials" ON public.user_credentials;
+CREATE POLICY "Allow all on user_credentials" ON public.user_credentials FOR ALL USING (true) WITH CHECK (true);
+
+ALTER TABLE public.update_comments ENABLE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS "Allow all on update_comments" ON public.update_comments;
+CREATE POLICY "Allow all on update_comments" ON public.update_comments FOR ALL USING (true) WITH CHECK (true);
+
+-- Enable Real-Time Replication
+DO $$
+BEGIN
+    BEGIN
+        ALTER PUBLICATION supabase_realtime ADD TABLE 
+            public.updates, 
+            public.update_comments, 
+            public.blockers, 
+            public.kudos, 
+            public.profiles, 
+            public.pods, 
+            public.performance_work_logs, 
+            public.employee_leaves, 
+            public.performance_reports;
+    EXCEPTION
+        WHEN duplicate_object THEN NULL;
+        WHEN others THEN NULL;
+    END;
+END $$;
+
