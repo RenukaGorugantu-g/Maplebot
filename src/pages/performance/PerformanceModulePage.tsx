@@ -102,19 +102,19 @@ export const PerformanceModulePage: React.FC<{ initialTab?: string }> = ({
     });
   } else if (isManager) {
     tabs.push({
+      id: 'member_work',
+      label: 'Log My Work Tasks (9 Fields)',
+      icon: <Table className="w-4 h-4 text-maple-400" />,
+    });
+    tabs.push({
       id: 'pod_review',
-      label: 'Pod Work Review & Deliverables',
-      icon: <CheckSquare className="w-4 h-4" />,
+      label: 'Pod Work Review (5 Fields)',
+      icon: <CheckSquare className="w-4 h-4 text-sky-400" />,
     });
     tabs.push({
       id: 'manager_review',
-      label: 'Consolidated Performance Table (17 Cols)',
+      label: 'Pod Performance Ledger (17 Cols)',
       icon: <Table className="w-4 h-4" />,
-    });
-    tabs.push({
-      id: 'sprint_analytics',
-      label: '1-Click Sprint & Review Analytics',
-      icon: <Zap className="w-4 h-4 text-amber-400" />,
     });
     tabs.push({
       id: 'leave_planner',
@@ -122,8 +122,13 @@ export const PerformanceModulePage: React.FC<{ initialTab?: string }> = ({
       icon: <CalendarDays className="w-4 h-4 text-emerald-400" />,
     });
     tabs.push({
+      id: 'sprint_analytics',
+      label: 'Sprint & Review Analytics',
+      icon: <Zap className="w-4 h-4 text-amber-400" />,
+    });
+    tabs.push({
       id: 'maple_ai_reports',
-      label: 'Maple AI Executive Reports',
+      label: 'Maple AI Reports',
       icon: <Sparkles className="w-4 h-4" />,
     });
     tabs.push({

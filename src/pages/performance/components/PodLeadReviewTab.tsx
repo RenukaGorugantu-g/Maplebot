@@ -59,21 +59,21 @@ export const PodLeadReviewTab: React.FC = () => {
   const [ownCategory, setOwnCategory] = useState<WorkCategory>('Development');
   const [ownPriority, setOwnPriority] = useState<WorkPriority>('high');
 
+  const [reviewComments, setReviewComments] = useState<string>('');
   const [searchQuery, setSearchQuery] = useState<string>('');
   const [successNotice, setSuccessNotice] = useState<string>('');
 
-  const podId = profile?.pod_id || 'pod-web-sales';
+  const podId = profile?.pod_id || userPod?.id || 'pod-web-sales';
 
-  // Retrieve submitted pod logs (excluding lead's own work for review queue)
+  // Retrieve submitted pod logs (including both team members and pod lead's own submissions)
   const podMemberLogs = useMemo(() => {
-    const all = dataStore.getPerformanceWorkLogs({ podId });
-    return all.filter((l) => l.employee_id !== profile?.id);
+    return dataStore.getPerformanceWorkLogs({ podId });
   }, [podId, profile?.id, reviewingLog, isSavingReview]);
 
   // Retrieve lead's own logs
   const leadOwnLogs = useMemo(() => {
     return dataStore.getPerformanceWorkLogs({ employeeId: profile?.id });
-  }, [profile?.id, isOwnWorkModalOpen]);
+  }, [profile?.id, isOwnWorkModalOpen, isSavingReview]);
 
   const activeList = subView === 'review_queue' ? podMemberLogs : leadOwnLogs;
   const filteredList = useMemo(() => {
@@ -94,8 +94,9 @@ export const PodLeadReviewTab: React.FC = () => {
     setExpectedCompletionDate(log.expected_completion_date || log.assigned_date || today);
     setCompletedDate(log.completed_date || today);
     setReviewCompletedDate(log.review_completed_date || today);
-    setReviewer(log.reviewer || profile?.full_name || 'Renuka Gorugantu');
+    setReviewer(log.reviewer || profile?.full_name || 'Pod Lead');
     setErrorCount(log.error_count ?? 0);
+    setReviewComments(log.comments || '');
     setReviewErrorMsg('');
   };
 
@@ -119,13 +120,20 @@ export const PodLeadReviewTab: React.FC = () => {
         error_count: Number(errorCount),
       });
 
+      if (updated && reviewComments.trim() !== (reviewingLog.comments || '')) {
+        dataStore.updatePerformanceWorkLog(reviewingLog.id, {
+          comments: reviewComments.trim(),
+        });
+      }
+
       if (updated) {
+        const finalComments = reviewComments.trim() || updated.comments || 'Deliverable verified and advanced to manager review.';
         googleChatService.sendReviewEvaluationCard({
-          log: updated,
+          log: { ...updated, comments: finalComments },
           reviewerName: reviewer.trim() || profile?.full_name || 'Pod Lead',
           reviewerRole: 'Pod Lead',
           errorCount: Number(errorCount),
-          comments: reviewingLog.comments || 'Deliverable verified and advanced to manager review.',
+          comments: finalComments,
         });
       }
 
@@ -286,7 +294,14 @@ export const PodLeadReviewTab: React.FC = () => {
                     return (
                       <tr key={row.id} className="hover:bg-slate-800/40 transition-colors">
                         <td className="py-3 px-3 font-semibold text-white whitespace-nowrap align-top">
-                          {row.employee_name}
+                          <div className="flex items-center gap-1.5 flex-wrap">
+                            <span>{row.employee_name}</span>
+                            {row.employee_id === profile?.id && (
+                              <span className="text-[9px] px-1.5 py-0.5 rounded bg-maple-500/20 text-maple-300 border border-maple-500/30 font-bold">
+                                You (Pod Lead)
+                              </span>
+                            )}
+                          </div>
                         </td>
                         <td className="py-3 px-3 whitespace-nowrap align-top">
                           <span className="font-mono text-[11px] text-white block font-bold">{row.date}</span>
@@ -310,7 +325,6 @@ export const PodLeadReviewTab: React.FC = () => {
                         <td className="py-3 px-3 text-left font-mono text-purple-300 font-bold whitespace-nowrap align-top">
                           {row.unit_count_completed || 0} items
                         </td>
-                        {/* 5 Review Fields */}
                         <td className="py-3 px-3 font-mono text-[11px] whitespace-nowrap align-top">
                           {row.expected_completion_date || <span className="text-amber-400 italic">Pending</span>}
                         </td>
@@ -380,47 +394,66 @@ export const PodLeadReviewTab: React.FC = () => {
                     <th className="py-3 px-3 text-right whitespace-nowrap">Hours</th>
                     <th className="py-3 px-3 text-right whitespace-nowrap">Units</th>
                     <th className="py-3 px-3 whitespace-nowrap">Reviewer</th>
-                    <th className="py-3 px-3 text-center whitespace-nowrap">TAT</th>
                     <th className="py-3 px-3 text-center whitespace-nowrap">Status</th>
+                    <th className="py-3 px-3 text-center whitespace-nowrap">Action</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-800/60 text-slate-200">
-                  {filteredList.map((row) => (
-                    <tr key={row.id} className="hover:bg-slate-800/40 transition-colors">
-                      <td className="py-3 px-3 font-mono text-[11px] text-slate-400 whitespace-nowrap align-top">
-                        {row.date}
-                      </td>
-                      <td className="py-3 px-3 font-semibold text-white whitespace-nowrap align-top">
-                        {row.project_name || row.project}
-                      </td>
-                      <td className="py-3 px-3 align-top">
-                        <span className="font-medium text-slate-100 block">{row.task || row.task_title}</span>
-                      </td>
-                      <td className="py-3 px-3 font-mono text-[11px] text-slate-400 whitespace-nowrap align-top">
-                        {row.assigned_date}
-                      </td>
-                      <td className="py-3 px-3 font-mono text-[11px] text-slate-300 whitespace-nowrap align-top">
-                        {row.completed_date || '—'}
-                      </td>
-                      <td className="py-3 px-3 text-right font-mono text-sky-400 font-bold whitespace-nowrap align-top">
-                        {row.time_invested || row.duration_hours}h
-                      </td>
-                      <td className="py-3 px-3 text-right font-mono text-purple-300 font-bold whitespace-nowrap align-top">
-                        {row.unit_count_completed || 0}
-                      </td>
-                      <td className="py-3 px-3 text-slate-300 whitespace-nowrap align-top text-[11px]">
-                        {row.reviewer || 'Sandeep Guntupalli'}
-                      </td>
-                      <td className="py-3 px-3 text-center font-mono text-maple-400 font-bold whitespace-nowrap align-top">
-                        {row.tat || '—'}
-                      </td>
-                      <td className="py-3 px-3 text-center whitespace-nowrap align-top">
-                        <span className="px-2.5 py-0.5 rounded-full text-[10px] font-bold uppercase bg-emerald-500/20 text-emerald-300 border border-emerald-500/30">
-                          {row.workflow_status.replace('_', ' ')}
-                        </span>
-                      </td>
-                    </tr>
-                  ))}
+                  {filteredList.map((row) => {
+                    const isReviewed = row.workflow_status === 'pod_lead_reviewed' || row.workflow_status === 'manager_reviewed';
+                    return (
+                      <tr key={row.id} className="hover:bg-slate-800/40 transition-colors">
+                        <td className="py-3 px-3 font-mono text-[11px] text-slate-400 whitespace-nowrap align-top">
+                          {row.date}
+                        </td>
+                        <td className="py-3 px-3 font-semibold text-white whitespace-nowrap align-top">
+                          {row.project_name || row.project}
+                        </td>
+                        <td className="py-3 px-3 align-top">
+                          <span className="font-medium text-slate-100 block">{row.task || row.task_title}</span>
+                          {row.comments && (
+                            <span className="text-[11px] text-slate-400 block mt-0.5">{row.comments}</span>
+                          )}
+                        </td>
+                        <td className="py-3 px-3 font-mono text-[11px] text-slate-400 whitespace-nowrap align-top">
+                          {row.assigned_date}
+                        </td>
+                        <td className="py-3 px-3 font-mono text-[11px] text-slate-300 whitespace-nowrap align-top">
+                          {row.completed_date || '—'}
+                        </td>
+                        <td className="py-3 px-3 text-right font-mono text-sky-400 font-bold whitespace-nowrap align-top">
+                          {row.time_invested || row.duration_hours}h
+                        </td>
+                        <td className="py-3 px-3 text-right font-mono text-purple-300 font-bold whitespace-nowrap align-top">
+                          {row.unit_count_completed || 0}
+                        </td>
+                        <td className="py-3 px-3 text-slate-300 whitespace-nowrap align-top text-[11px]">
+                          {row.reviewer || 'Pod Lead'}
+                        </td>
+                        <td className="py-3 px-3 text-center whitespace-nowrap align-top">
+                          <span
+                            className={`px-2.5 py-0.5 rounded-full text-[10px] font-bold uppercase border ${
+                              isReviewed
+                                ? 'bg-emerald-500/20 text-emerald-300 border-emerald-500/30'
+                                : 'bg-amber-500/20 text-amber-300 border-amber-500/30'
+                            }`}
+                          >
+                            {isReviewed ? 'Reviewed' : 'Needs Review'}
+                          </span>
+                        </td>
+                        <td className="py-3 px-3 text-center whitespace-nowrap align-top">
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            onClick={() => openReviewModal(row)}
+                            leftIcon={<FileCheck className="w-3.5 h-3.5 text-maple-400" />}
+                          >
+                            {isReviewed ? 'Edit Review' : 'Review 5 Fields'}
+                          </Button>
+                        </td>
+                      </tr>
+                    );
+                  })}
                 </tbody>
               </table>
             </div>
@@ -434,7 +467,7 @@ export const PodLeadReviewTab: React.FC = () => {
           isOpen={!!reviewingLog}
           onClose={() => setReviewingLog(null)}
           title={`Pod Lead Deliverable Review — ${reviewingLog.employee_name}`}
-          subtitle="Verify deliverable completion dates, reviewer allocation, and audit error count."
+          subtitle="Verify deliverable completion dates, reviewer allocation, audit error count, and add comments."
           maxWidth="4xl"
         >
           <form onSubmit={handleSaveReview} className="space-y-6 text-xs">
@@ -448,55 +481,62 @@ export const PodLeadReviewTab: React.FC = () => {
             <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
               {/* LEFT COLUMN (5 Cols): Preserved Member Task Info */}
               <div className="lg:col-span-5 space-y-4">
-                <div className="p-5 rounded-2xl bg-[#060E1A] border border-slate-800 space-y-4 shadow-inner">
-                  <div>
-                    <span className="text-[10px] font-bold uppercase text-slate-400 tracking-wider block mb-1">
-                      Member Deliverable
+                <div className="p-4 rounded-2xl bg-[#081426] border border-slate-800 space-y-3">
+                  <div className="flex items-center justify-between border-b border-slate-800 pb-2">
+                    <span className="text-[11px] font-bold uppercase tracking-wider text-slate-400">
+                      Deliverable Context
                     </span>
-                    <h4 className="text-sm font-bold text-white leading-snug">
-                      {reviewingLog.task || reviewingLog.task_title}
-                    </h4>
+                    <span className="font-mono text-[10px] text-slate-500">ID: {reviewingLog.id.slice(-6)}</span>
                   </div>
 
-                  <div className="grid grid-cols-2 gap-3 pt-3 border-t border-slate-800/80 text-xs">
+                  <div className="space-y-2">
                     <div>
-                      <span className="text-[10px] text-slate-400 block font-semibold">Member</span>
-                      <span className="text-white font-bold">{reviewingLog.employee_name}</span>
+                      <span className="text-slate-400 block text-[10px]">Team Member</span>
+                      <span className="font-semibold text-white text-xs">{reviewingLog.employee_name}</span>
                     </div>
-                    <div>
-                      <span className="text-[10px] text-slate-400 block font-semibold">Project</span>
-                      <span className="text-slate-200 font-semibold">{reviewingLog.project_name || reviewingLog.project}</span>
+
+                    <div className="grid grid-cols-2 gap-2">
+                      <div>
+                        <span className="text-slate-400 block text-[10px]">Date</span>
+                        <span className="font-mono text-slate-200 text-xs">{reviewingLog.date}</span>
+                      </div>
+                      <div>
+                        <span className="text-slate-400 block text-[10px]">Check-in Time</span>
+                        <span className="font-mono text-emerald-400 text-xs font-semibold">
+                          {reviewingLog.submission_time || reviewingLog.checkin_time || '10:00 AM'}
+                        </span>
+                      </div>
                     </div>
+
                     <div>
-                      <span className="text-[10px] text-slate-400 block font-semibold">Assigned Date</span>
-                      <span className="text-slate-300 font-mono">{reviewingLog.assigned_date}</span>
+                      <span className="text-slate-400 block text-[10px]">Project</span>
+                      <span className="font-medium text-slate-200 text-xs">{reviewingLog.project_name || reviewingLog.project}</span>
                     </div>
+
                     <div>
-                      <span className="text-[10px] text-slate-400 block font-semibold">Review Assigned</span>
-                      <span className="text-slate-300 font-mono">{reviewingLog.review_assigned_date || reviewingLog.assigned_date}</span>
+                      <span className="text-slate-400 block text-[10px]">Task Deliverable</span>
+                      <p className="text-slate-200 text-xs font-medium bg-slate-900/80 p-2.5 rounded-xl border border-slate-800 mt-1">
+                        {reviewingLog.task || reviewingLog.task_title}
+                      </p>
                     </div>
-                    <div>
-                      <span className="text-[10px] text-slate-400 block font-semibold">Time Invested</span>
-                      <span className="text-sky-400 font-mono font-bold text-sm">{reviewingLog.time_invested} hrs</span>
-                    </div>
-                    <div>
-                      <span className="text-[10px] text-slate-400 block font-semibold">Deliverables Count</span>
-                      <span className="text-purple-300 font-mono font-bold text-sm">{reviewingLog.unit_count_completed || 1} items</span>
+
+                    <div className="grid grid-cols-2 gap-2 pt-1">
+                      <div>
+                        <span className="text-slate-400 block text-[10px]">Hours Spent</span>
+                        <span className="font-mono text-sky-400 font-bold text-xs">{reviewingLog.time_invested || reviewingLog.duration_hours}h</span>
+                      </div>
+                      <div>
+                        <span className="text-slate-400 block text-[10px]">Units Completed</span>
+                        <span className="font-mono text-purple-300 font-bold text-xs">{reviewingLog.unit_count_completed}</span>
+                      </div>
                     </div>
                   </div>
-
-                  {reviewingLog.comments && (
-                    <div className="pt-2 border-t border-slate-800/80">
-                      <span className="text-[10px] text-slate-400 block font-semibold">Member Notes</span>
-                      <p className="text-slate-300 text-[11px] italic mt-0.5">{reviewingLog.comments}</p>
-                    </div>
-                  )}
                 </div>
               </div>
 
-              {/* RIGHT COLUMN (7 Cols): Pod Lead 5 Verification Fields */}
+              {/* RIGHT COLUMN (7 Cols): 5 Pod Lead Review Fields & Comments */}
               <div className="lg:col-span-7 space-y-4">
-                <div className="p-5 rounded-2xl bg-[#081f38] border border-sky-500/30 space-y-4 shadow-lg">
+                <div className="p-4 rounded-2xl bg-sky-950/20 border border-sky-500/30 space-y-4">
                   <div className="flex items-center justify-between">
                     <span className="text-xs font-bold uppercase tracking-wider text-sky-400 flex items-center gap-1.5">
                       <FileCheck className="w-4 h-4" />
@@ -583,6 +623,20 @@ export const PodLeadReviewTab: React.FC = () => {
                         Enter 0 if flawless. Used by Maple AI & Manager for quality assessment.
                       </span>
                     </div>
+                  </div>
+
+                  {/* Reviewer Comments & Feedback */}
+                  <div className="space-y-1 pt-1">
+                    <label className="text-slate-200 font-bold block text-xs">
+                      Reviewer Feedback / Comments (Synced to Google Chat)
+                    </label>
+                    <textarea
+                      value={reviewComments}
+                      onChange={(e) => setReviewComments(e.target.value)}
+                      placeholder="Add feedback, notes on deliverable quality, or revision points..."
+                      rows={2}
+                      className="w-full px-3.5 py-2.5 bg-slate-900 border border-slate-700 rounded-xl text-white focus:outline-none focus:border-sky-500 text-xs"
+                    />
                   </div>
                 </div>
               </div>
