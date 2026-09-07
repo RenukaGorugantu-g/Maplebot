@@ -31,6 +31,7 @@ import {
 interface TaskDraftRow {
   id: string;
   category: WorkCategory;
+  projectName: string;
   task: string;
   assignedDate: string;
   timeInvested: number;
@@ -71,6 +72,7 @@ export const MemberWorkTab: React.FC = () => {
     {
       id: 'row-1',
       category: 'Development',
+      projectName: '',
       task: '',
       assignedDate: todayStr,
       timeInvested: 0,
@@ -94,6 +96,7 @@ export const MemberWorkTab: React.FC = () => {
       {
         id: newId,
         category: 'Development',
+        projectName: '',
         task: '',
         assignedDate: workDate,
         timeInvested: 0,
@@ -138,6 +141,10 @@ export const MemberWorkTab: React.FC = () => {
     // Validation: ensure every operational required field is filled
     for (let i = 0; i < taskRows.length; i++) {
       const r = taskRows[i];
+      if (!r.projectName.trim()) {
+        setErrorMsg(`Task #${i + 1}: Project Name is required.`);
+        return;
+      }
       if (!r.task.trim()) {
         setErrorMsg(`Task #${i + 1}: Task Deliverable description is required.`);
         return;
@@ -179,8 +186,8 @@ export const MemberWorkTab: React.FC = () => {
           date: workDate,
           submission_time: checkinTime,
           checkin_time: checkinTime,
-          project_name: 'General',
-          project: 'General',
+          project_name: r.projectName.trim() || 'General',
+          project: r.projectName.trim() || 'General',
           task: r.task.trim(),
           task_title: r.task.trim(),
           assigned_date: r.assignedDate || workDate,
@@ -205,7 +212,7 @@ export const MemberWorkTab: React.FC = () => {
         date: workDate,
         checkinTime: checkinTime,
         tasks: validRows.map((r) => ({
-          projectName: 'General',
+          projectName: r.projectName.trim() || 'General',
           task: r.task.trim(),
           timeInvested: Number(r.timeInvested) || 0,
           unitCountCompleted: Number(r.unitCountCompleted) || 1,
@@ -222,6 +229,7 @@ export const MemberWorkTab: React.FC = () => {
         {
           id: `row-${Date.now()}-1`,
           category: 'Development',
+          projectName: '',
           task: '',
           assignedDate: workDate,
           timeInvested: 0,
@@ -326,7 +334,8 @@ export const MemberWorkTab: React.FC = () => {
               <thead>
                 <tr className="bg-[#0B1728] border-b border-slate-800 text-[11px] font-semibold uppercase tracking-wider text-slate-300">
                   <th className="py-2.5 px-2 w-8 text-center text-slate-500">#</th>
-                  <th className="py-2.5 px-2 w-[34%]">Task Deliverable (Specific activity)</th>
+                  <th className="py-2.5 px-2 w-[140px]">Project Name</th>
+                  <th className="py-2.5 px-2 w-[28%]">Task Deliverable (Specific activity)</th>
                   <th className="py-2.5 px-2 w-[110px]">Assigned Date</th>
                   <th className="py-2.5 px-2 w-[70px] text-left">Hours</th>
                   <th className="py-2.5 px-2 w-[90px] text-left">
@@ -341,8 +350,8 @@ export const MemberWorkTab: React.FC = () => {
                     </div>
                   </th>
                   <th className="py-2.5 px-2 w-[110px]">Completed Date</th>
-                  <th className="py-2.5 px-2 w-[20%]">Comments / Notes</th>
-                  <th className="py-2.5 px-2 w-[20%]">
+                  <th className="py-2.5 px-2 w-[18%]">Comments / Notes</th>
+                  <th className="py-2.5 px-2 w-[18%]">
                     <div className="flex items-center gap-1.5 text-rose-400">
                       <span>Blockers / Impediments</span>
                       <span className="text-[9px] px-1.5 py-0.5 rounded bg-rose-500/20 text-rose-300 border border-rose-500/40 font-bold">
@@ -359,6 +368,18 @@ export const MemberWorkTab: React.FC = () => {
                     {/* Index */}
                     <td className="py-2 px-2 text-center font-mono text-slate-400 font-bold text-xs">
                       {idx + 1}
+                    </td>
+
+                    {/* Project Name */}
+                    <td className="py-2 px-2">
+                      <input
+                        type="text"
+                        value={row.projectName}
+                        onChange={(e) => handleUpdateRow(row.id, 'projectName', e.target.value)}
+                        placeholder="e.g. MapleBot, LXD..."
+                        className="w-full px-2.5 py-1.5 bg-slate-900 border border-slate-800 rounded-lg text-white placeholder-slate-500 focus:outline-none focus:border-maple-500 text-xs font-medium"
+                        required
+                      />
                     </td>
 
                     {/* Task Description */}
@@ -571,7 +592,8 @@ export const MemberWorkTab: React.FC = () => {
                 <thead className="bg-[#0B1728] border-b border-slate-800 text-xs font-bold uppercase tracking-wider text-slate-300">
                   <tr>
                     <th className="py-3.5 px-3.5 whitespace-nowrap">Date & Check-in Time</th>
-                    <th className="py-3.5 px-3.5 min-w-[280px]">Task</th>
+                    <th className="py-3.5 px-3.5 whitespace-nowrap">Project</th>
+                    <th className="py-3.5 px-3.5 min-w-[260px]">Task</th>
                     <th className="py-3.5 px-3.5 whitespace-nowrap">Assigned Date</th>
                     <th className="py-3.5 px-3.5 text-left whitespace-nowrap">Hours</th>
                     <th className="py-3.5 px-3.5 text-left whitespace-nowrap">Deliverables</th>
@@ -588,6 +610,11 @@ export const MemberWorkTab: React.FC = () => {
                         <span className="inline-flex items-center gap-1 text-xs text-emerald-400 font-mono font-semibold bg-emerald-500/10 px-2 py-0.5 rounded border border-emerald-500/20 mt-1">
                           <Clock className="w-3.5 h-3.5 text-emerald-400" />
                           {row.submission_time || row.checkin_time || '10:00 AM'}
+                        </span>
+                      </td>
+                      <td className="py-3.5 px-3.5 whitespace-nowrap align-top">
+                        <span className="text-xs font-semibold text-slate-200 block">
+                          {row.project_name || row.project || 'General'}
                         </span>
                       </td>
                       <td className="py-3.5 px-3.5 align-top">
