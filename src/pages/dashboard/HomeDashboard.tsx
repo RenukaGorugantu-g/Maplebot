@@ -148,226 +148,106 @@ export const HomeDashboard: React.FC<{
           </div>
         </div>
 
-        {/* Prominent Today's Check-in Card */}
-        <div className="glass-card p-6 lg:p-8 border border-slate-800 relative overflow-hidden space-y-6">
-          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-4 border-b border-slate-800">
-            <div className="flex items-center gap-3">
-              <div className="p-2.5 rounded-xl bg-maple-500/10 text-maple-400 border border-maple-500/20">
-                <CheckSquare className="w-5 h-5" />
-              </div>
-              <div>
-                <h3 className="text-base font-bold text-white">Today's Check-in</h3>
-                <span className="text-xs text-slate-400">
-                  {myTodayUpdate ? 'Submitted for today' : 'Awaiting your morning standup'}
-                </span>
-              </div>
-            </div>
+        {/* Prominent Today's Work Performance Check-in Card */}
+        {(() => {
+          const myTodayLogs = dataStore.getPerformanceWorkLogs({
+            employeeId: profile?.id,
+            startDate: todayStr,
+            endDate: todayStr,
+          });
+          const hasLoggedToday = myTodayLogs.length > 0;
+          const totalLoggedHours = Math.round(myTodayLogs.reduce((acc, l) => acc + (Number(l.time_invested) || 0), 0) * 10) / 10;
+          const totalLoggedUnits = myTodayLogs.reduce((acc, l) => acc + (Number(l.unit_count_completed) || 0), 0);
 
-            {myTodayUpdate ? (
-              <span className="px-3 py-1 rounded-full bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 text-xs font-semibold flex items-center gap-1.5 self-start sm:self-center">
-                <CheckCircle2 className="w-3.5 h-3.5" /> Completed Today
-              </span>
-            ) : (
-              <span className="px-3 py-1 rounded-full bg-amber-500/10 text-amber-400 border border-amber-500/20 text-xs font-semibold flex items-center gap-1.5 self-start sm:self-center">
-                <Clock className="w-3.5 h-3.5" /> Pending Response
-              </span>
-            )}
-          </div>
-
-          {myTodayUpdate ? (
-            /* Completed Today Summary */
-            <div className="space-y-4">
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4 text-xs">
-                <div className="p-4 rounded-xl bg-slate-900 border border-slate-800 space-y-1.5">
-                  <span className="text-[10px] uppercase font-bold text-slate-400 block">Completed Yesterday</span>
-                  <p className="text-slate-200 leading-relaxed whitespace-pre-line">{myTodayUpdate.yesterday}</p>
-                </div>
-                <div className="p-4 rounded-xl bg-slate-900 border border-slate-800 space-y-1.5">
-                  <span className="text-[10px] uppercase font-bold text-maple-400 block">Today's Focus</span>
-                  <p className="text-white leading-relaxed whitespace-pre-line">{myTodayUpdate.today}</p>
-                </div>
-              </div>
-
-              <div className="flex flex-wrap items-center justify-between gap-3 p-3.5 rounded-xl bg-slate-900/60 border border-slate-800/80 text-xs">
-                <div className="flex items-center gap-4">
-                  <div>
-                    <span className="text-slate-500 text-[10px] block uppercase">Status</span>
-                    <StatusBadge status={myTodayUpdate.status} />
+          return (
+            <div className="glass-card p-6 lg:p-8 border border-slate-800 relative overflow-hidden space-y-6">
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-4 border-b border-slate-800">
+                <div className="flex items-center gap-3">
+                  <div className="p-2.5 rounded-xl bg-maple-500/10 text-maple-400 border border-maple-500/20">
+                    <Table className="w-5 h-5" />
                   </div>
                   <div>
-                    <span className="text-slate-500 text-[10px] block uppercase">Progress</span>
-                    <span className="font-bold text-white">{myTodayUpdate.progress_percent}%</span>
+                    <h3 className="text-base font-bold text-white">Today's Work Performance Check-in</h3>
+                    <span className="text-xs text-slate-400">
+                      {hasLoggedToday
+                        ? `${myTodayLogs.length} deliverable task(s) logged (${totalLoggedHours} hrs)`
+                        : 'Awaiting your daily deliverables and work check-in'}
+                    </span>
                   </div>
                 </div>
 
-                <Button
-                  variant="secondary"
-                  size="sm"
-                  onClick={() => onNavigate('/updates/my-update')}
-                  rightIcon={<ArrowRight className="w-3.5 h-3.5" />}
-                >
-                  Edit Standup
-                </Button>
-              </div>
-            </div>
-          ) : (
-            /* Inline Quick Standup Form */
-            <form onSubmit={handleInlineSubmit} className="space-y-4 text-xs">
-              <div className="space-y-1.5">
-                <label className="font-bold text-slate-200 flex items-center justify-between">
-                  <span>1. What did you complete yesterday and how much time did you spend on each task?</span>
-                  <span className="text-[11px] font-normal text-slate-500">Required</span>
-                </label>
-                <textarea
-                  required
-                  rows={2}
-                  value={yesterday}
-                  onChange={(e) => setYesterday(e.target.value)}
-                  className="w-full p-3 bg-slate-900 border border-slate-800 rounded-xl text-slate-200 focus:outline-none focus:border-maple-500/50"
-                />
-              </div>
-
-              <div className="space-y-1.5">
-                <label className="font-bold text-slate-200 flex items-center justify-between">
-                  <span>2. What are you working on today and how much time are you going to spend on each task?</span>
-                  <span className="text-[11px] font-normal text-slate-500">Required</span>
-                </label>
-                <textarea
-                  required
-                  rows={2}
-                  value={today}
-                  onChange={(e) => setToday(e.target.value)}
-                  className="w-full p-3 bg-slate-900 border border-slate-800 rounded-xl text-slate-200 focus:outline-none focus:border-maple-500/50"
-                />
-              </div>
-
-              {/* Status and Progress */}
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 p-4 rounded-xl bg-slate-900/60 border border-slate-800">
-                <div>
-                  <label className="text-[11px] font-bold text-slate-300 block mb-1.5">Delivery Status</label>
-                  <div className="flex gap-2">
-                    {[
-                      { val: 'on_track', label: 'On Track', color: 'border-emerald-500/40 text-emerald-400' },
-                      { val: 'at_risk', label: 'At Risk', color: 'border-amber-500/40 text-amber-400' },
-                      { val: 'blocked', label: 'Blocked', color: 'border-rose-500/40 text-rose-400' },
-                    ].map((st) => (
-                      <button
-                        key={st.val}
-                        type="button"
-                        onClick={() => setStatus(st.val as UpdateStatus)}
-                        className={`flex-1 py-1.5 px-2 rounded-lg border text-[11px] font-semibold transition-all ${
-                          status === st.val
-                            ? `bg-slate-800 ${st.color} shadow-sm`
-                            : 'bg-slate-900/80 border-slate-800 text-slate-400 hover:text-white'
-                        }`}
-                      >
-                        {st.label}
-                      </button>
-                    ))}
-                  </div>
-                </div>
-
-                <div>
-                  <div className="flex items-center justify-between mb-1.5">
-                    <label className="text-[11px] font-bold text-slate-300">Confidence / Progress</label>
-                    <span className="text-maple-400 font-bold font-mono">{progress}%</span>
-                  </div>
-                  <input
-                    type="range"
-                    min={0}
-                    max={100}
-                    step={5}
-                    value={progress}
-                    onChange={(e) => setProgress(Number(e.target.value))}
-                    className="w-full accent-maple-400 cursor-pointer"
-                  />
-                </div>
-              </div>
-
-              {/* Question 3: Blockers & Support */}
-              <div className="space-y-3 p-4 rounded-xl bg-slate-900/80 border border-slate-800">
-                <label className="font-bold text-slate-200 flex items-center justify-between text-xs">
-                  <span className="flex items-center gap-1.5">
-                    <AlertTriangle className={`w-4 h-4 ${hasBlocker ? 'text-rose-400' : 'text-emerald-400'}`} />
-                    3. Do you have any blockers or require team support?
+                {hasLoggedToday ? (
+                  <span className="px-3 py-1 rounded-full bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 text-xs font-semibold flex items-center gap-1.5 self-start sm:self-center">
+                    <CheckCircle2 className="w-3.5 h-3.5" /> Logged for Today
                   </span>
-                </label>
-
-                <div className="flex gap-3">
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setHasBlocker(false);
-                      setBlocker('');
-                      setSupportNeeded('');
-                    }}
-                    className={`flex-1 py-1.5 px-3 rounded-lg border text-xs font-semibold flex items-center justify-center gap-1.5 transition-all ${
-                      !hasBlocker
-                        ? 'bg-emerald-500/15 border-emerald-500/40 text-emerald-300 shadow-sm'
-                        : 'bg-slate-900 border-slate-800 text-slate-400 hover:text-white'
-                    }`}
-                  >
-                    <CheckCircle2 className="w-3.5 h-3.5 text-emerald-400" />
-                    <span>No Blockers (All Clear)</span>
-                  </button>
-
-                  <button
-                    type="button"
-                    onClick={() => setHasBlocker(true)}
-                    className={`flex-1 py-1.5 px-3 rounded-lg border text-xs font-semibold flex items-center justify-center gap-1.5 transition-all ${
-                      hasBlocker
-                        ? 'bg-rose-500/20 border-rose-500/50 text-rose-300 shadow-sm'
-                        : 'bg-slate-900 border-slate-800 text-slate-400 hover:text-white'
-                    }`}
-                  >
-                    <AlertTriangle className="w-3.5 h-3.5 text-rose-400" />
-                    <span>Yes, I Have a Blocker</span>
-                  </button>
-                </div>
-
-                {hasBlocker && (
-                  <div className="pt-2 space-y-3 animate-in fade-in">
-                    <div>
-                      <label className="text-[11px] font-semibold text-rose-200 block mb-1">
-                        Blocker Description (What is stopping you?)
-                      </label>
-                      <input
-                        type="text"
-                        required
-                        value={blocker}
-                        onChange={(e) => setBlocker(e.target.value)}
-                        className="w-full px-3 py-2 bg-slate-900 border border-rose-800/60 rounded-lg text-xs text-white focus:outline-none focus:border-rose-500"
-                      />
-                    </div>
-
-                    <div>
-                      <label className="text-[11px] font-semibold text-rose-200 block mb-1">
-                        Support Needed From Team / Manager
-                      </label>
-                      <input
-                        type="text"
-                        value={supportNeeded}
-                        onChange={(e) => setSupportNeeded(e.target.value)}
-                        className="w-full px-3 py-2 bg-slate-900 border border-rose-800/60 rounded-lg text-xs text-white focus:outline-none focus:border-rose-500"
-                      />
-                    </div>
-                  </div>
+                ) : (
+                  <span className="px-3 py-1 rounded-full bg-amber-500/10 text-amber-400 border border-amber-500/20 text-xs font-semibold flex items-center gap-1.5 self-start sm:self-center">
+                    <Clock className="w-3.5 h-3.5" /> Pending Today's Check-in
+                  </span>
                 )}
               </div>
 
-              <div className="pt-2">
-                <GradientButton
-                  type="submit"
-                  isLoading={isSubmitting}
-                  className="w-full py-2.5"
-                  rightIcon={<Send className="w-4 h-4" />}
-                >
-                  Submit Daily Standup
-                </GradientButton>
-              </div>
-            </form>
-          )}
-        </div>
+              {hasLoggedToday ? (
+                /* Completed Today Work Performance Summary */
+                <div className="space-y-4">
+                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 text-xs">
+                    <div className="p-3.5 rounded-xl bg-slate-900 border border-slate-800">
+                      <span className="text-[10px] uppercase font-bold text-slate-400 block">Tasks Logged</span>
+                      <span className="text-lg font-bold text-white font-mono">{myTodayLogs.length}</span>
+                    </div>
+                    <div className="p-3.5 rounded-xl bg-slate-900 border border-slate-800">
+                      <span className="text-[10px] uppercase font-bold text-sky-400 block">Total Hours</span>
+                      <span className="text-lg font-bold text-sky-400 font-mono">{totalLoggedHours} hrs</span>
+                    </div>
+                    <div className="p-3.5 rounded-xl bg-slate-900 border border-slate-800">
+                      <span className="text-[10px] uppercase font-bold text-purple-300 block">Units Completed</span>
+                      <span className="text-lg font-bold text-purple-300 font-mono">{totalLoggedUnits} items</span>
+                    </div>
+                  </div>
+
+                  <div className="divide-y divide-slate-800/80 rounded-xl border border-slate-800 bg-[#060E1A] overflow-hidden">
+                    {myTodayLogs.map((log) => (
+                      <div key={log.id} className="p-3.5 flex items-start justify-between gap-4 hover:bg-slate-800/30 text-xs">
+                        <div className="space-y-1 min-w-0">
+                          <p className="font-semibold text-slate-100">{log.task || log.task_title}</p>
+                          {log.comments && <p className="text-slate-400 text-[11px] italic">"{log.comments}"</p>}
+                        </div>
+                        <div className="flex items-center gap-3 shrink-0 font-mono">
+                          <span className="text-sky-400 font-bold">{log.time_invested || log.duration_hours}h</span>
+                          <span className="text-purple-300 font-bold">{log.unit_count_completed || 1} items</span>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+
+                  <div className="flex items-center justify-end">
+                    <GradientButton
+                      size="sm"
+                      onClick={() => onNavigate('/updates/my-update')}
+                      leftIcon={<Table className="w-4 h-4" />}
+                    >
+                      Open Work Performance Table
+                    </GradientButton>
+                  </div>
+                </div>
+              ) : (
+                /* Prompt to log Work Performance Check-in */
+                <div className="p-6 rounded-2xl bg-slate-900/60 border border-slate-800 text-center space-y-3">
+                  <p className="text-xs text-slate-300 max-w-md mx-auto">
+                    Log your deliverables, task description, hours invested, and completed units directly in your Daily Work Performance Table.
+                  </p>
+                  <GradientButton
+                    size="sm"
+                    onClick={() => onNavigate('/updates/my-update')}
+                    leftIcon={<Table className="w-4 h-4" />}
+                  >
+                    Log Today's Work Check-in
+                  </GradientButton>
+                </div>
+              )}
+            </div>
+          );
+        })()}
 
         {/* Personal Action Quick Links */}
         <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
