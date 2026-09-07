@@ -21,7 +21,7 @@ export const googleChatService = {
 
     const webhookUrl =
       settings.webhook_url ||
-      'https://chat.googleapis.com/v1/spaces/AAQA8ijHd80/messages?key=AIzaSyDdI0hCZtE6vySjMm-WEfRq3CPzqKqqsHI&token=vR_WlFMQiHtcfTFfa2B5qfy6y14GpyXdIczanj0q5w0';
+      'https://chat.googleapis.com/v1/spaces/AAQAM29cnHg/messages?key=AIzaSyDdI0hCZtE6vySjMm-WEfRq3CPzqKqqsHI&token=erlyG0EmAeOxk9LhYXeJpcfTFiQvB1g_NbO_SXxxEdM';
 
     try {
       // 1. Try local Vite proxy or Vercel serverless function /api/gchat (bypasses browser CORS)

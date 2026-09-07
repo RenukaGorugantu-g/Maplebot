@@ -25,7 +25,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       webhookUrl ||
       process.env.GOOGLE_CHAT_WEBHOOK_URL ||
       process.env.VITE_GOOGLE_CHAT_WEBHOOK_URL ||
-      'https://chat.googleapis.com/v1/spaces/AAQA8ijHd80/messages?key=AIzaSyDdI0hCZtE6vySjMm-WEfRq3CPzqKqqsHI&token=vR_WlFMQiHtcfTFfa2B5qfy6y14GpyXdIczanj0q5w0';
+      'https://chat.googleapis.com/v1/spaces/AAQAM29cnHg/messages?key=AIzaSyDdI0hCZtE6vySjMm-WEfRq3CPzqKqqsHI&token=erlyG0EmAeOxk9LhYXeJpcfTFiQvB1g_NbO_SXxxEdM';
 
     const response = await fetch(targetUrl, {
       method: 'POST',
