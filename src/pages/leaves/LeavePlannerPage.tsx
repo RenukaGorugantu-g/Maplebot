@@ -170,6 +170,21 @@ export const LeavePlannerPage: React.FC<{ onNavigate?: (path: string) => void }>
       return;
     }
 
+    if (!deliverablesStatus.trim()) {
+      showToast('error', 'Deliverables status is required. Please select your deliverables status.');
+      return;
+    }
+
+    if (!backupPerson.trim()) {
+      showToast('error', 'Backup teammate is required. Please select or enter your backup person.');
+      return;
+    }
+
+    if (!backupPlan.trim()) {
+      showToast('error', 'Handover / backup plan is required. Please provide coverage instructions.');
+      return;
+    }
+
     if (calculatedDays > myBalance.available_balance && leaveType !== 'Unpaid Leave') {
       showToast('error', `Requested duration (${calculatedDays} days) exceeds your available balance (${myBalance.available_balance} days).`);
       return;
@@ -942,12 +957,12 @@ export const LeavePlannerPage: React.FC<{ onNavigate?: (path: string) => void }>
             />
           </div>
 
-          {/* QUESTION 1: WERE YOU ABLE TO COMPLETE DELIVERABLES? */}
+          {/* QUESTION 1: WERE YOU ABLE TO COMPLETE DELIVERABLES? (REQUIRED) */}
           <div className="p-3.5 rounded-xl bg-slate-900/70 border border-slate-800 space-y-2.5">
             <div className="flex items-center gap-1.5">
               <span className="text-sm">📦</span>
               <label className="text-xs font-bold text-slate-200">
-                Were you able to complete the deliverables? *
+                Were you able to complete the deliverables? * <span className="text-rose-400">(Required)</span>
               </label>
             </div>
             <select
@@ -958,7 +973,6 @@ export const LeavePlannerPage: React.FC<{ onNavigate?: (path: string) => void }>
             >
               <option value="Yes — All deliverables completed">Yes — All deliverables completed</option>
               <option value="In Progress — Handover provided to backup">In Progress — Handover provided to backup</option>
-              <option value="Pending — Will complete post-leave">Pending — Will complete post-leave</option>
             </select>
             <input
               type="text"
@@ -969,12 +983,12 @@ export const LeavePlannerPage: React.FC<{ onNavigate?: (path: string) => void }>
             />
           </div>
 
-          {/* QUESTION 2: ANY BACKUP PERSON / HANDOVER IF NEEDED? */}
+          {/* QUESTION 2: ANY BACKUP PERSON / HANDOVER IF NEEDED? (REQUIRED) */}
           <div className="p-3.5 rounded-xl bg-slate-900/70 border border-slate-800 space-y-2.5">
             <div className="flex items-center gap-1.5">
               <span className="text-sm">🤝</span>
               <label className="text-xs font-bold text-slate-200">
-                Any backup person / handover needed?
+                Backup teammate & handover * <span className="text-rose-400">(Required)</span>
               </label>
             </div>
             <div>
@@ -984,6 +998,7 @@ export const LeavePlannerPage: React.FC<{ onNavigate?: (path: string) => void }>
                 onChange={(e) => setBackupPerson(e.target.value)}
                 placeholder="Select or type backup teammate (e.g. Dhana Sekharan)..."
                 className="w-full px-3 py-2 bg-slate-900 border border-slate-800 rounded-xl text-xs text-white placeholder-slate-500 focus:outline-none focus:border-maple-500 font-medium"
+                required
               />
               <datalist id="colleagues-list">
                 {allProfiles.map((p) => (
@@ -995,8 +1010,9 @@ export const LeavePlannerPage: React.FC<{ onNavigate?: (path: string) => void }>
               type="text"
               value={backupPlan}
               onChange={(e) => setBackupPlan(e.target.value)}
-              placeholder="Handover plan / coverage instructions (e.g. Covers urgent client escalations)..."
+              placeholder="Handover plan / coverage instructions (e.g. Covers urgent client escalations, handles review PRs)..."
               className="w-full px-3 py-1.5 bg-slate-900 border border-slate-800 rounded-xl text-xs text-slate-200 placeholder-slate-500 focus:outline-none focus:border-maple-500 font-medium"
+              required
             />
           </div>
 
