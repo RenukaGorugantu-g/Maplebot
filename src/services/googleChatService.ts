@@ -1,6 +1,12 @@
 import { dataStore } from './dataStore';
 import { GoogleChatSettings, Update, Profile } from '../types/database';
 
+export const DEFAULT_UPDATES_WEBHOOK_URL =
+  'https://chat.googleapis.com/v1/spaces/AAQA8ijHd80/messages?key=AIzaSyDdI0hCZtE6vySjMm-WEfRq3CPzqKqqsHI&token=vR_WlFMQiHtcfTFfa2B5qfy6y14GpyXdIczanj0q5w0';
+
+export const DEFAULT_LEAVE_WEBHOOK_URL =
+  'https://chat.googleapis.com/v1/spaces/AAQAM29cnHg/messages?key=AIzaSyDdI0hCZtE6vySjMm-WEfRq3CPzqKqqsHI&token=erlyG0EmAeOxk9LhYXeJpcfTFiQvB1g_NbO_SXxxEdM';
+
 export const googleChatService = {
   getSettings(): GoogleChatSettings {
     return dataStore.getGoogleChatSettings();
@@ -13,22 +19,23 @@ export const googleChatService = {
   /**
    * Helper to dispatch JSON payload to configured Google Chat Space incoming webhook
    */
-  async dispatchToSpace(payload: any): Promise<boolean> {
+  async dispatchToSpace(payload: any, targetType: 'updates' | 'leaves' = 'updates'): Promise<boolean> {
     const settings = dataStore.getGoogleChatSettings();
     if (!settings.enabled) {
       return false;
     }
 
     const webhookUrl =
-      settings.webhook_url ||
-      'https://chat.googleapis.com/v1/spaces/AAQAM29cnHg/messages?key=AIzaSyDdI0hCZtE6vySjMm-WEfRq3CPzqKqqsHI&token=erlyG0EmAeOxk9LhYXeJpcfTFiQvB1g_NbO_SXxxEdM';
+      targetType === 'leaves'
+        ? (settings.leave_webhook_url || DEFAULT_LEAVE_WEBHOOK_URL)
+        : (settings.webhook_url || DEFAULT_UPDATES_WEBHOOK_URL);
 
     try {
       // 1. Try local Vite proxy or Vercel serverless function /api/gchat (bypasses browser CORS)
       const proxyRes = await fetch('/api/gchat', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ webhookUrl, payload }),
+        body: JSON.stringify({ webhookUrl, targetType, payload }),
       });
 
       if (proxyRes.ok) {
@@ -283,16 +290,17 @@ export const googleChatService = {
     };
   },
 
-  async sendTestMessage(): Promise<{ success: boolean; message: string }> {
+  async sendTestMessage(targetType: 'updates' | 'leaves' = 'updates'): Promise<{ success: boolean; message: string }> {
+    const isLeave = targetType === 'leaves';
     const payload = {
       cardsV2: [
         {
           cardId: `test-${Date.now()}`,
           card: {
             header: {
-              title: 'MapleBot — Connected Successfully!',
-              subtitle: 'Maple Learning Solutions Google Chat Integration',
-              imageUrl: 'https://cdn-icons-png.flaticon.com/512/190/190411.png',
+              title: isLeave ? 'MapleBot — Leave Tracker Connected!' : 'MapleBot — Connected Successfully!',
+              subtitle: isLeave ? 'Leave Tracker Google Chat Integration' : 'Maple Learning Solutions Google Chat Integration',
+              imageUrl: isLeave ? 'https://cdn-icons-png.flaticon.com/512/2693/2693507.png' : 'https://cdn-icons-png.flaticon.com/512/190/190411.png',
               imageType: 'CIRCLE',
             },
             sections: [
@@ -300,7 +308,9 @@ export const googleChatService = {
                 widgets: [
                   {
                     textParagraph: {
-                      text: '✅ <b>Google Chat Space Webhook Active</b><br/>Daily standups, blockers, kudos, and lead feedback will post here automatically.',
+                      text: isLeave
+                        ? '✅ <b>Leave Tracker Space Webhook Active</b><br/>Leave applications, approvals, and balance updates will post here automatically.'
+                        : '✅ <b>Google Chat Space Webhook Active</b><br/>Daily standups, blockers, kudos, and lead feedback will post here automatically.',
                     },
                   },
                 ],
@@ -311,11 +321,11 @@ export const googleChatService = {
       ],
     };
 
-    const sent = await this.dispatchToSpace(payload);
+    const sent = await this.dispatchToSpace(payload, targetType);
     return {
       success: sent,
       message: sent
-        ? 'Test card successfully posted to your Google Chat Space!'
+        ? `Test card successfully posted to ${isLeave ? 'Leave Tracker' : 'Maple Team Updates'} Space!`
         : 'Webhook received test request.',
     };
   },
@@ -381,7 +391,7 @@ export const googleChatService = {
       ],
     };
 
-    const sent = await this.dispatchToSpace(payload);
+    const sent = await this.dispatchToSpace(payload, 'leaves');
     dataStore.logAudit('GOOGLE_CHAT_LEAVE_REQ_SENT', 'LeaveRequest', params.leave.id, {
       employee: params.profile.full_name,
       dates: `${params.leave.start_date} to ${params.leave.end_date}`,
@@ -435,7 +445,7 @@ export const googleChatService = {
       ],
     };
 
-    return await this.dispatchToSpace(payload);
+    return await this.dispatchToSpace(payload, 'leaves');
   },
 
   /**
@@ -747,7 +757,7 @@ export const googleChatService = {
       ],
     };
 
-    const sent = await this.dispatchToSpace(payload);
+    const sent = await this.dispatchToSpace(payload, 'leaves');
     dataStore.logAudit('GOOGLE_CHAT_LEAVE_APPROVED_SENT', 'LeaveRequest', undefined, {
       employee: params.employeeName,
       dates: formattedDateRange,

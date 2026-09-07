@@ -22,8 +22,19 @@ export const GoogleChatPage: React.FC = () => {
 
   const [enabled, setEnabled] = useState(initialSettings.enabled);
   const [spaceName, setSpaceName] = useState(initialSettings.space_name || 'Maple Team Updates');
-  const [spaceId, setSpaceId] = useState(initialSettings.space_id || 'spaces/AAAA_maple_team_updates');
-  const [webhookUrl, setWebhookUrl] = useState(initialSettings.webhook_url || '');
+  const [spaceId, setSpaceId] = useState(initialSettings.space_id || 'spaces/AAQA8ijHd80');
+  const [webhookUrl, setWebhookUrl] = useState(
+    initialSettings.webhook_url ||
+      'https://chat.googleapis.com/v1/spaces/AAQA8ijHd80/messages?key=AIzaSyDdI0hCZtE6vySjMm-WEfRq3CPzqKqqsHI&token=vR_WlFMQiHtcfTFfa2B5qfy6y14GpyXdIczanj0q5w0'
+  );
+
+  // Leave Tracker Space Configuration
+  const [leaveSpaceName, setLeaveSpaceName] = useState(initialSettings.leave_space_name || 'Leave Tracker Space');
+  const [leaveWebhookUrl, setLeaveWebhookUrl] = useState(
+    initialSettings.leave_webhook_url ||
+      'https://chat.googleapis.com/v1/spaces/AAQAM29cnHg/messages?key=AIzaSyDdI0hCZtE6vySjMm-WEfRq3CPzqKqqsHI&token=erlyG0EmAeOxk9LhYXeJpcfTFiQvB1g_NbO_SXxxEdM'
+  );
+
   const [reportTime, setReportTime] = useState(initialSettings.report_time || '10:30');
   const [dailyReports, setDailyReports] = useState(initialSettings.daily_reports);
   const [weeklyReports, setWeeklyReports] = useState(initialSettings.weekly_reports);
@@ -31,7 +42,8 @@ export const GoogleChatPage: React.FC = () => {
   const [blockerAlerts, setBlockerAlerts] = useState(initialSettings.blocker_alerts);
   const [kudosAlerts, setKudosAlerts] = useState(initialSettings.kudos_alerts);
 
-  const [isSendingTest, setIsSendingTest] = useState(false);
+  const [isSendingUpdatesTest, setIsSendingUpdatesTest] = useState(false);
+  const [isSendingLeavesTest, setIsSendingLeavesTest] = useState(false);
 
   const handleSave = (e: React.FormEvent) => {
     e.preventDefault();
@@ -40,6 +52,8 @@ export const GoogleChatPage: React.FC = () => {
       space_name: spaceName,
       space_id: spaceId,
       webhook_url: webhookUrl,
+      leave_space_name: leaveSpaceName,
+      leave_webhook_url: leaveWebhookUrl,
       report_time: reportTime,
       daily_reports: dailyReports,
       weekly_reports: weeklyReports,
@@ -47,18 +61,21 @@ export const GoogleChatPage: React.FC = () => {
       blocker_alerts: blockerAlerts,
       kudos_alerts: kudosAlerts,
     });
-    showToast('success', 'Integration Saved', 'Google Chat Space integration settings updated.');
+    showToast('success', 'Integration Saved', 'Google Chat Space integration settings updated for both Updates & Leave Tracker.');
   };
 
-  const handleSendTest = async () => {
-    setIsSendingTest(true);
+  const handleSendTest = async (type: 'updates' | 'leaves') => {
+    if (type === 'leaves') setIsSendingLeavesTest(true);
+    else setIsSendingUpdatesTest(true);
+
     try {
-      const res = await googleChatService.sendTestMessage();
+      const res = await googleChatService.sendTestMessage(type);
       showToast('success', 'Test Message Dispatched', res.message);
     } catch (err: any) {
-      showToast('error', 'Test Failed', 'Unable to dispatch Google Chat card.');
+      showToast('error', 'Test Failed', `Unable to dispatch card to ${type === 'leaves' ? 'Leave Tracker' : 'Updates'} Space.`);
     } finally {
-      setIsSendingTest(false);
+      if (type === 'leaves') setIsSendingLeavesTest(false);
+      else setIsSendingUpdatesTest(false);
     }
   };
 
@@ -90,36 +107,50 @@ export const GoogleChatPage: React.FC = () => {
           </p>
         </div>
 
-        <div className="flex items-center gap-3">
+        <div className="flex flex-wrap items-center gap-2.5">
           <Button
             variant="secondary"
-            size="md"
-            isLoading={isSendingTest}
-            onClick={handleSendTest}
+            size="sm"
+            isLoading={isSendingUpdatesTest}
+            onClick={() => handleSendTest('updates')}
             leftIcon={<Send className="w-4 h-4 text-blue-400" />}
           >
-            Send Test Message
+            Test Updates Space
           </Button>
-          <GradientButton size="md" onClick={handleSave}>
-            Save Settings
+          <Button
+            variant="secondary"
+            size="sm"
+            isLoading={isSendingLeavesTest}
+            onClick={() => handleSendTest('leaves')}
+            leftIcon={<Send className="w-4 h-4 text-emerald-400" />}
+          >
+            Test Leave Space
+          </Button>
+          <GradientButton size="sm" onClick={handleSave}>
+            Save All Settings
           </GradientButton>
         </div>
       </div>
 
       <form onSubmit={handleSave} className="space-y-6">
-        {/* Connection Settings Card */}
-        <div className="glass-card p-6 border border-slate-800 space-y-5">
-          <div className="flex items-center justify-between">
-            <h3 className="text-sm font-bold text-white flex items-center gap-2">
-              <MessageSquare className="w-4 h-4 text-blue-400" />
-              <span>Space & Webhook Credentials</span>
-            </h3>
+        {/* SPACE 1: Daily Standups & Updates */}
+        <div className="glass-card p-6 border border-slate-800 space-y-5 bg-[#081426]/90">
+          <div className="flex items-center justify-between pb-3 border-b border-slate-800/80">
+            <div>
+              <h3 className="text-sm font-bold text-white flex items-center gap-2">
+                <MessageSquare className="w-4 h-4 text-blue-400" />
+                <span>1. Daily Updates & Standups Space</span>
+              </h3>
+              <p className="text-[11px] text-slate-400 mt-0.5">
+                Receives daily work check-ins, deliverables summaries, blockers, feedback comments, and kudos.
+              </p>
+            </div>
             <button
               type="button"
               onClick={() => setEnabled(!enabled)}
               className="flex items-center gap-2 text-xs text-slate-300 font-semibold"
             >
-              <span>{enabled ? 'Integration Active' : 'Integration Paused'}</span>
+              <span>{enabled ? 'Active' : 'Paused'}</span>
               {enabled ? (
                 <ToggleRight className="w-6 h-6 text-maple-400" />
               ) : (
@@ -130,12 +161,12 @@ export const GoogleChatPage: React.FC = () => {
 
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 text-xs">
             <div className="space-y-1">
-              <label className="font-semibold text-slate-300">Space Name</label>
+              <label className="font-semibold text-slate-300">Updates Space Name</label>
               <input
                 type="text"
                 value={spaceName}
                 onChange={(e) => setSpaceName(e.target.value)}
-                placeholder="e.g. Maple Team Updates"
+                placeholder="Maple Team Updates"
                 className="w-full p-2.5 bg-slate-900 border border-slate-800 rounded-xl text-xs text-white focus:outline-none focus:border-maple-500/50"
               />
             </div>
@@ -146,25 +177,82 @@ export const GoogleChatPage: React.FC = () => {
                 type="text"
                 value={spaceId}
                 onChange={(e) => setSpaceId(e.target.value)}
-                placeholder="e.g. spaces/AAAA_maple_team_updates"
+                placeholder="spaces/AAQA8ijHd80"
                 className="w-full p-2.5 bg-slate-900 border border-slate-800 rounded-xl text-xs text-white focus:outline-none focus:border-maple-500/50"
               />
             </div>
 
             <div className="sm:col-span-2 space-y-1">
-              <label className="font-semibold text-slate-300">
-                Incoming Webhook URL / Google Chat API Endpoint
+              <label className="font-semibold text-slate-300 flex items-center justify-between">
+                <span>Daily Updates Incoming Webhook URL</span>
+                <button
+                  type="button"
+                  onClick={() => handleSendTest('updates')}
+                  disabled={isSendingUpdatesTest}
+                  className="text-blue-400 hover:text-blue-300 text-[11px] font-semibold cursor-pointer"
+                >
+                  {isSendingUpdatesTest ? 'Testing...' : 'Send Test Ping →'}
+                </button>
               </label>
               <input
                 type="text"
                 value={webhookUrl}
                 onChange={(e) => setWebhookUrl(e.target.value)}
-                placeholder="https://chat.googleapis.com/v1/spaces/.../messages?key=..."
+                placeholder="https://chat.googleapis.com/v1/spaces/AAQA8ijHd80/messages?key=..."
                 className="w-full p-2.5 bg-slate-900 border border-slate-800 rounded-xl text-xs text-white font-mono focus:outline-none focus:border-maple-500/50"
               />
-              <span className="text-[10px] text-slate-500 block">
-                Webhook keys are encrypted server-side through Supabase Edge Functions.
-              </span>
+            </div>
+          </div>
+        </div>
+
+        {/* SPACE 2: Leave Tracker & Approvals */}
+        <div className="glass-card p-6 border border-slate-800 space-y-5 bg-[#081426]/90">
+          <div className="flex items-center justify-between pb-3 border-b border-slate-800/80">
+            <div>
+              <h3 className="text-sm font-bold text-white flex items-center gap-2">
+                <Calendar className="w-4 h-4 text-emerald-400" />
+                <span>2. Leave Tracker Space</span>
+              </h3>
+              <p className="text-[11px] text-slate-400 mt-0.5">
+                Receives interactive leave approval requests (with action buttons) and approved leave notices.
+              </p>
+            </div>
+            <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">
+              Dedicated Space
+            </span>
+          </div>
+
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 text-xs">
+            <div className="sm:col-span-2 space-y-1">
+              <label className="font-semibold text-slate-300">Leave Tracker Space Name</label>
+              <input
+                type="text"
+                value={leaveSpaceName}
+                onChange={(e) => setLeaveSpaceName(e.target.value)}
+                placeholder="Leave Tracker Space"
+                className="w-full p-2.5 bg-slate-900 border border-slate-800 rounded-xl text-xs text-white focus:outline-none focus:border-maple-500/50"
+              />
+            </div>
+
+            <div className="sm:col-span-2 space-y-1">
+              <label className="font-semibold text-slate-300 flex items-center justify-between">
+                <span>Leave Tracker Incoming Webhook URL</span>
+                <button
+                  type="button"
+                  onClick={() => handleSendTest('leaves')}
+                  disabled={isSendingLeavesTest}
+                  className="text-emerald-400 hover:text-emerald-300 text-[11px] font-semibold cursor-pointer"
+                >
+                  {isSendingLeavesTest ? 'Testing...' : 'Send Test Ping →'}
+                </button>
+              </label>
+              <input
+                type="text"
+                value={leaveWebhookUrl}
+                onChange={(e) => setLeaveWebhookUrl(e.target.value)}
+                placeholder="https://chat.googleapis.com/v1/spaces/AAQAM29cnHg/messages?key=..."
+                className="w-full p-2.5 bg-slate-900 border border-slate-800 rounded-xl text-xs text-white font-mono focus:outline-none focus:border-maple-500/50"
+              />
             </div>
           </div>
         </div>

@@ -19,13 +19,27 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   }
 
   try {
-    const { webhookUrl, payload } = req.body || {};
+    const { webhookUrl, targetType, payload } = req.body || {};
 
-    const targetUrl =
-      webhookUrl ||
-      process.env.GOOGLE_CHAT_WEBHOOK_URL ||
-      process.env.VITE_GOOGLE_CHAT_WEBHOOK_URL ||
+    const DEFAULT_UPDATES_URL =
+      'https://chat.googleapis.com/v1/spaces/AAQA8ijHd80/messages?key=AIzaSyDdI0hCZtE6vySjMm-WEfRq3CPzqKqqsHI&token=vR_WlFMQiHtcfTFfa2B5qfy6y14GpyXdIczanj0q5w0';
+    const DEFAULT_LEAVES_URL =
       'https://chat.googleapis.com/v1/spaces/AAQAM29cnHg/messages?key=AIzaSyDdI0hCZtE6vySjMm-WEfRq3CPzqKqqsHI&token=erlyG0EmAeOxk9LhYXeJpcfTFiQvB1g_NbO_SXxxEdM';
+
+    let targetUrl = webhookUrl;
+    if (!targetUrl) {
+      if (targetType === 'leaves') {
+        targetUrl =
+          process.env.GOOGLE_CHAT_LEAVE_WEBHOOK_URL ||
+          process.env.VITE_GOOGLE_CHAT_LEAVE_WEBHOOK_URL ||
+          DEFAULT_LEAVES_URL;
+      } else {
+        targetUrl =
+          process.env.GOOGLE_CHAT_WEBHOOK_URL ||
+          process.env.VITE_GOOGLE_CHAT_WEBHOOK_URL ||
+          DEFAULT_UPDATES_URL;
+      }
+    }
 
     const response = await fetch(targetUrl, {
       method: 'POST',

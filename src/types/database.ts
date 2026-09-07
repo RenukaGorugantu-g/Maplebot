@@ -208,6 +208,8 @@ export interface GoogleChatSettings {
   space_id?: string;
   space_name?: string;
   webhook_url?: string;
+  leave_space_name?: string;
+  leave_webhook_url?: string;
   report_time: string;
   daily_reports: boolean;
   weekly_reports: boolean;
