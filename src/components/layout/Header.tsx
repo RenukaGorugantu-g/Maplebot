@@ -8,7 +8,8 @@ import {
   Search,
   Sparkles,
   User,
-  LogOut
+  LogOut,
+  CheckSquare
 } from 'lucide-react';
 import { NotificationDropdown } from './NotificationDropdown';
 
@@ -134,10 +135,20 @@ export const Header: React.FC<HeaderProps> = ({
         {/* Quick Maple AI CTA */}
         <button
           onClick={() => onNavigate('/ai')}
-          className="hidden sm:flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-maple-500/10 hover:bg-maple-500/20 text-maple-300 border border-maple-500/30 text-xs font-semibold transition-all shadow-glow-sm"
+          className="hidden md:flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-maple-500/10 hover:bg-maple-500/20 text-maple-300 border border-maple-500/30 text-xs font-semibold transition-all shadow-glow-sm cursor-pointer"
         >
           <Sparkles className="w-3.5 h-3.5 text-maple-400" />
           <span>Ask Maple AI</span>
+        </button>
+
+        {/* Quick Give Daily Update Action */}
+        <button
+          onClick={() => onNavigate('/updates/my-update')}
+          className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-maple-500 hover:bg-maple-400 text-slate-950 font-bold text-xs transition-all shadow-sm cursor-pointer"
+          title="Give Daily Work Update / Standup"
+        >
+          <CheckSquare className="w-3.5 h-3.5" />
+          <span>Give Daily Update</span>
         </button>
 
         {/* Notification Bell */}

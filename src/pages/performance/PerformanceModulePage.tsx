@@ -141,6 +141,11 @@ export const PerformanceModulePage: React.FC<{ initialTab?: string }> = ({
       icon: <CheckSquare className="w-4 h-4 text-sky-400" />,
     });
     tabs.push({
+      id: 'member_work',
+      label: 'Log My Work (9 Fields)',
+      icon: <Table className="w-4 h-4 text-purple-400" />,
+    });
+    tabs.push({
       id: 'sprint_analytics',
       label: 'Sprint & Review Analytics',
       icon: <Zap className="w-4 h-4 text-amber-400" />,

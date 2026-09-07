@@ -43,10 +43,11 @@ export const Sidebar: React.FC<SidebarProps> = ({
   // Role-Based Section Definitions
   const memberSections = [
     {
-      title: 'Personal',
+      title: 'Daily & Tasks',
       items: [
         { label: 'Home', path: '/', icon: <Home className="w-4 h-4" /> },
-        { label: 'Work Performance (Check-in)', path: '/performance', icon: <Table className="w-4 h-4 text-maple-400" /> },
+        { label: 'Daily Update (Give Update)', path: '/updates/my-update', icon: <CheckSquare className="w-4 h-4 text-maple-400" /> },
+        { label: 'Work Performance Ledger', path: '/performance', icon: <Table className="w-4 h-4 text-sky-400" /> },
         { label: 'Leave Tracker', path: '/leave-planner', icon: <CalendarDays className="w-4 h-4 text-emerald-400" /> },
         { label: 'My Blockers', path: '/blockers', icon: <AlertTriangle className="w-4 h-4" /> },
       ],
@@ -61,10 +62,11 @@ export const Sidebar: React.FC<SidebarProps> = ({
 
   const managerSections = [
     {
-      title: `${userPod?.name || 'Pod'} Cockpit`,
+      title: `${userPod?.name || 'Pod'} Daily & Tasks`,
       items: [
         { label: 'Overview', path: '/', icon: <Home className="w-4 h-4" /> },
-        { label: 'Work Performance (Check-in)', path: '/performance', icon: <Table className="w-4 h-4 text-maple-400" /> },
+        { label: 'Daily Update (Give Update)', path: '/updates/my-update', icon: <CheckSquare className="w-4 h-4 text-maple-400" /> },
+        { label: 'Work Performance Table', path: '/performance', icon: <Table className="w-4 h-4 text-sky-400" /> },
         { label: 'Leave Tracker & Approvals', path: '/leave-planner', icon: <CalendarDays className="w-4 h-4 text-emerald-400" /> },
         { label: 'Blockers', path: '/blockers', icon: <AlertTriangle className="w-4 h-4" /> },
         { label: 'My Pod Roster', path: '/manager/team', icon: <Layers className="w-4 h-4" /> },
@@ -88,10 +90,11 @@ export const Sidebar: React.FC<SidebarProps> = ({
 
   const adminSections = [
     {
-      title: 'Executive Overview',
+      title: 'Executive & Daily',
       items: [
         { label: 'Overview', path: '/', icon: <Home className="w-4 h-4" /> },
-        { label: 'Work Performance (Check-in)', path: '/performance', icon: <Table className="w-4 h-4 text-maple-400" /> },
+        { label: 'Daily Update (Give Update)', path: '/updates/my-update', icon: <CheckSquare className="w-4 h-4 text-maple-400" /> },
+        { label: 'Work Performance Table', path: '/performance', icon: <Table className="w-4 h-4 text-sky-400" /> },
         { label: 'Leave Tracker & Holidays', path: '/leave-planner', icon: <CalendarDays className="w-4 h-4 text-emerald-400" /> },
         { label: 'Blockers', path: '/blockers', icon: <AlertTriangle className="w-4 h-4" /> },
       ],

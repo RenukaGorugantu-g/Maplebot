@@ -425,7 +425,15 @@ export const HomeDashboard: React.FC<{
             </p>
           </div>
 
-          <div className="flex items-center gap-3">
+          <div className="flex flex-wrap items-center gap-3">
+            <Button
+              variant="secondary"
+              size="sm"
+              onClick={() => onNavigate('/updates/my-update')}
+              leftIcon={<CheckSquare className="w-4 h-4 text-maple-400" />}
+            >
+              Give My Update
+            </Button>
             <GradientButton
               size="sm"
               onClick={() => onNavigate('/performance')}
@@ -567,6 +575,22 @@ export const HomeDashboard: React.FC<{
         </div>
 
         <div className="flex flex-wrap items-center gap-3">
+          <Button
+            variant="secondary"
+            size="sm"
+            onClick={() => onNavigate('/updates/my-update')}
+            leftIcon={<CheckSquare className="w-4 h-4 text-maple-400" />}
+          >
+            Give My Update
+          </Button>
+          <Button
+            variant="secondary"
+            size="sm"
+            onClick={() => onNavigate('/performance')}
+            leftIcon={<Table className="w-4 h-4 text-sky-400" />}
+          >
+            Work Performance Table
+          </Button>
           <Button
             variant="secondary"
             size="sm"
