@@ -98,6 +98,48 @@ class MapleDataStore {
   private leaveBalances: LeaveBalanceRecord[];
   private listeners: Set<() => void> = new Set();
 
+  // Helper to identify and filter out sample/testing demo items
+  private isSeedItem(item: any): boolean {
+    if (!item) return false;
+    const id = (item.id || '').toString();
+    const desc = (
+      (item.task || '') +
+      (item.task_title || '') +
+      (item.yesterday || '') +
+      (item.today || '') +
+      (item.reason || '') +
+      (item.title || '') +
+      (item.employee_name || '') +
+      (item.project_name || '')
+    ).toLowerCase();
+
+    return (
+      id.includes('seed') ||
+      id.includes('sample') ||
+      id.startsWith('00000000-0000') ||
+      id.startsWith('10000000-0000') ||
+      id.startsWith('30000000-0000') ||
+      id.startsWith('40000000-0000') ||
+      desc.includes('pricing calculator') ||
+      desc.includes('healthcare compliance scorm') ||
+      desc.includes('midwest university consortium') ||
+      desc.includes('meta tag optimizations') ||
+      desc.includes('scorm 2004 compliance test harnesses') ||
+      desc.includes('sample test leave') ||
+      desc.includes('demo pitch decks') ||
+      desc.includes('alexander wright') ||
+      desc.includes('marcus brody') ||
+      desc.includes('elena rostov') ||
+      desc.includes('david kim') ||
+      desc.includes('liam zhao') ||
+      desc.includes('chloe bennett') ||
+      desc.includes('devon hayes') ||
+      desc.includes('lucas santana') ||
+      desc.includes('priya nambiar') ||
+      desc.includes('ananya roy')
+    );
+  }
+
   constructor() {
     const savedUpdates = localStorage.getItem('maplebot_updates');
     const savedBlockers = localStorage.getItem('maplebot_blockers');
@@ -127,20 +169,28 @@ class MapleDataStore {
 
     this.checkin = INITIAL_CHECKIN;
     const initialRawUpdates: Update[] = savedUpdates ? JSON.parse(savedUpdates) : INITIAL_UPDATES;
-    this.updates = this.mergeUpdatesWithComments(initialRawUpdates, []);
-    this.blockers = savedBlockers ? JSON.parse(savedBlockers) : INITIAL_BLOCKERS;
+    this.updates = this.mergeUpdatesWithComments(initialRawUpdates.filter((u) => !this.isSeedItem(u)), []);
+    this.blockers = (savedBlockers ? JSON.parse(savedBlockers) : INITIAL_BLOCKERS).filter((b: any) => !this.isSeedItem(b));
     this.kudos = savedKudos ? JSON.parse(savedKudos) : INITIAL_KUDOS;
     this.sprint = INITIAL_SPRINT;
     this.notifications = savedNotifs ? JSON.parse(savedNotifs) : INITIAL_NOTIFICATIONS;
     this.googleChatSettings = INITIAL_GOOGLE_CHAT;
     this.auditLogs = savedAudit ? JSON.parse(savedAudit) : INITIAL_AUDIT_LOGS;
 
-    this.performanceWorkLogs = savedWorkLogs ? JSON.parse(savedWorkLogs) : INITIAL_PERFORMANCE_WORK_LOGS;
+    this.performanceWorkLogs = (savedWorkLogs ? JSON.parse(savedWorkLogs) : INITIAL_PERFORMANCE_WORK_LOGS).filter((l: any) => !this.isSeedItem(l));
     this.performanceKpis = savedKpis ? JSON.parse(savedKpis) : INITIAL_PERFORMANCE_KPIS;
     this.performanceReports = savedReports ? JSON.parse(savedReports) : INITIAL_PERFORMANCE_REPORTS;
     this.companyHolidays = savedHolidays ? JSON.parse(savedHolidays) : INITIAL_COMPANY_HOLIDAYS_2026;
-    this.leaveRequests = savedLeaves ? JSON.parse(savedLeaves) : INITIAL_PLANNED_LEAVES;
+    this.leaveRequests = (savedLeaves ? JSON.parse(savedLeaves) : INITIAL_PLANNED_LEAVES).filter((lr: any) => !this.isSeedItem(lr));
     this.leaveBalances = savedBalances ? JSON.parse(savedBalances) : [];
+
+    // Save cleaned initial state to prevent sample retention
+    try {
+      localStorage.setItem('maplebot_updates', JSON.stringify(this.updates));
+      localStorage.setItem('maplebot_blockers', JSON.stringify(this.blockers));
+      localStorage.setItem('maplebot_performance_work_logs', JSON.stringify(this.performanceWorkLogs));
+      localStorage.setItem('maplebot_leaves', JSON.stringify(this.leaveRequests));
+    } catch {}
 
     // Attach real-time listener and initial sync with Supabase
     this.initSupabaseSync();
@@ -230,8 +280,12 @@ class MapleDataStore {
         .select('*')
         .order('submitted_at', { ascending: false });
 
-      if (!updError && dbUpdates && dbUpdates.length > 0) {
-        this.updates = this.mergeUpdatesWithComments(dbUpdates, dbComments);
+      if (!updError && dbUpdates) {
+        const cleanUpdates = dbUpdates.filter((u) => !this.isSeedItem(u));
+        this.updates = this.mergeUpdatesWithComments(cleanUpdates, dbComments);
+        try {
+          localStorage.setItem('maplebot_updates', JSON.stringify(this.updates));
+        } catch {}
       }
 
       // 5. Fetch live blockers from Supabase
@@ -240,8 +294,11 @@ class MapleDataStore {
         .select('*')
         .order('created_at', { ascending: false });
 
-      if (!blkError && dbBlockers && dbBlockers.length > 0) {
-        this.blockers = dbBlockers;
+      if (!blkError && dbBlockers) {
+        this.blockers = dbBlockers.filter((b) => !this.isSeedItem(b));
+        try {
+          localStorage.setItem('maplebot_blockers', JSON.stringify(this.blockers));
+        } catch {}
       }
 
       // 6. Fetch live kudos from Supabase
@@ -250,8 +307,11 @@ class MapleDataStore {
         .select('*')
         .order('created_at', { ascending: false });
 
-      if (!kudError && dbKudos && dbKudos.length > 0) {
+      if (!kudError && dbKudos) {
         this.kudos = dbKudos;
+        try {
+          localStorage.setItem('maplebot_kudos', JSON.stringify(this.kudos));
+        } catch {}
       }
 
       // 7. Fetch checkin & questions from Supabase
@@ -271,8 +331,11 @@ class MapleDataStore {
           .select('*')
           .order('date', { ascending: false });
 
-        if (!logError && dbWorkLogs && dbWorkLogs.length > 0) {
-          this.performanceWorkLogs = dbWorkLogs;
+        if (!logError && dbWorkLogs) {
+          this.performanceWorkLogs = dbWorkLogs.filter((l) => !this.isSeedItem(l));
+          try {
+            localStorage.setItem('maplebot_performance_work_logs', JSON.stringify(this.performanceWorkLogs));
+          } catch {}
         }
       } catch (e) {}
 
@@ -283,8 +346,11 @@ class MapleDataStore {
           .select('*')
           .order('start_date', { ascending: false });
 
-        if (!leaveError && dbLeaves && dbLeaves.length > 0) {
-          this.leaveRequests = dbLeaves;
+        if (!leaveError && dbLeaves) {
+          this.leaveRequests = dbLeaves.filter((lr) => !this.isSeedItem(lr));
+          try {
+            localStorage.setItem('maplebot_leaves', JSON.stringify(this.leaveRequests));
+          } catch {}
         }
       } catch (e) {}
 
@@ -295,8 +361,11 @@ class MapleDataStore {
           .select('*')
           .order('period_start', { ascending: false });
 
-        if (!repError && dbReports && dbReports.length > 0) {
-          this.performanceReports = dbReports;
+        if (!repError && dbReports) {
+          this.performanceReports = dbReports.filter((r) => !this.isSeedItem(r));
+          try {
+            localStorage.setItem('maplebot_performance_reports', JSON.stringify(this.performanceReports));
+          } catch {}
         }
       } catch (e) {}
 

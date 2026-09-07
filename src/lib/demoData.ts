@@ -458,18 +458,7 @@ export const INITIAL_GOOGLE_CHAT_SETTINGS: GoogleChatSettings = {
   updated_at: '2026-08-20T00:00:00Z',
 };
 
-export const INITIAL_NOTIFICATIONS: NotificationItem[] = [
-  {
-    id: 'notif-1',
-    organization_id: 'org-maple-01',
-    profile_id: 'prof-renuka',
-    type: 'reminder',
-    title: 'Daily Standup Reminder',
-    message: 'Good morning! Please log your daily standup update for Web & Sales.',
-    read: false,
-    created_at: new Date(Date.now() - 1000 * 60 * 60).toISOString(),
-  },
-];
+export const INITIAL_NOTIFICATIONS: NotificationItem[] = [];
 
 // Aliases for dataStore compatibility
 export const INITIAL_ORG = INITIAL_ORGANIZATION;
