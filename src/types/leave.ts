@@ -56,13 +56,26 @@ export interface CompanyHoliday {
   description?: string;
 }
 
+export interface LeaveBalanceRecord {
+  id: string;
+  user_id: string;
+  year: number;
+  total_quota: number; // e.g. 12 (editable in Supabase)
+  approved_taken: number;
+  available_balance: number;
+  created_at?: string;
+  updated_at?: string;
+}
+
 export interface EmployeeLeaveBalance {
   employee_id: string;
   employee_name: string;
-  total_quota: number; // Annual quota (e.g. 24 days)
-  taken_count: number;
-  planned_count: number;
-  remaining_count: number;
-  optional_holidays_quota: number; // e.g. 2 days
-  optional_holidays_taken: number;
+  total_quota: number; // Annual quota from DB (default 12)
+  taken_count: number; // Approved taken count
+  pending_count: number; // Pending / planned requests count
+  planned_count: number; // Alias for backward compatibility
+  available_balance: number; // total_quota - taken_count
+  remaining_count: number; // Alias for backward compatibility
+  optional_holidays_quota?: number;
+  optional_holidays_taken?: number;
 }

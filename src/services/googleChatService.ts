@@ -696,6 +696,181 @@ export const googleChatService = {
     });
     return sent;
   },
+
+  /**
+   * Dispatches clean, formatted notification to Google Chat space when a leave request is APPROVED
+   */
+  async sendLeaveApprovedCard(params: {
+    employeeName: string;
+    startDate: string;
+    endDate: string;
+    daysCount: number;
+    leaveType?: string;
+    approvedBy?: string;
+    podName?: string;
+    reason?: string;
+  }): Promise<boolean> {
+    const formattedDateRange =
+      params.startDate === params.endDate
+        ? params.startDate
+        : `${params.startDate} to ${params.endDate}`;
+
+    const payload = {
+      cardsV2: [
+        {
+          cardId: `leave-approved-${Date.now()}`,
+          card: {
+            header: {
+              title: `Team Leave Update`,
+              subtitle: `${params.employeeName} — Approved Leave (${params.daysCount} day${params.daysCount > 1 ? 's' : ''})`,
+              imageUrl: 'https://cdn-icons-png.flaticon.com/512/3652/3652191.png',
+              imageType: 'CIRCLE',
+            },
+            sections: [
+              {
+                header: `🌴 Leave Details`,
+                widgets: [
+                  {
+                    textParagraph: {
+                      text: `<b>${params.employeeName}</b> will be on leave from <b>${formattedDateRange}</b> (${params.daysCount} day${params.daysCount > 1 ? 's' : ''}).<br/><br/>` +
+                        `• <b>Leave Type:</b> ${params.leaveType || 'Paid Time Off (PTO)'}<br/>` +
+                        (params.podName ? `• <b>Pod:</b> ${params.podName}<br/>` : '') +
+                        `• <b>Status:</b> <font color="#10B981"><b>✅ Approved</b></font><br/>` +
+                        (params.approvedBy ? `• <b>Approved By:</b> ${params.approvedBy}` : ''),
+                    },
+                  },
+                ],
+              },
+            ],
+          },
+        },
+      ],
+    };
+
+    const sent = await this.dispatchToSpace(payload);
+    dataStore.logAudit('GOOGLE_CHAT_LEAVE_APPROVED_SENT', 'LeaveRequest', undefined, {
+      employee: params.employeeName,
+      dates: formattedDateRange,
+      days: params.daysCount,
+      approvedBy: params.approvedBy,
+      sent,
+    });
+    return sent;
+  },
+
+  /**
+   * Dispatches feedback notification tagging the recipient teammate
+   */
+  async sendFeedbackNotificationCard(params: {
+    memberName: string;
+    reviewerName: string;
+    reviewerRole: string;
+    date: string;
+    comments: string;
+    portalUrl?: string;
+  }): Promise<boolean> {
+    const host = typeof window !== 'undefined' ? window.location.origin : 'http://localhost:5173';
+    const redirectUrl = params.portalUrl || `${host}/performance`;
+
+    const payload = {
+      cardsV2: [
+        {
+          cardId: `feedback-${Date.now()}`,
+          card: {
+            header: {
+              title: `Feedback on Work Performance (Check-in)`,
+              subtitle: `To: ${params.memberName} • From: ${params.reviewerName} (${params.reviewerRole})`,
+              imageUrl: 'https://cdn-icons-png.flaticon.com/512/2921/2921226.png',
+              imageType: 'CIRCLE',
+            },
+            sections: [
+              {
+                widgets: [
+                  {
+                    textParagraph: {
+                      text: `<b>${params.memberName}</b>, ${params.reviewerName} has added feedback to your Work Performance (Check-in) update for <b>${params.date}</b>:<br/><br/>` +
+                        `<i>"${params.comments}"</i>`,
+                    },
+                  },
+                  {
+                    buttonList: {
+                      buttons: [
+                        {
+                          text: '🔗 View Performance Check-in',
+                          onClick: {
+                            openLink: {
+                              url: redirectUrl,
+                            },
+                          },
+                        },
+                      ],
+                    },
+                  },
+                ],
+              },
+            ],
+          },
+        },
+      ],
+    };
+
+    const sent = await this.dispatchToSpace(payload);
+    return sent;
+  },
+
+  /**
+   * Dispatches 10:00 AM IST Check-in Reminder to teammates who have not submitted today
+   */
+  async sendDailyCheckinReminderCard(unsubmittedMembers: Array<{ name: string; podName?: string }>): Promise<boolean> {
+    if (unsubmittedMembers.length === 0) return false;
+
+    const namesList = unsubmittedMembers.map((m) => `• <b>${m.name}</b> (${m.podName || 'General Pod'})`).join('<br/>');
+    const host = typeof window !== 'undefined' ? window.location.origin : 'http://localhost:5173';
+
+    const payload = {
+      cardsV2: [
+        {
+          cardId: `reminder-10am-${Date.now()}`,
+          card: {
+            header: {
+              title: `⏰ 10:00 AM Daily Check-in Reminder`,
+              subtitle: `Maple Learning Solutions • Asia/Kolkata (IST)`,
+              imageUrl: 'https://cdn-icons-png.flaticon.com/512/2921/2921226.png',
+              imageType: 'CIRCLE',
+            },
+            sections: [
+              {
+                header: `Pending Work Performance (Check-in) Submissions`,
+                widgets: [
+                  {
+                    textParagraph: {
+                      text: `Friendly reminder to submit your <b>Work Performance (Check-in)</b> update for today:<br/><br/>${namesList}`,
+                    },
+                  },
+                  {
+                    buttonList: {
+                      buttons: [
+                        {
+                          text: '✍️ Submit My Work Check-in Now',
+                          onClick: {
+                            openLink: {
+                              url: `${host}/performance`,
+                            },
+                          },
+                        },
+                      ],
+                    },
+                  },
+                ],
+              },
+            ],
+          },
+        },
+      ],
+    };
+
+    return await this.dispatchToSpace(payload);
+  },
 };
 
 export const auditService = {

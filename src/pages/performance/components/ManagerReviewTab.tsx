@@ -35,6 +35,8 @@ import {
   Calendar,
   User,
   HelpCircle,
+  CheckSquare,
+  FileCheck,
 } from 'lucide-react';
 
 interface ManagerReviewTabProps {
@@ -262,6 +264,76 @@ export const ManagerReviewTab: React.FC<ManagerReviewTabProps> = ({
       setAssessingLog(null);
     } finally {
       setIsSavingAssessment(false);
+    }
+  };
+
+  // Pod Lead Review Modal State (5 Fields for Pod Lead role)
+  const [reviewingLog, setReviewingLog] = useState<PerformanceWorkLog | null>(null);
+  const [expectedCompletionDate, setExpectedCompletionDate] = useState<string>('');
+  const [completedDate, setCompletedDate] = useState<string>('');
+  const [reviewCompletedDate, setReviewCompletedDate] = useState<string>('');
+  const [reviewerName, setReviewerName] = useState<string>(profile?.full_name || 'Pod Lead');
+  const [errorCount, setErrorCount] = useState<number>(0);
+  const [podReviewComments, setPodReviewComments] = useState<string>('');
+  const [isSavingPodReview, setIsSavingPodReview] = useState<boolean>(false);
+  const [podReviewErrorMsg, setPodReviewErrorMsg] = useState<string>('');
+
+  const openPodReviewModal = (log: PerformanceWorkLog) => {
+    setReviewingLog(log);
+    const today = new Date().toISOString().split('T')[0];
+    setExpectedCompletionDate(log.expected_completion_date || log.assigned_date || today);
+    setCompletedDate(log.completed_date || today);
+    setReviewCompletedDate(log.review_completed_date || today);
+    setReviewerName(log.reviewer || profile?.full_name || 'Pod Lead');
+    setErrorCount(log.error_count ?? 0);
+    setPodReviewComments(log.comments || '');
+    setPodReviewErrorMsg('');
+  };
+
+  const handleSavePodReview = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!reviewingLog) return;
+    if (!expectedCompletionDate || !completedDate || !reviewCompletedDate || !reviewerName.trim()) {
+      setPodReviewErrorMsg('Please fill in all 5 review fields.');
+      return;
+    }
+
+    setIsSavingPodReview(true);
+    setPodReviewErrorMsg('');
+
+    try {
+      const updated = dataStore.savePodLeadReview(reviewingLog.id, {
+        expected_completion_date: expectedCompletionDate,
+        completed_date: completedDate,
+        review_completed_date: reviewCompletedDate,
+        reviewer: reviewerName.trim(),
+        error_count: Number(errorCount),
+      });
+
+      if (updated && podReviewComments.trim() !== (reviewingLog.comments || '')) {
+        dataStore.updatePerformanceWorkLog(reviewingLog.id, {
+          comments: podReviewComments.trim(),
+        });
+      }
+
+      if (updated) {
+        const finalComments = podReviewComments.trim() || updated.comments || 'Deliverable verified and advanced to manager review.';
+        googleChatService.sendReviewEvaluationCard({
+          log: { ...updated, comments: finalComments },
+          reviewerName: reviewerName.trim() || profile?.full_name || 'Pod Lead',
+          reviewerRole: 'Pod Lead',
+          errorCount: Number(errorCount),
+          comments: finalComments,
+        });
+      }
+
+      setSuccessNotice(`Pod Lead Review saved for ${reviewingLog.employee_name}. Record advanced & synced to team chat.`);
+      setTimeout(() => setSuccessNotice(''), 4000);
+      setReviewingLog(null);
+    } catch (err: any) {
+      setPodReviewErrorMsg(err.message || 'Failed to save review.');
+    } finally {
+      setIsSavingPodReview(false);
     }
   };
 
@@ -612,14 +684,39 @@ export const ManagerReviewTab: React.FC<ManagerReviewTabProps> = ({
                       {row.comments || <span className="text-slate-600 italic">—</span>}
                     </td>
                     <td className="py-3.5 px-3 text-center whitespace-nowrap align-top">
-                      <Button
-                        variant="ghost"
-                        size="sm"
-                        onClick={() => openAssessmentModal(row)}
-                        leftIcon={<Star className="w-3.5 h-3.5 text-maple-400" />}
-                      >
-                        Evaluate (3 Fields)
-                      </Button>
+                      {isAdmin ? (
+                        <div className="flex items-center justify-center gap-1.5">
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            onClick={() => openAssessmentModal(row)}
+                            leftIcon={<Star className="w-3.5 h-3.5 text-maple-400" />}
+                          >
+                            Evaluate (3 Fields)
+                          </Button>
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            onClick={() => openPodReviewModal(row)}
+                            leftIcon={<CheckSquare className="w-3.5 h-3.5 text-sky-400" />}
+                          >
+                            Pod Review
+                          </Button>
+                        </div>
+                      ) : isManager ? (
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          onClick={() => openPodReviewModal(row)}
+                          leftIcon={<CheckSquare className="w-3.5 h-3.5 text-sky-400" />}
+                        >
+                          {row.workflow_status === 'pod_lead_reviewed' || row.workflow_status === 'manager_reviewed'
+                            ? 'Edit Pod Review'
+                            : 'Pod Review (5 Fields)'}
+                        </Button>
+                      ) : (
+                        <span className="text-slate-500 font-mono text-xs">—</span>
+                      )}
                     </td>
                   </tr>
                 ))}
@@ -851,6 +948,134 @@ export const ManagerReviewTab: React.FC<ManagerReviewTabProps> = ({
               </Button>
               <GradientButton size="sm" type="submit" disabled={isSavingAssessment} leftIcon={<Save className="w-4 h-4" />}>
                 {isSavingAssessment ? 'Saving Evaluation...' : 'Save Performance Assessment'}
+              </GradientButton>
+            </div>
+          </form>
+        </Modal>
+      )}
+
+      {/* 4. POD LEAD REVIEW MODAL (5 SPECIFIC REVIEW FIELDS) */}
+      {reviewingLog && (
+        <Modal
+          isOpen={!!reviewingLog}
+          onClose={() => setReviewingLog(null)}
+          title={`Pod Lead Review Verification (5 Fields)`}
+          maxWidth="2xl"
+        >
+          <form onSubmit={handleSavePodReview} className="space-y-4">
+            {podReviewErrorMsg && (
+              <div className="p-3 rounded-xl bg-rose-500/20 border border-rose-500/40 text-rose-300 text-xs font-semibold">
+                {podReviewErrorMsg}
+              </div>
+            )}
+
+            {/* Teammate Deliverable Context */}
+            <div className="p-3.5 rounded-xl bg-slate-900 border border-slate-800 space-y-2">
+              <div className="flex items-center justify-between text-xs">
+                <span className="text-white font-bold">{reviewingLog.employee_name}</span>
+                <span className="text-maple-400 font-mono font-medium">{reviewingLog.date}</span>
+              </div>
+              <p className="text-slate-300 text-xs font-medium leading-relaxed">
+                <b>Project:</b> {reviewingLog.project_name || reviewingLog.project} • <b>Task:</b> {reviewingLog.task}
+              </p>
+              <div className="text-[11px] text-slate-400 flex items-center gap-3">
+                <span>⏱️ {reviewingLog.time_invested}h</span>
+                <span>📦 {reviewingLog.unit_count_completed} item(s)</span>
+                <span>📅 Assigned: {reviewingLog.assigned_date}</span>
+              </div>
+            </div>
+
+            {/* The 5 Pod Lead Review Fields */}
+            <div className="space-y-3">
+              <span className="text-sky-400 text-xs font-bold uppercase tracking-wider block">
+                Pod Lead Verification Fields (5 Fields)
+              </span>
+
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                {/* 1. Expected Completion Date */}
+                <div className="space-y-1">
+                  <label className="text-slate-300 text-xs font-medium block">1. Expected Completion Date *</label>
+                  <input
+                    type="date"
+                    value={expectedCompletionDate}
+                    onChange={(e) => setExpectedCompletionDate(e.target.value)}
+                    className="w-full px-3 py-2 bg-slate-900 border border-slate-700 rounded-xl text-white text-xs focus:outline-none focus:border-sky-500"
+                    required
+                  />
+                </div>
+
+                {/* 2. Completed Date */}
+                <div className="space-y-1">
+                  <label className="text-slate-300 text-xs font-medium block">2. Completed Date *</label>
+                  <input
+                    type="date"
+                    value={completedDate}
+                    onChange={(e) => setCompletedDate(e.target.value)}
+                    className="w-full px-3 py-2 bg-slate-900 border border-slate-700 rounded-xl text-white text-xs focus:outline-none focus:border-sky-500"
+                    required
+                  />
+                </div>
+
+                {/* 3. Review Completed Date */}
+                <div className="space-y-1">
+                  <label className="text-slate-300 text-xs font-medium block">3. Review Completed Date *</label>
+                  <input
+                    type="date"
+                    value={reviewCompletedDate}
+                    onChange={(e) => setReviewCompletedDate(e.target.value)}
+                    className="w-full px-3 py-2 bg-slate-900 border border-slate-700 rounded-xl text-white text-xs focus:outline-none focus:border-sky-500"
+                    required
+                  />
+                </div>
+
+                {/* 4. Reviewer Name */}
+                <div className="space-y-1">
+                  <label className="text-slate-300 text-xs font-medium block">4. Reviewer Name *</label>
+                  <input
+                    type="text"
+                    value={reviewerName}
+                    onChange={(e) => setReviewerName(e.target.value)}
+                    placeholder="e.g. Renuka Gorugantu"
+                    className="w-full px-3 py-2 bg-slate-900 border border-slate-700 rounded-xl text-white text-xs focus:outline-none focus:border-sky-500"
+                    required
+                  />
+                </div>
+              </div>
+
+              {/* 5. Error Count */}
+              <div className="space-y-1">
+                <label className="text-slate-300 text-xs font-medium block">5. Error Count / Review Defects *</label>
+                <input
+                  type="number"
+                  min="0"
+                  max="99"
+                  value={errorCount}
+                  onChange={(e) => setErrorCount(parseInt(e.target.value) || 0)}
+                  className="w-full px-3 py-2 bg-slate-900 border border-slate-700 rounded-xl text-amber-300 font-mono font-bold text-xs focus:outline-none focus:border-sky-500"
+                  required
+                />
+              </div>
+
+              {/* Review Feedback / Comments */}
+              <div className="space-y-1">
+                <label className="text-slate-300 text-xs font-medium block">Pod Lead Review Comments & Feedback (Optional)</label>
+                <textarea
+                  rows={3}
+                  value={podReviewComments}
+                  onChange={(e) => setPodReviewComments(e.target.value)}
+                  placeholder="e.g. Code meets UX guidelines, responsive on mobile devices..."
+                  className="w-full px-3 py-2 bg-slate-900 border border-slate-700 rounded-xl text-white text-xs focus:outline-none focus:border-sky-500 resize-none"
+                />
+              </div>
+            </div>
+
+            {/* Modal Bottom Actions */}
+            <div className="flex items-center justify-end gap-3 pt-3 border-t border-slate-800">
+              <Button variant="secondary" size="sm" type="button" onClick={() => setReviewingLog(null)}>
+                Cancel
+              </Button>
+              <GradientButton size="sm" type="submit" disabled={isSavingPodReview} leftIcon={<Save className="w-4 h-4" />}>
+                {isSavingPodReview ? 'Saving Review...' : 'Save Pod Review'}
               </GradientButton>
             </div>
           </form>

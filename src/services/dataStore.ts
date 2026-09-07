@@ -42,7 +42,8 @@ import {
   Quarter,
   HalfYear,
   LeaveStatus,
-  EmployeeLeaveBalance
+  EmployeeLeaveBalance,
+  LeaveBalanceRecord
 } from '../types/leave';
 import {
   INITIAL_PERFORMANCE_KPIS,
@@ -94,6 +95,7 @@ class MapleDataStore {
   private performanceReports: PerformanceReport[];
   private companyHolidays: CompanyHoliday[];
   private leaveRequests: LeaveRequest[];
+  private leaveBalances: LeaveBalanceRecord[];
   private listeners: Set<() => void> = new Set();
 
   constructor() {
@@ -110,6 +112,7 @@ class MapleDataStore {
     const savedReports = localStorage.getItem('maplebot_performance_reports');
     const savedHolidays = localStorage.getItem('maplebot_holidays');
     const savedLeaves = localStorage.getItem('maplebot_leaves');
+    const savedBalances = localStorage.getItem('maplebot_leave_balances');
 
     this.organization = INITIAL_ORG;
     this.pods = savedPods ? JSON.parse(savedPods) : INITIAL_PODS;
@@ -137,6 +140,7 @@ class MapleDataStore {
     this.performanceReports = savedReports ? JSON.parse(savedReports) : INITIAL_PERFORMANCE_REPORTS;
     this.companyHolidays = savedHolidays ? JSON.parse(savedHolidays) : INITIAL_COMPANY_HOLIDAYS_2026;
     this.leaveRequests = savedLeaves ? JSON.parse(savedLeaves) : INITIAL_PLANNED_LEAVES;
+    this.leaveBalances = savedBalances ? JSON.parse(savedBalances) : [];
 
     // Attach real-time listener and initial sync with Supabase
     this.initSupabaseSync();
@@ -296,11 +300,43 @@ class MapleDataStore {
         }
       } catch (e) {}
 
+      // 11. Fetch live leave balances from Supabase
+      try {
+        const { data: dbBalances, error: balError } = await supabase
+          .from('leave_balances')
+          .select('*');
+
+        if (!balError && dbBalances && dbBalances.length > 0) {
+          this.leaveBalances = dbBalances;
+          localStorage.setItem('maplebot_leave_balances', JSON.stringify(dbBalances));
+        }
+      } catch (e) {}
+
       this.notify();
 
-      // 11. Subscribe to Supabase real-time updates across all tables
+      // 12. Subscribe to Supabase real-time updates across all tables
       supabase
         .channel('public-sync')
+        .on('postgres_changes', { event: '*', schema: 'public', table: 'leave_balances' }, (payload) => {
+          if (payload.eventType === 'INSERT' || payload.eventType === 'UPDATE') {
+            const rec = payload.new as LeaveBalanceRecord;
+            const idx = this.leaveBalances.findIndex((b) => b.id === rec.id || (b.user_id === rec.user_id && b.year === rec.year));
+            if (idx !== -1) {
+              this.leaveBalances[idx] = rec;
+            } else {
+              this.leaveBalances.push(rec);
+            }
+            localStorage.setItem('maplebot_leave_balances', JSON.stringify(this.leaveBalances));
+            this.notify();
+          } else if (payload.eventType === 'DELETE') {
+            const oldId = (payload.old as any)?.id;
+            if (oldId) {
+              this.leaveBalances = this.leaveBalances.filter((b) => b.id !== oldId);
+              localStorage.setItem('maplebot_leave_balances', JSON.stringify(this.leaveBalances));
+              this.notify();
+            }
+          }
+        })
         .on('postgres_changes', { event: '*', schema: 'public', table: 'updates' }, (payload) => {
           if (payload.eventType === 'INSERT') {
             const newUpd = payload.new as Update;
@@ -1988,10 +2024,41 @@ class MapleDataStore {
     return newLeave;
   }
 
+  public getLeaveBalances(): LeaveBalanceRecord[] {
+    return [...this.leaveBalances];
+  }
+
+  public saveLeaveBalanceRecord(record: LeaveBalanceRecord): LeaveBalanceRecord {
+    const idx = this.leaveBalances.findIndex((b) => b.id === record.id || (b.user_id === record.user_id && b.year === record.year));
+    if (idx !== -1) {
+      this.leaveBalances[idx] = { ...this.leaveBalances[idx], ...record, updated_at: new Date().toISOString() };
+    } else {
+      this.leaveBalances.push({ ...record, updated_at: new Date().toISOString() });
+    }
+    localStorage.setItem('maplebot_leave_balances', JSON.stringify(this.leaveBalances));
+
+    supabase
+      .from('leave_balances')
+      .upsert({
+        id: record.id,
+        user_id: record.user_id,
+        year: record.year,
+        total_quota: record.total_quota,
+        approved_taken: record.approved_taken,
+        available_balance: record.available_balance,
+        updated_at: new Date().toISOString(),
+      })
+      .then(() => {});
+
+    this.notify();
+    return record;
+  }
+
   public updateLeaveStatus(id: string, status: LeaveStatus, approverName?: string): LeaveRequest | undefined {
     const leave = this.getLeaveRequestById(id);
     if (!leave) return undefined;
 
+    const prevStatus = leave.status;
     leave.status = status;
     if (status === 'approved') {
       leave.approved_by = approverName || 'Pod Lead';
@@ -2008,6 +2075,19 @@ class MapleDataStore {
       .eq('id', id)
       .then(() => {});
 
+    // Recalculate employee balance if status transitioned to/from approved
+    if (status === 'approved' || prevStatus === 'approved') {
+      const balance = this.getEmployeeLeaveBalance(leave.employee_id, leave.year);
+      this.saveLeaveBalanceRecord({
+        id: `lbal-${leave.employee_id}-${leave.year}`,
+        user_id: leave.employee_id,
+        year: leave.year,
+        total_quota: balance.total_quota,
+        approved_taken: balance.taken_count,
+        available_balance: balance.available_balance,
+      });
+    }
+
     this.notify();
     return leave;
   }
@@ -2015,6 +2095,7 @@ class MapleDataStore {
   public deleteLeaveRequest(id: string): boolean {
     const idx = this.leaveRequests.findIndex((l) => l.id === id);
     if (idx !== -1) {
+      const target = this.leaveRequests[idx];
       this.leaveRequests.splice(idx, 1);
       localStorage.setItem('maplebot_leaves', JSON.stringify(this.leaveRequests));
       this.logAudit('LEAVE_DELETED', 'LeaveRequest', id);
@@ -2025,6 +2106,18 @@ class MapleDataStore {
         .eq('id', id)
         .then(() => {});
 
+      if (target.status === 'approved') {
+        const balance = this.getEmployeeLeaveBalance(target.employee_id, target.year);
+        this.saveLeaveBalanceRecord({
+          id: `lbal-${target.employee_id}-${target.year}`,
+          user_id: target.employee_id,
+          year: target.year,
+          total_quota: balance.total_quota,
+          approved_taken: balance.taken_count,
+          available_balance: balance.available_balance,
+        });
+      }
+
       this.notify();
       return true;
     }
@@ -2034,29 +2127,74 @@ class MapleDataStore {
   public getEmployeeLeaveBalance(employeeId: string, year = 2026): EmployeeLeaveBalance {
     const profile = this.getProfileById(employeeId);
     const leaves = this.getLeaveRequests({ employeeId, year });
+    const existingBal = this.leaveBalances.find((b) => b.user_id === employeeId && b.year === year);
 
-    const totalQuota = 24; // Standard annual quota (24 days)
-    const optionalQuota = 2; // 2 floating optional holidays
+    // Default dynamic quota is 12 days per employee per year unless edited in DB
+    const totalQuota = existingBal ? Number(existingBal.total_quota) : 12;
 
+    // ONLY approved leaves reduce available balance
     const approvedLeaves = leaves.filter((l) => l.status === 'approved' && l.leave_type !== 'Optional / Floater Holiday');
-    const plannedLeaves = leaves.filter((l) => l.status === 'planned' || l.status === 'pending');
-    const optionalLeaves = leaves.filter((l) => l.leave_type === 'Optional / Floater Holiday' && (l.status === 'approved' || l.status === 'planned'));
+    const pendingLeaves = leaves.filter((l) => (l.status === 'pending' || l.status === 'planned') && l.leave_type !== 'Optional / Floater Holiday');
+    const optionalLeaves = leaves.filter((l) => l.leave_type === 'Optional / Floater Holiday' && l.status === 'approved');
 
-    const takenCount = approvedLeaves.reduce((sum, l) => sum + l.days_count, 0);
-    const plannedCount = plannedLeaves.reduce((sum, l) => sum + l.days_count, 0);
-    const remainingCount = Math.max(0, totalQuota - (takenCount + plannedCount));
-    const optionalTaken = optionalLeaves.reduce((sum, l) => sum + l.days_count, 0);
+    const takenCount = approvedLeaves.reduce((sum, l) => sum + (Number(l.days_count) || 0), 0);
+    const pendingCount = pendingLeaves.reduce((sum, l) => sum + (Number(l.days_count) || 0), 0);
+    const availableBalance = Math.max(0, totalQuota - takenCount);
+    const optionalTaken = optionalLeaves.reduce((sum, l) => sum + (Number(l.days_count) || 0), 0);
 
     return {
       employee_id: employeeId,
       employee_name: profile?.full_name || 'Team Member',
       total_quota: totalQuota,
       taken_count: takenCount,
-      planned_count: plannedCount,
-      remaining_count: remainingCount,
-      optional_holidays_quota: optionalQuota,
+      pending_count: pendingCount,
+      planned_count: pendingCount,
+      available_balance: availableBalance,
+      remaining_count: availableBalance,
+      optional_holidays_quota: 2,
       optional_holidays_taken: optionalTaken,
     };
+  }
+
+  public addFeedbackNotification(params: {
+    profileId: string;
+    memberName: string;
+    reviewerName: string;
+    date: string;
+    comments?: string;
+    workLogId?: string;
+  }) {
+    const notifItem: NotificationItem = {
+      id: `notif-${Date.now()}-${Math.random().toString(36).substr(2, 6)}`,
+      organization_id: 'org-maple-01',
+      profile_id: params.profileId,
+      type: 'feedback',
+      title: 'New Feedback on Work Performance (Check-in)',
+      message: `${params.memberName}, ${params.reviewerName} has added feedback to your Work Performance (Check-in) update for ${params.date}.`,
+      read: false,
+      metadata: { workLogId: params.workLogId, reviewer: params.reviewerName, date: params.date },
+      created_at: new Date().toISOString(),
+    };
+
+    this.notifications.unshift(notifItem);
+    localStorage.setItem('maplebot_notifications', JSON.stringify(this.notifications));
+
+    supabase
+      .from('notifications')
+      .insert({
+        id: notifItem.id,
+        organization_id: 'org-maple-01',
+        profile_id: params.profileId,
+        type: notifItem.type,
+        title: notifItem.title,
+        message: notifItem.message,
+        read: false,
+        metadata: { workLogId: params.workLogId, reviewer: params.reviewerName, date: params.date },
+      })
+      .then(() => {});
+
+    this.notify();
+    return notifItem;
   }
 
   public resetToInitialSeed() {

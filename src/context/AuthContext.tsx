@@ -8,6 +8,10 @@ interface AuthContextType {
   user: any | null;
   profile: Profile | null;
   currentRole: UserRole;
+  isPodLead: boolean;
+  isAdmin: boolean;
+  isManager: boolean;
+  isMember: boolean;
   isAuthenticated: boolean;
   isAssignedToOrg: boolean;
   userPod: Pod | undefined;
@@ -321,7 +325,11 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
   const isAuthenticated = !!profile;
   const managedPod = profile?.id ? dataStore.getPods().find((p) => p.manager_id === profile.id) : undefined;
-  const currentRole: UserRole = profile?.role === 'admin' ? 'admin' : managedPod ? 'manager' : (profile?.role || 'member');
+  const isPodLead = !!managedPod || (profile?.role === 'manager' && !!profile?.pod_id) || !!profile?.is_pod_lead;
+  const isAdmin = profile?.role === 'admin';
+  const isManager = profile?.role === 'manager' && !isPodLead;
+  const isMember = profile?.role === 'member' && !isPodLead;
+  const currentRole: UserRole = isAdmin ? 'admin' : (isPodLead || isManager) ? 'manager' : 'member';
   const userPod = managedPod || (profile?.pod_id ? dataStore.getPods().find((p) => p.id === profile.pod_id) : undefined);
   const isAssignedToOrg = !!profile?.organization_id;
 
@@ -331,6 +339,10 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         user,
         profile,
         currentRole,
+        isPodLead,
+        isAdmin,
+        isManager,
+        isMember,
         isAuthenticated,
         isAssignedToOrg,
         userPod,

@@ -46,6 +46,7 @@ export interface Profile {
   email: string;
   avatar_url?: string;
   role: UserRole;
+  is_pod_lead?: boolean;
   pod_id?: string;
   pod_ids?: string[];
   manager_id?: string;
@@ -192,7 +193,7 @@ export interface NotificationItem {
   id: string;
   organization_id: string;
   profile_id: string;
-  type: 'reminder' | 'submitted' | 'blocker_assigned' | 'blocker_resolved' | 'kudos_received' | 'weekly_report' | 'sprint_report';
+  type: 'reminder' | 'submitted' | 'blocker_assigned' | 'blocker_resolved' | 'kudos_received' | 'weekly_report' | 'sprint_report' | 'feedback' | 'leave_approved' | 'leave_requested';
   title: string;
   message: string;
   read: boolean;

@@ -47,15 +47,12 @@ interface TabItem {
 export const PerformanceModulePage: React.FC<{ initialTab?: string }> = ({
   initialTab,
 }) => {
-  const { currentRole, userPod, profile } = useAuth();
-  const isAdmin = currentRole === 'admin';
-  const isManager = currentRole === 'manager';
-  const isMember = currentRole === 'member';
+  const { currentRole, isPodLead, isAdmin, isManager, isMember, userPod, profile } = useAuth();
 
   // Default initial tab based on role
   const defaultTab: PerformanceTabId = isMember
     ? 'member_work'
-    : isManager
+    : isPodLead
     ? 'pod_review'
     : 'manager_review';
 
@@ -68,7 +65,7 @@ export const PerformanceModulePage: React.FC<{ initialTab?: string }> = ({
     if (initialTab) {
       if (initialTab === 'dashboard') setActiveTab('dashboard');
       else if (initialTab === 'sprint-analytics' || initialTab === 'sprint_analytics') setActiveTab('sprint_analytics');
-      else if (initialTab === 'work-data') setActiveTab(isMember ? 'member_work' : isManager ? 'pod_review' : 'manager_review');
+      else if (initialTab === 'work-data') setActiveTab(isMember ? 'member_work' : isPodLead ? 'pod_review' : 'manager_review');
       else if (initialTab === 'individual-reports') setActiveTab('maple_ai_reports');
       else if (initialTab === 'team-reports') setActiveTab('maple_ai_reports');
       else if (initialTab === 'kra-kpi') setActiveTab('kra_kpi');
@@ -82,8 +79,8 @@ export const PerformanceModulePage: React.FC<{ initialTab?: string }> = ({
   if (isMember) {
     tabs.push({
       id: 'member_work',
-      label: 'My Work Updates (9 Fields)',
-      icon: <Table className="w-4 h-4" />,
+      label: 'My Work Check-in (9 Fields)',
+      icon: <Table className="w-4 h-4 text-maple-400" />,
     });
     tabs.push({
       id: 'sprint_analytics',
@@ -92,7 +89,7 @@ export const PerformanceModulePage: React.FC<{ initialTab?: string }> = ({
     });
     tabs.push({
       id: 'leave_planner',
-      label: 'Leave Planner & Holidays',
+      label: 'My Leave Tracker',
       icon: <CalendarDays className="w-4 h-4 text-emerald-400" />,
     });
     tabs.push({
@@ -100,10 +97,10 @@ export const PerformanceModulePage: React.FC<{ initialTab?: string }> = ({
       label: 'My Performance Report',
       icon: <Sparkles className="w-4 h-4" />,
     });
-  } else if (isManager) {
+  } else if (isPodLead) {
     tabs.push({
       id: 'member_work',
-      label: 'Log My Work Tasks (9 Fields)',
+      label: 'Log My Work (9 Fields)',
       icon: <Table className="w-4 h-4 text-maple-400" />,
     });
     tabs.push({
@@ -118,13 +115,40 @@ export const PerformanceModulePage: React.FC<{ initialTab?: string }> = ({
     });
     tabs.push({
       id: 'leave_planner',
-      label: 'Leave Planner & Holidays',
+      label: 'Leave Tracker & Approvals',
       icon: <CalendarDays className="w-4 h-4 text-emerald-400" />,
     });
     tabs.push({
       id: 'sprint_analytics',
       label: 'Sprint & Review Analytics',
       icon: <Zap className="w-4 h-4 text-amber-400" />,
+    });
+    tabs.push({
+      id: 'maple_ai_reports',
+      label: 'Maple AI Reports',
+      icon: <Sparkles className="w-4 h-4" />,
+    });
+  } else {
+    // Admin / Overall Manager
+    tabs.push({
+      id: 'manager_review',
+      label: 'Executive Performance Ledger (17 Cols)',
+      icon: <Table className="w-4 h-4 text-maple-400" />,
+    });
+    tabs.push({
+      id: 'pod_review',
+      label: 'Pod Work Review (5 Fields)',
+      icon: <CheckSquare className="w-4 h-4 text-sky-400" />,
+    });
+    tabs.push({
+      id: 'sprint_analytics',
+      label: 'Sprint & Review Analytics',
+      icon: <Zap className="w-4 h-4 text-amber-400" />,
+    });
+    tabs.push({
+      id: 'leave_planner',
+      label: 'Leave Tracker & Holidays',
+      icon: <CalendarDays className="w-4 h-4 text-emerald-400" />,
     });
     tabs.push({
       id: 'maple_ai_reports',
@@ -146,48 +170,6 @@ export const PerformanceModulePage: React.FC<{ initialTab?: string }> = ({
       label: 'Report Archive',
       icon: <History className="w-4 h-4" />,
     });
-  } else {
-    // Admin / Executive
-    tabs.push({
-      id: 'manager_review',
-      label: 'Consolidated Work Table (All 17 Columns)',
-      icon: <Table className="w-4 h-4" />,
-    });
-    tabs.push({
-      id: 'sprint_analytics',
-      label: '1-Click Sprint & Review Analytics',
-      icon: <Zap className="w-4 h-4 text-amber-400" />,
-    });
-    tabs.push({
-      id: 'leave_planner',
-      label: 'Leave Planner & Holidays',
-      icon: <CalendarDays className="w-4 h-4 text-emerald-400" />,
-    });
-    tabs.push({
-      id: 'pod_review',
-      label: 'Pod Review Queue',
-      icon: <CheckSquare className="w-4 h-4" />,
-    });
-    tabs.push({
-      id: 'maple_ai_reports',
-      label: 'Maple AI Executive Reports',
-      icon: <Sparkles className="w-4 h-4" />,
-    });
-    tabs.push({
-      id: 'dashboard',
-      label: 'Performance Dashboard',
-      icon: <BarChart2 className="w-4 h-4" />,
-    });
-    tabs.push({
-      id: 'kra_kpi',
-      label: 'KRA / KPI Architecture',
-      icon: <Target className="w-4 h-4" />,
-    });
-    tabs.push({
-      id: 'history',
-      label: 'Audit Archive',
-      icon: <History className="w-4 h-4" />,
-    });
   }
 
   const handleNavigateToReport = (empId: string) => {
@@ -202,14 +184,14 @@ export const PerformanceModulePage: React.FC<{ initialTab?: string }> = ({
         <div className="flex flex-col md:flex-row md:items-center justify-between gap-2 border-b border-slate-800/80 pb-4">
           <div>
             <span className="text-[11px] font-semibold uppercase tracking-wider text-maple-400 block mb-1">
-              Performance, Review & Maple AI Executive Reporting Suite
+              Work Performance (Check-in) & Review Suite
             </span>
             <h1 className="text-xl font-semibold text-white tracking-normal">
               {isAdmin
                 ? 'Executive Performance & Review Command Center'
-                : isManager
+                : isPodLead
                 ? `${userPod?.name || 'Pod'} Lead Review & Evaluation Hub`
-                : 'My Work Performance & Deliverables Workspace'}
+                : 'My Work Performance (Check-in)'}
             </h1>
           </div>
 
@@ -217,7 +199,7 @@ export const PerformanceModulePage: React.FC<{ initialTab?: string }> = ({
             <span className="text-xs text-slate-400 bg-slate-900 border border-slate-800 px-3 py-1.5 rounded-xl font-medium">
               {isAdmin
                 ? 'Organization Admin Scope'
-                : isManager
+                : isPodLead
                 ? `${userPod?.name || 'Pod'} Lead Scope`
                 : `${profile?.full_name} • ${userPod?.name || 'Pod'}`}
             </span>

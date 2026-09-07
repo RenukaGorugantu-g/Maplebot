@@ -136,13 +136,36 @@ export const MemberWorkTab: React.FC = () => {
   const handleSubmitAll = (e: React.FormEvent) => {
     e.preventDefault();
 
-    // Validation: ensure filled tasks
-    const validRows = taskRows.filter((r) => r.task.trim().length > 0);
-    if (validRows.length === 0) {
-      setErrorMsg('Please describe at least one task deliverable before submitting.');
-      return;
+    // Validation: ensure every operational required field is filled
+    for (let i = 0; i < taskRows.length; i++) {
+      const r = taskRows[i];
+      if (!r.projectName.trim()) {
+        setErrorMsg(`Task #${i + 1}: Project Name is required.`);
+        return;
+      }
+      if (!r.task.trim()) {
+        setErrorMsg(`Task #${i + 1}: Task Deliverable description is required.`);
+        return;
+      }
+      if (!r.assignedDate) {
+        setErrorMsg(`Task #${i + 1}: Assigned Date is required.`);
+        return;
+      }
+      if (!r.timeInvested || Number(r.timeInvested) <= 0) {
+        setErrorMsg(`Task #${i + 1}: Hours Invested must be greater than 0.`);
+        return;
+      }
+      if (!r.unitCountCompleted || Number(r.unitCountCompleted) < 1) {
+        setErrorMsg(`Task #${i + 1}: Units Count must be at least 1.`);
+        return;
+      }
+      if (!r.reviewAssignedDate) {
+        setErrorMsg(`Task #${i + 1}: Completed Date is required.`);
+        return;
+      }
     }
 
+    const validRows = taskRows;
     setIsSubmitting(true);
     setErrorMsg('');
 
@@ -324,7 +347,7 @@ export const MemberWorkTab: React.FC = () => {
                       </span>
                     </div>
                   </th>
-                  <th className="py-2.5 px-2 w-[105px]">Review Date</th>
+                  <th className="py-2.5 px-2 w-[105px]">Completed Date</th>
                   <th className="py-2.5 px-2 w-[16%]">Comments / Notes</th>
                   <th className="py-2.5 px-2 w-[18%]">
                     <div className="flex items-center gap-1.5 text-rose-400">

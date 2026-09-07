@@ -135,9 +135,21 @@ export const PodLeadReviewTab: React.FC = () => {
           errorCount: Number(errorCount),
           comments: finalComments,
         });
+
+        // Trigger targeted in-app feedback notification to the team member
+        if (reviewingLog.employee_id) {
+          dataStore.addFeedbackNotification({
+            profileId: reviewingLog.employee_id,
+            memberName: reviewingLog.employee_name,
+            reviewerName: reviewer.trim() || profile?.full_name || 'Pod Lead',
+            date: reviewingLog.date,
+            comments: finalComments,
+            workLogId: reviewingLog.id,
+          });
+        }
       }
 
-      setSuccessNotice(`Review saved for ${reviewingLog.employee_name}. Record advanced to Manager Review & synced to team chat.`);
+      setSuccessNotice(`Review saved for ${reviewingLog.employee_name}. Record advanced to Manager Review & notification sent.`);
       setTimeout(() => setSuccessNotice(''), 4000);
       setReviewingLog(null);
     } catch (err: any) {
