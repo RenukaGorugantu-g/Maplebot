@@ -8,6 +8,7 @@ import { useAuth } from '../../../context/AuthContext';
 import { dataStore } from '../../../services/dataStore';
 import { googleChatService } from '../../../services/googleChatService';
 import { PerformanceWorkLog, WorkCategory, WorkPriority } from '../../../types/performance';
+import { performanceExportService } from '../../../services/performanceExportService';
 import { Button, GradientButton } from '../../../components/ui/Button';
 import { EmptyState } from '../../../components/ui/EmptyState';
 import {
@@ -24,6 +25,7 @@ import {
   Layers,
   Calendar,
   User,
+  Download,
 } from 'lucide-react';
 
 interface TaskDraftRow {
@@ -549,15 +551,30 @@ export const MemberWorkTab: React.FC = () => {
             </p>
           </div>
 
-          <div className="relative w-full sm:w-72">
-            <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-slate-400" />
-            <input
-              type="text"
-              value={searchQuery}
-              onChange={(e) => setSearchQuery(e.target.value)}
-              placeholder="Search previous tasks..."
-              className="w-full pl-8 pr-3 py-1.5 bg-slate-900 border border-slate-800 rounded-xl text-xs text-white placeholder-slate-500 focus:outline-none focus:border-maple-500"
-            />
+          <div className="flex items-center gap-2 w-full sm:w-auto">
+            <div className="relative flex-1 sm:w-64">
+              <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-slate-400" />
+              <input
+                type="text"
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                placeholder="Search previous tasks..."
+                className="w-full pl-8 pr-3 py-1.5 bg-slate-900 border border-slate-800 rounded-xl text-xs text-white placeholder-slate-500 focus:outline-none focus:border-maple-500"
+              />
+            </div>
+            <Button
+              variant="secondary"
+              size="sm"
+              onClick={() =>
+                performanceExportService.exportStructuredWorkLogsToXLSX(
+                  filteredLogs,
+                  `MapleBot_Work_Tasks_${(profile?.full_name || 'Member').replace(/[^a-zA-Z0-9_-]/g, '_')}`
+                )
+              }
+              leftIcon={<Download className="w-3.5 h-3.5 text-maple-400" />}
+            >
+              Export Excel (.xlsx)
+            </Button>
           </div>
         </div>
 

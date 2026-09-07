@@ -123,32 +123,69 @@ export const aiService = {
     const followUps: string[] = [];
     let intent = 'DYNAMIC_QUERY';
 
+    // 1. GATHER STRUCTURED WORK LOGS (17 COLUMNS)
+    let workLogs = dataStore.getPerformanceWorkLogs(
+      isManager && authorizedPodId ? { podId: authorizedPodId } : undefined
+    );
+
     // SCENARIO A: Member-Specific Query
     if (mentionedMember) {
       intent = 'PERSON_SUMMARY';
-      summaryTitle = `${mentionedMember.full_name} — Standup & Deliverables Briefing`;
+      summaryTitle = `${mentionedMember.full_name} — Performance & Check-in Briefing`;
       const memberUpdates = updates.filter((u) => u.profile_id === mentionedMember.id);
       const latestUpdate = memberUpdates[0];
       const memberBlockers = blockers.filter((b) => b.reported_by === mentionedMember.id && b.status === 'open');
+      const memberLogs = workLogs.filter((l) => l.employee_id === mentionedMember.id);
+      const totalMemberHours = Math.round(memberLogs.reduce((sum, l) => sum + (Number(l.time_invested) || Number(l.duration_hours) || 0), 0) * 10) / 10;
+      const totalMemberUnits = memberLogs.reduce((sum, l) => sum + (Number(l.unit_count_completed) || 1), 0);
+      const latestLog = memberLogs[0];
 
-      if (latestUpdate) {
-        const blockerStr = latestUpdate.has_blocker && latestUpdate.blocker
+      let workLogSnippet = '';
+      if (memberLogs.length > 0) {
+        const taskItems = memberLogs.slice(0, 4).map((l, idx) => {
+          const checkin = l.submission_time || l.checkin_time || '10:00 AM';
+          const qStr = l.quality ? ` ⭐ Quality: ${l.quality}/5` : '';
+          const effStr = l.efficiency ? ` ⚡ Eff: ${l.efficiency}` : '';
+          return `   ${idx + 1}. **[${l.project_name || l.project}]** ${l.task || l.task_title} — **${l.time_invested || l.duration_hours}h** (${l.unit_count_completed || 1} units) • *Check-in: ${checkin}*${qStr}${effStr}`;
+        }).join('\n');
+
+        workLogSnippet = `\n\n### 💼 Structured Work Deliverables (${totalMemberHours}h Logged • ${totalMemberUnits} Units Delivered Across ${memberLogs.length} Tasks):\n${taskItems}`;
+      }
+
+      if (latestUpdate || memberLogs.length > 0) {
+        const blockerStr = latestUpdate?.has_blocker && latestUpdate?.blocker
           ? `🔴 **Active Blocker:** ${latestUpdate.blocker} *(Support Needed: ${latestUpdate.support_needed || 'None specified'})*`
           : '🟢 **No Blockers:** Work is progressing smoothly.';
 
+        const checkinTimeToday = latestLog?.submission_time || latestLog?.checkin_time || 'Recorded';
+
         answerText = `### 👤 ${mentionedMember.full_name} (${mentionedMember.role.toUpperCase()} • ${podName})
-- **Status:** ${latestUpdate.status.toUpperCase().replace('_', ' ')} (${latestUpdate.progress_percent}% Progress)
-- **Completed Yesterday:**\n${latestUpdate.yesterday}
-- **Today's Focus:**\n${latestUpdate.today}
-- ${blockerStr}`;
+- **Daily Check-in Time:** ${checkinTimeToday}
+- **Status:** ${(latestUpdate?.status || 'on_track').toUpperCase().replace('_', ' ')} (${latestUpdate?.progress_percent || 100}% Progress)
+- **Total Hours Logged:** ${totalMemberHours} hrs
+- **Total Units Completed:** ${totalMemberUnits} items
+- ${blockerStr}${workLogSnippet}`;
 
-        insights.push({
-          category: "Today's Deliverables",
-          type: 'info',
-          points: [latestUpdate.today || 'No focus deliverables specified.'],
-        });
+        if (latestUpdate?.today) {
+          insights.push({
+            category: "Today's Deliverables",
+            type: 'info',
+            points: [latestUpdate.today],
+          });
+        }
 
-        if (latestUpdate.has_blocker && latestUpdate.blocker) {
+        if (memberLogs.length > 0) {
+          insights.push({
+            category: 'Work Performance Ledger',
+            type: 'info',
+            points: [
+              `Total ${totalMemberHours} hours logged across ${memberLogs.length} task deliverables.`,
+              `Latest Check-in: ${checkinTimeToday}`,
+            ],
+          });
+        }
+
+        if (latestUpdate?.has_blocker && latestUpdate?.blocker) {
           insights.push({
             category: 'Blocker Reported',
             type: 'warning',
@@ -157,7 +194,7 @@ export const aiService = {
           followUps.push(`Unblock ${mentionedMember.full_name} regarding "${latestUpdate.blocker}".`);
         }
       } else {
-        answerText = `**${mentionedMember.full_name}** has not submitted a standup check-in for today yet.`;
+        answerText = `**${mentionedMember.full_name}** has not submitted a standup check-in or work deliverables for today yet.`;
         insights.push({
           category: 'Pending Submission',
           type: 'warning',
@@ -229,7 +266,85 @@ ${activeBlockers.map((b, idx) => `${idx + 1}. **${b.title}** [${b.severity.toUpp
         followUps.push('Sprint tempo is optimal.');
       }
     }
-    // SCENARIO D: Pod Summary / General Standup Overview
+    // SCENARIO D: Work Performance Ledger & Deliverables Analysis
+    else if (
+      lowerQ.includes('performance') ||
+      lowerQ.includes('hours') ||
+      lowerQ.includes('checkin') ||
+      lowerQ.includes('check-in') ||
+      lowerQ.includes('deliverable') ||
+      lowerQ.includes('units') ||
+      lowerQ.includes('work log') ||
+      lowerQ.includes('quality') ||
+      lowerQ.includes('tat') ||
+      lowerQ.includes('efficiency') ||
+      lowerQ.includes('review')
+    ) {
+      intent = 'PERFORMANCE_SUMMARY';
+      summaryTitle = `Work Performance & Deliverables Ledger — ${podName}`;
+      const totalHours = Math.round(workLogs.reduce((sum, l) => sum + (Number(l.time_invested) || Number(l.duration_hours) || 0), 0) * 10) / 10;
+      const totalUnits = workLogs.reduce((sum, l) => sum + (Number(l.unit_count_completed) || 1), 0);
+      const reviewedCount = workLogs.filter((l) => l.workflow_status === 'pod_lead_reviewed' || l.workflow_status === 'manager_reviewed').length;
+
+      if (workLogs.length > 0) {
+        const topProjects: Record<string, { hours: number; units: number; count: number }> = {};
+        workLogs.forEach((l) => {
+          const pName = l.project_name || l.project || 'General';
+          if (!topProjects[pName]) topProjects[pName] = { hours: 0, units: 0, count: 0 };
+          topProjects[pName].hours += Number(l.time_invested) || Number(l.duration_hours) || 0;
+          topProjects[pName].units += Number(l.unit_count_completed) || 1;
+          topProjects[pName].count += 1;
+        });
+
+        const projectLines = Object.entries(topProjects)
+          .map(([pName, st]) => `• **${pName}:** ${Math.round(st.hours * 10) / 10}h invested across ${st.count} tasks (${st.units} units completed)`)
+          .join('\n');
+
+        const sampleTasks = workLogs.slice(0, 5).map((l, idx) => {
+          const checkin = l.submission_time || l.checkin_time || '10:00 AM';
+          const qStr = l.quality ? ` ⭐ Quality: ${l.quality}/5` : '';
+          const effStr = l.efficiency ? ` ⚡ ${l.efficiency}` : '';
+          return `${idx + 1}. **${l.employee_name}** — [${l.project_name || l.project}] ${l.task || l.task_title} (${l.time_invested || l.duration_hours}h) • *Check-in: ${checkin}*${qStr}${effStr}`;
+        }).join('\n');
+
+        answerText = `### 📊 Work Performance Ledger Summary (${podName})
+- **Total Deliverables Logged:** ${workLogs.length} tasks
+- **Total Hours Invested:** **${totalHours} hrs**
+- **Total Units Completed:** **${totalUnits} items**
+- **Reviews Completed:** ${reviewedCount} of ${workLogs.length} (${workLogs.length > 0 ? Math.round((reviewedCount / workLogs.length) * 100) : 0}%)
+
+#### 📂 Project Breakdown:
+${projectLines}
+
+#### 📋 Recent Task Entries & Check-in Times:
+${sampleTasks}`;
+
+        insights.push({
+          category: 'Work Performance Overview',
+          type: 'info',
+          points: [
+            `${totalHours} total hours invested across ${workLogs.length} deliverables.`,
+            `${totalUnits} total finished units tracked.`,
+          ],
+        });
+
+        insights.push({
+          category: 'Review Status',
+          type: reviewedCount === workLogs.length ? 'success' : 'warning',
+          points: [`${reviewedCount} of ${workLogs.length} tasks have been reviewed by Pod Lead/Manager.`],
+        });
+
+        followUps.push('Export full 17-column ledger to Excel in Work Performance Table.');
+      } else {
+        answerText = `No structured work performance logs have been recorded for **${podName}** yet.`;
+        insights.push({
+          category: 'No Work Logs',
+          type: 'info',
+          points: ['Work tasks will appear here as members submit their daily deliverables.'],
+        });
+      }
+    }
+    // SCENARIO E: Pod Summary / General Standup Overview
     else {
       intent = 'STANDUP_SUMMARY';
       summaryTitle = `Standup Briefing — ${podName}`;

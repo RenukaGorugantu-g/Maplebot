@@ -9,6 +9,7 @@ import { useAuth } from '../../../context/AuthContext';
 import { dataStore } from '../../../services/dataStore';
 import { PerformanceWorkLog, WorkCategory, WorkPriority } from '../../../types/performance';
 import { googleChatService } from '../../../services/googleChatService';
+import { performanceExportService } from '../../../services/performanceExportService';
 import { Modal } from '../../../components/ui/Modal';
 import { Button, GradientButton } from '../../../components/ui/Button';
 import { EmptyState } from '../../../components/ui/EmptyState';
@@ -25,6 +26,7 @@ import {
   Save,
   Edit2,
   Send,
+  Download,
 } from 'lucide-react';
 
 export const PodLeadReviewTab: React.FC = () => {
@@ -233,27 +235,43 @@ export const PodLeadReviewTab: React.FC = () => {
             </button>
           </div>
 
-          {subView === 'own_work' && (
-            <GradientButton
+          <div className="flex flex-wrap items-center gap-2.5">
+            <Button
+              variant="secondary"
               size="sm"
-              onClick={() => setIsOwnWorkModalOpen(true)}
-              leftIcon={<PlusCircle className="w-4 h-4" />}
+              onClick={() =>
+                performanceExportService.exportStructuredWorkLogsToXLSX(
+                  filteredList,
+                  `MapleBot_Pod_${(userPod?.name || 'Lead').replace(/[^a-zA-Z0-9_-]/g, '_')}_Work_Performance`
+                )
+              }
+              leftIcon={<Download className="w-4 h-4 text-maple-400" />}
             >
-              Log Lead Deliverable
-            </GradientButton>
-          )}
+              Export Pod Excel (.xlsx)
+            </Button>
+
+            {subView === 'own_work' && (
+              <GradientButton
+                size="sm"
+                onClick={() => setIsOwnWorkModalOpen(true)}
+                leftIcon={<PlusCircle className="w-4 h-4" />}
+              >
+                Log Lead Deliverable
+              </GradientButton>
+            )}
+          </div>
         </div>
       </div>
 
       {successNotice && (
         <div className="p-3.5 rounded-xl bg-emerald-500/15 border border-emerald-500/30 text-emerald-300 text-xs font-medium flex items-center gap-2">
           <CheckCircle2 className="w-4 h-4" />
-          {successNotice}
+          <span>{successNotice}</span>
         </div>
       )}
 
       {/* Filter / Search Bar */}
-      <div className="glass-card p-4 border border-slate-800 flex items-center justify-between gap-4">
+      <div className="glass-card p-4 border border-slate-800 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
         <div className="relative flex-1 max-w-md">
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
           <input
@@ -264,8 +282,21 @@ export const PodLeadReviewTab: React.FC = () => {
             className="w-full pl-9 pr-4 py-2 bg-slate-900 border border-slate-800 rounded-xl text-xs text-white placeholder-slate-500 focus:outline-none focus:border-maple-500"
           />
         </div>
-        <div className="text-xs text-slate-400">
-          Showing <strong>{filteredList.length}</strong> records
+        <div className="flex items-center gap-3 text-xs text-slate-400">
+          <span>Showing <strong className="text-white">{filteredList.length}</strong> records</span>
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={() =>
+              performanceExportService.exportStructuredWorkLogsToXLSX(
+                filteredList,
+                `MapleBot_Pod_${(userPod?.name || 'Lead').replace(/[^a-zA-Z0-9_-]/g, '_')}_Work_Performance`
+              )
+            }
+            leftIcon={<Download className="w-3.5 h-3.5 text-maple-400" />}
+          >
+            Export
+          </Button>
         </div>
       </div>
 
