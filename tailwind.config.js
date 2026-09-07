@@ -30,8 +30,8 @@ export default {
         }
       },
       fontFamily: {
-        sans: ['Montserrat', '-apple-system', 'BlinkMacSystemFont', 'Segoe UI', 'Roboto', 'sans-serif'],
-        mono: ['JetBrains Mono', 'ui-monospace', 'monospace'],
+        sans: ['Inter', '-apple-system', 'BlinkMacSystemFont', 'Segoe UI', 'Roboto', 'Helvetica', 'Arial', 'sans-serif'],
+        mono: ['Inter', 'ui-monospace', 'monospace'],
       },
       boxShadow: {
         'glow-sm': '0 0 15px rgba(0, 220, 130, 0.15)',
