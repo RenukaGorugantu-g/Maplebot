@@ -23,6 +23,8 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
     const targetUrl =
       webhookUrl ||
+      process.env.GOOGLE_CHAT_WEBHOOK_URL ||
+      process.env.VITE_GOOGLE_CHAT_WEBHOOK_URL ||
       'https://chat.googleapis.com/v1/spaces/AAQA8ijHd80/messages?key=AIzaSyDdI0hCZtE6vySjMm-WEfRq3CPzqKqqsHI&token=vR_WlFMQiHtcfTFfa2B5qfy6y14GpyXdIczanj0q5w0';
 
     const response = await fetch(targetUrl, {

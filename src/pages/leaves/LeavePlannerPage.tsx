@@ -180,6 +180,15 @@ export const LeavePlannerPage: React.FC<{ onNavigate?: (path: string) => void }>
         status: 'pending', // Pending approval by Pod Lead
       });
 
+      // Dispatch Google Chat interactive approval card to Space
+      if (profile) {
+        googleChatService.sendLeaveRequestApprovalCard({
+          leave: newLeave,
+          profile,
+          podName: userPod?.name || 'General',
+        }).catch((err) => console.warn('GChat leave request error:', err));
+      }
+
       setIsApplyModalOpen(false);
       setReason('');
       showToast('success', `Leave request for ${newLeave.days_count} day(s) submitted & sent to Pod Lead for approval!`);
