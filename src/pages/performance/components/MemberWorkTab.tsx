@@ -30,7 +30,6 @@ import {
 
 interface TaskDraftRow {
   id: string;
-  projectName: string;
   category: WorkCategory;
   task: string;
   assignedDate: string;
@@ -67,15 +66,14 @@ export const MemberWorkTab: React.FC = () => {
     return () => clearInterval(timer);
   }, []);
 
-  // Multi-task draft rows state (Starts with 1 mandatory task row; members can add 2, 3, 4+ as needed)
+  // Multi-task draft rows state (Starts with 1 mandatory task row with initial hours at 0)
   const [taskRows, setTaskRows] = useState<TaskDraftRow[]>([
     {
       id: 'row-1',
-      projectName: 'LXD Marketplace',
       category: 'Development',
       task: '',
       assignedDate: todayStr,
-      timeInvested: 4.0,
+      timeInvested: 0,
       unitCountCompleted: 1,
       reviewAssignedDate: todayStr,
       comments: '',
@@ -88,18 +86,17 @@ export const MemberWorkTab: React.FC = () => {
   const [successNotice, setSuccessNotice] = useState('');
   const [errorMsg, setErrorMsg] = useState('');
 
-  // Add new task row (Allows adding 2nd, 3rd, 4th, or more tasks as per member's wish)
+  // Add new task row (Allows adding 2nd, 3rd, 4th, or more tasks with initial hours at 0)
   const handleAddRow = () => {
     const newId = `row-${Date.now()}`;
     setTaskRows((prev) => [
       ...prev,
       {
         id: newId,
-        projectName: prev[prev.length - 1]?.projectName || 'LXD Marketplace',
         category: 'Development',
         task: '',
         assignedDate: workDate,
-        timeInvested: 2.0,
+        timeInvested: 0,
         unitCountCompleted: 1,
         reviewAssignedDate: workDate,
         comments: '',
@@ -141,10 +138,6 @@ export const MemberWorkTab: React.FC = () => {
     // Validation: ensure every operational required field is filled
     for (let i = 0; i < taskRows.length; i++) {
       const r = taskRows[i];
-      if (!r.projectName.trim()) {
-        setErrorMsg(`Task #${i + 1}: Project Name is required.`);
-        return;
-      }
       if (!r.task.trim()) {
         setErrorMsg(`Task #${i + 1}: Task Deliverable description is required.`);
         return;
@@ -186,13 +179,13 @@ export const MemberWorkTab: React.FC = () => {
           date: workDate,
           submission_time: checkinTime,
           checkin_time: checkinTime,
-          project_name: r.projectName.trim() || 'General',
-          project: r.projectName.trim() || 'General',
+          project_name: 'General',
+          project: 'General',
           task: r.task.trim(),
           task_title: r.task.trim(),
           assigned_date: r.assignedDate || workDate,
-          time_invested: Number(r.timeInvested) || 1.0,
-          duration_hours: Number(r.timeInvested) || 1.0,
+          time_invested: Number(r.timeInvested) || 0,
+          duration_hours: Number(r.timeInvested) || 0,
           unit_count_completed: Number(r.unitCountCompleted) || 1,
           review_assigned_date: r.reviewAssignedDate || workDate,
           comments: combinedComments,
@@ -212,9 +205,9 @@ export const MemberWorkTab: React.FC = () => {
         date: workDate,
         checkinTime: checkinTime,
         tasks: validRows.map((r) => ({
-          projectName: r.projectName.trim() || 'General',
+          projectName: 'General',
           task: r.task.trim(),
-          timeInvested: Number(r.timeInvested) || 1.0,
+          timeInvested: Number(r.timeInvested) || 0,
           unitCountCompleted: Number(r.unitCountCompleted) || 1,
           comments: r.comments.trim(),
           blocker: r.blocker.trim(),
@@ -224,15 +217,14 @@ export const MemberWorkTab: React.FC = () => {
       setSuccessNotice(`🎉 Fantastic work! Successfully submitted ${validRows.length} task deliverable(s) for ${workDate} at ${checkinTime}! High-level overview dispatched to Google Chat with blockers highlighted.`);
       setTimeout(() => setSuccessNotice(''), 7000);
 
-      // Reset empty rows
+      // Reset empty rows with hours set to 0
       setTaskRows([
         {
           id: `row-${Date.now()}-1`,
-          projectName: 'LXD Marketplace',
           category: 'Development',
           task: '',
           assignedDate: workDate,
-          timeInvested: 4.0,
+          timeInvested: 0,
           unitCountCompleted: 1,
           reviewAssignedDate: workDate,
           comments: '',
@@ -334,11 +326,10 @@ export const MemberWorkTab: React.FC = () => {
               <thead>
                 <tr className="bg-[#0B1728] border-b border-slate-800 text-[11px] font-semibold uppercase tracking-wider text-slate-300">
                   <th className="py-2.5 px-2 w-8 text-center text-slate-500">#</th>
-                  <th className="py-2.5 px-2 w-[13%]">Project Name</th>
-                  <th className="py-2.5 px-2 w-[25%]">Task Deliverable (Specific activity)</th>
-                  <th className="py-2.5 px-2 w-[105px]">Assigned Date</th>
-                  <th className="py-2.5 px-2 w-[65px] text-left">Hours</th>
-                  <th className="py-2.5 px-2 w-[85px] text-left">
+                  <th className="py-2.5 px-2 w-[34%]">Task Deliverable (Specific activity)</th>
+                  <th className="py-2.5 px-2 w-[110px]">Assigned Date</th>
+                  <th className="py-2.5 px-2 w-[70px] text-left">Hours</th>
+                  <th className="py-2.5 px-2 w-[90px] text-left">
                     <div className="flex items-center gap-1">
                       <span>Units</span>
                       <span
@@ -349,9 +340,9 @@ export const MemberWorkTab: React.FC = () => {
                       </span>
                     </div>
                   </th>
-                  <th className="py-2.5 px-2 w-[105px]">Completed Date</th>
-                  <th className="py-2.5 px-2 w-[16%]">Comments / Notes</th>
-                  <th className="py-2.5 px-2 w-[18%]">
+                  <th className="py-2.5 px-2 w-[110px]">Completed Date</th>
+                  <th className="py-2.5 px-2 w-[20%]">Comments / Notes</th>
+                  <th className="py-2.5 px-2 w-[20%]">
                     <div className="flex items-center gap-1.5 text-rose-400">
                       <span>Blockers / Impediments</span>
                       <span className="text-[9px] px-1.5 py-0.5 rounded bg-rose-500/20 text-rose-300 border border-rose-500/40 font-bold">
@@ -368,18 +359,6 @@ export const MemberWorkTab: React.FC = () => {
                     {/* Index */}
                     <td className="py-2 px-2 text-center font-mono text-slate-400 font-bold text-xs">
                       {idx + 1}
-                    </td>
-
-                    {/* Project Name */}
-                    <td className="py-2 px-2">
-                      <input
-                        type="text"
-                        value={row.projectName}
-                        onChange={(e) => handleUpdateRow(row.id, 'projectName', e.target.value)}
-                        placeholder="e.g. LXD Marketplace"
-                        className="w-full px-2.5 py-1.5 bg-slate-900 border border-slate-800 rounded-lg text-white placeholder-slate-500 focus:outline-none focus:border-maple-500 text-xs font-medium"
-                        required
-                      />
                     </td>
 
                     {/* Task Description */}
@@ -405,7 +384,7 @@ export const MemberWorkTab: React.FC = () => {
                       />
                     </td>
 
-                    {/* Hours Invested - Left Aligned, Free Number Entry */}
+                    {/* Hours Invested - Left Aligned, Initialized to 0 */}
                     <td className="py-2 px-2 text-left">
                       <input
                         type="number"
@@ -417,7 +396,7 @@ export const MemberWorkTab: React.FC = () => {
                           const v = e.target.value === '' ? 0 : parseFloat(e.target.value);
                           handleUpdateRow(row.id, 'timeInvested', v);
                         }}
-                        placeholder="4.0"
+                        placeholder="0.0"
                         className="w-full px-2 py-1.5 bg-slate-900 border border-slate-800 rounded-lg text-sky-400 font-mono font-bold text-left focus:outline-none focus:border-maple-500 text-xs"
                         required
                       />
@@ -592,8 +571,7 @@ export const MemberWorkTab: React.FC = () => {
                 <thead className="bg-[#0B1728] border-b border-slate-800 text-xs font-bold uppercase tracking-wider text-slate-300">
                   <tr>
                     <th className="py-3.5 px-3.5 whitespace-nowrap">Date & Check-in Time</th>
-                    <th className="py-3.5 px-3.5 whitespace-nowrap">Project Name</th>
-                    <th className="py-3.5 px-3.5 min-w-[260px]">Task</th>
+                    <th className="py-3.5 px-3.5 min-w-[280px]">Task</th>
                     <th className="py-3.5 px-3.5 whitespace-nowrap">Assigned Date</th>
                     <th className="py-3.5 px-3.5 text-left whitespace-nowrap">Hours</th>
                     <th className="py-3.5 px-3.5 text-left whitespace-nowrap">Deliverables</th>
@@ -611,9 +589,6 @@ export const MemberWorkTab: React.FC = () => {
                           <Clock className="w-3.5 h-3.5 text-emerald-400" />
                           {row.submission_time || row.checkin_time || '10:00 AM'}
                         </span>
-                      </td>
-                      <td className="py-3.5 px-3.5 font-bold text-white whitespace-nowrap align-top">
-                        {row.project_name || row.project}
                       </td>
                       <td className="py-3.5 px-3.5 align-top">
                         <span className="font-medium text-slate-100 block text-sm leading-relaxed">{row.task || row.task_title}</span>
