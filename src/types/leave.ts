@@ -37,6 +37,10 @@ export interface LeaveRequest {
   status: LeaveStatus;
   approved_by?: string;
   approved_at?: string;
+  deliverables_status?: string; // e.g. "Yes — All Completed" | "In Progress (Handover given)" | "Pending"
+  deliverables_notes?: string; // Specific deliverables completed or status details
+  backup_person?: string; // Designated colleague / teammate
+  backup_plan?: string; // Handover details, instructions, or coverage responsibilities
   created_at: string;
   updated_at: string;
 }

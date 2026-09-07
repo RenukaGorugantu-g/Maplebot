@@ -342,6 +342,18 @@ export const googleChatService = {
     const host = typeof window !== 'undefined' ? window.location.origin : 'http://localhost:5173';
     const redirectUrl = `${host}/leave-planner`;
 
+    const deliverablesLine = params.leave.deliverables_status
+      ? `<b>📦 Deliverables Status:</b> ${params.leave.deliverables_status}${
+          params.leave.deliverables_notes ? `<br/><i>"${params.leave.deliverables_notes}"</i>` : ''
+        }<br/>`
+      : `<b>📦 Deliverables Status:</b> Yes — All deliverables completed<br/>`;
+
+    const backupLine = params.leave.backup_person
+      ? `<b>🤝 Backup Teammate:</b> <font color="#38BDF8"><b>${params.leave.backup_person}</b></font>${
+          params.leave.backup_plan ? `<br/><i>Coverage Plan: "${params.leave.backup_plan}"</i>` : ''
+        }<br/>`
+      : `<b>🤝 Backup Person:</b> None required / self-managed<br/>`;
+
     const payload = {
       cardsV2: [
         {
@@ -362,7 +374,9 @@ export const googleChatService = {
                       text: `<b>Leave Type:</b> <font color="#00DC82">${params.leave.leave_type}</font><br/>` +
                         `<b>Duration:</b> ${params.leave.days_count} working day(s)<br/>` +
                         `<b>Dates:</b> ${params.leave.start_date} &nbsp;➔&nbsp; ${params.leave.end_date}<br/>` +
-                        `<b>Reason / Notes:</b> <i>"${params.leave.reason || 'Planned vacation / leave'}"</i>`,
+                        `<b>Reason:</b> <i>"${params.leave.reason || 'Planned vacation / leave'}"</i><br/><br/>` +
+                        deliverablesLine +
+                        backupLine,
                     },
                   },
                 ],
@@ -396,6 +410,8 @@ export const googleChatService = {
       employee: params.profile.full_name,
       dates: `${params.leave.start_date} to ${params.leave.end_date}`,
       type: params.leave.leave_type,
+      deliverables: params.leave.deliverables_status,
+      backup: params.leave.backup_person,
       sent,
     });
     return sent;
@@ -719,6 +735,8 @@ export const googleChatService = {
     approvedBy?: string;
     podName?: string;
     reason?: string;
+    deliverablesStatus?: string;
+    backupPerson?: string;
   }): Promise<boolean> {
     const formattedDateRange =
       params.startDate === params.endDate
@@ -745,6 +763,8 @@ export const googleChatService = {
                       text: `<b>${params.employeeName}</b> will be on leave from <b>${formattedDateRange}</b> (${params.daysCount} day${params.daysCount > 1 ? 's' : ''}).<br/><br/>` +
                         `• <b>Leave Type:</b> ${params.leaveType || 'Paid Time Off (PTO)'}<br/>` +
                         (params.podName ? `• <b>Pod:</b> ${params.podName}<br/>` : '') +
+                        (params.deliverablesStatus ? `• <b>Deliverables:</b> ${params.deliverablesStatus}<br/>` : '') +
+                        (params.backupPerson ? `• <b>Backup Person:</b> ${params.backupPerson}<br/>` : '') +
                         `• <b>Status:</b> <font color="#10B981"><b>✅ Approved</b></font><br/>` +
                         (params.approvedBy ? `• <b>Approved By:</b> ${params.approvedBy}` : ''),
                     },

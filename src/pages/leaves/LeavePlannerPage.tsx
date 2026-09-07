@@ -59,11 +59,18 @@ export const LeavePlannerPage: React.FC<{ onNavigate?: (path: string) => void }>
   const [endDate, setEndDate] = useState(todayStr);
   const [leaveType, setLeaveType] = useState<LeaveType>('Paid Time Off (PTO)');
   const [reason, setReason] = useState('');
+  const [deliverablesStatus, setDeliverablesStatus] = useState<string>('Yes — All deliverables completed');
+  const [deliverablesNotes, setDeliverablesNotes] = useState<string>('');
+  const [backupPerson, setBackupPerson] = useState<string>('');
+  const [backupPlan, setBackupPlan] = useState<string>('');
 
   const [toastMessage, setToastMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
 
   const allHolidays = dataStore.getCompanyHolidays(2026);
   const allLeaves = dataStore.getLeaveRequests({});
+  const allProfiles = useMemo(() => {
+    return dataStore.getProfiles().filter((p) => p.status === 'active' && p.id !== profile?.id);
+  }, [profile?.id]);
 
   // Active User Leave Balance (Dynamic from DB leave_balances, default 12)
   const myBalance = useMemo(() => {
@@ -177,6 +184,10 @@ export const LeavePlannerPage: React.FC<{ onNavigate?: (path: string) => void }>
         days_count: calculatedDays,
         leave_type: leaveType,
         reason: reason.trim(),
+        deliverables_status: deliverablesStatus,
+        deliverables_notes: deliverablesNotes.trim(),
+        backup_person: backupPerson.trim(),
+        backup_plan: backupPlan.trim(),
         status: 'pending', // Pending approval by Pod Lead
       });
 
@@ -191,6 +202,10 @@ export const LeavePlannerPage: React.FC<{ onNavigate?: (path: string) => void }>
 
       setIsApplyModalOpen(false);
       setReason('');
+      setDeliverablesStatus('Yes — All deliverables completed');
+      setDeliverablesNotes('');
+      setBackupPerson('');
+      setBackupPlan('');
       showToast('success', `Leave request for ${newLeave.days_count} day(s) submitted & sent to Pod Lead for approval!`);
 
       try {
@@ -222,6 +237,8 @@ export const LeavePlannerPage: React.FC<{ onNavigate?: (path: string) => void }>
         approvedBy: approver,
         podName: updated.pod_name || userPod?.name,
         reason: updated.reason,
+        deliverablesStatus: updated.deliverables_status,
+        backupPerson: updated.backup_person,
       });
       showToast('success', `Leave for ${updated.employee_name} APPROVED. Balance deducted & Google Chat notified!`);
     } else if (updated && newStatus === 'rejected') {
@@ -237,7 +254,9 @@ export const LeavePlannerPage: React.FC<{ onNavigate?: (path: string) => void }>
         return (
           l.employee_name.toLowerCase().includes(q) ||
           l.reason.toLowerCase().includes(q) ||
-          l.leave_type.toLowerCase().includes(q)
+          l.leave_type.toLowerCase().includes(q) ||
+          (l.backup_person && l.backup_person.toLowerCase().includes(q)) ||
+          (l.deliverables_status && l.deliverables_status.toLowerCase().includes(q))
         );
       }
       return true;
@@ -262,6 +281,10 @@ export const LeavePlannerPage: React.FC<{ onNavigate?: (path: string) => void }>
       'Working Days': l.days_count,
       Status: l.status.toUpperCase(),
       Reason: l.reason,
+      'Deliverables Status': l.deliverables_status || 'Yes — All Completed',
+      'Deliverables Notes': l.deliverables_notes || '',
+      'Backup Person': l.backup_person || 'None',
+      'Backup / Handover Plan': l.backup_plan || '',
       'Approved By': l.approved_by || 'Pending',
     }));
     const wsLeaves = XLSX.utils.json_to_sheet(leaveRows);
@@ -566,7 +589,7 @@ export const LeavePlannerPage: React.FC<{ onNavigate?: (path: string) => void }>
                 </h2>
               </div>
               <p className="text-xs text-slate-400 mt-0.5">
-                Review, verify available balance, and approve or reject leave requests for your pod members.
+                Review deliverables completion, verify backup coverage, check available balance, and approve or reject leave requests.
               </p>
             </div>
           </div>
@@ -586,7 +609,9 @@ export const LeavePlannerPage: React.FC<{ onNavigate?: (path: string) => void }>
                     <th className="py-3 px-3.5 whitespace-nowrap">Leave Type</th>
                     <th className="py-3 px-3.5 whitespace-nowrap">Dates</th>
                     <th className="py-3 px-3.5 text-center whitespace-nowrap">Days</th>
-                    <th className="py-3 px-3.5 min-w-[200px]">Reason (Required)</th>
+                    <th className="py-3 px-3.5 min-w-[170px]">Reason</th>
+                    <th className="py-3 px-3.5 min-w-[200px]">Deliverables Status</th>
+                    <th className="py-3 px-3.5 min-w-[180px]">Backup / Handover</th>
                     <th className="py-3 px-3.5 text-center whitespace-nowrap">Available Balance</th>
                     <th className="py-3 px-3.5 text-center whitespace-nowrap">Actions</th>
                   </tr>
@@ -594,29 +619,60 @@ export const LeavePlannerPage: React.FC<{ onNavigate?: (path: string) => void }>
                 <tbody className="divide-y divide-slate-800/60 text-slate-200">
                   {podPendingLeaves.map((l) => {
                     const empBal = dataStore.getEmployeeLeaveBalance(l.employee_id, l.year);
+                    const isDeliverablesCompleted = l.deliverables_status?.includes('Completed') ?? true;
                     return (
                       <tr key={l.id} className="hover:bg-slate-800/30 transition-colors">
-                        <td className="py-3 px-3.5 font-bold text-white whitespace-nowrap">
+                        <td className="py-3 px-3.5 font-bold text-white whitespace-nowrap align-top">
                           {l.employee_name}
                         </td>
-                        <td className="py-3 px-3.5 text-slate-300 whitespace-nowrap">
+                        <td className="py-3 px-3.5 text-slate-300 whitespace-nowrap align-top">
                           {l.leave_type}
                         </td>
-                        <td className="py-3 px-3.5 font-mono text-slate-200 whitespace-nowrap">
+                        <td className="py-3 px-3.5 font-mono text-slate-200 whitespace-nowrap align-top">
                           {l.start_date} → {l.end_date}
                         </td>
-                        <td className="py-3 px-3.5 text-center font-mono text-sky-400 font-bold whitespace-nowrap">
+                        <td className="py-3 px-3.5 text-center font-mono text-sky-400 font-bold whitespace-nowrap align-top">
                           {l.days_count}d
                         </td>
-                        <td className="py-3 px-3.5 text-slate-200 font-medium">
+                        <td className="py-3 px-3.5 text-slate-200 font-medium align-top">
                           {l.reason}
                         </td>
-                        <td className="py-3 px-3.5 text-center whitespace-nowrap">
+                        <td className="py-3 px-3.5 align-top">
+                          <div className="space-y-1">
+                            <span
+                              className={`inline-flex items-center gap-1 text-[10px] font-bold px-2 py-0.5 rounded border ${
+                                isDeliverablesCompleted
+                                  ? 'bg-emerald-500/20 text-emerald-300 border-emerald-500/30'
+                                  : 'bg-amber-500/20 text-amber-300 border-amber-500/30'
+                              }`}
+                            >
+                              📦 {l.deliverables_status || 'Yes — All Completed'}
+                            </span>
+                            {l.deliverables_notes && (
+                              <p className="text-[11px] text-slate-300 italic line-clamp-2">
+                                "{l.deliverables_notes}"
+                              </p>
+                            )}
+                          </div>
+                        </td>
+                        <td className="py-3 px-3.5 align-top">
+                          <div className="space-y-1">
+                            <span className="inline-flex items-center gap-1 text-[10px] font-bold px-2 py-0.5 rounded bg-sky-500/20 text-sky-300 border border-sky-500/30">
+                              🤝 {l.backup_person || 'None designated'}
+                            </span>
+                            {l.backup_plan && (
+                              <p className="text-[11px] text-slate-400 line-clamp-2">
+                                {l.backup_plan}
+                              </p>
+                            )}
+                          </div>
+                        </td>
+                        <td className="py-3 px-3.5 text-center whitespace-nowrap align-top">
                           <span className="font-mono font-bold text-maple-400 bg-maple-500/10 px-2 py-0.5 rounded border border-maple-500/20">
                             {empBal.available_balance} days
                           </span>
                         </td>
-                        <td className="py-3 px-3.5 text-center whitespace-nowrap">
+                        <td className="py-3 px-3.5 text-center whitespace-nowrap align-top">
                           <div className="flex items-center justify-center gap-1.5">
                             <button
                               onClick={() => handleStatusChange(l.id, 'approved')}
@@ -651,7 +707,7 @@ export const LeavePlannerPage: React.FC<{ onNavigate?: (path: string) => void }>
                 Approved Team Leaves
               </h2>
               <p className="text-xs text-slate-400">
-                Shows all approved team members and upcoming time off.
+                Shows all approved team members, deliverables handover, and backup coverage.
               </p>
             </div>
 
@@ -661,7 +717,7 @@ export const LeavePlannerPage: React.FC<{ onNavigate?: (path: string) => void }>
                 type="text"
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
-                placeholder="Search teammate..."
+                placeholder="Search teammate, backup..."
                 className="w-full pl-8 pr-3 py-1.5 bg-slate-900 border border-slate-800 rounded-lg text-xs text-white placeholder-slate-500 focus:outline-none focus:border-maple-500 font-medium"
               />
             </div>
@@ -676,7 +732,9 @@ export const LeavePlannerPage: React.FC<{ onNavigate?: (path: string) => void }>
                   <th className="py-3 px-3.5 whitespace-nowrap">To</th>
                   <th className="py-3 px-3.5 text-center whitespace-nowrap">Days</th>
                   <th className="py-3 px-3.5 whitespace-nowrap">Leave Type</th>
-                  <th className="py-3 px-3.5 min-w-[200px]">Reason</th>
+                  <th className="py-3 px-3.5 min-w-[160px]">Reason</th>
+                  <th className="py-3 px-3.5 min-w-[160px]">Deliverables</th>
+                  <th className="py-3 px-3.5 min-w-[150px]">Backup Teammate</th>
                   <th className="py-3 px-3.5 text-center whitespace-nowrap">Status</th>
                   <th className="py-3 px-3.5 whitespace-nowrap">Approved By</th>
                 </tr>
@@ -686,30 +744,50 @@ export const LeavePlannerPage: React.FC<{ onNavigate?: (path: string) => void }>
                   .filter((l) => l.status === 'approved')
                   .map((l) => (
                     <tr key={l.id} className="hover:bg-slate-800/30 transition-colors">
-                      <td className="py-3 px-3.5 font-bold text-white whitespace-nowrap">
+                      <td className="py-3 px-3.5 font-bold text-white whitespace-nowrap align-top">
                         {l.employee_name}
                       </td>
-                      <td className="py-3 px-3.5 font-mono text-slate-300 whitespace-nowrap">
+                      <td className="py-3 px-3.5 font-mono text-slate-300 whitespace-nowrap align-top">
                         {l.start_date}
                       </td>
-                      <td className="py-3 px-3.5 font-mono text-slate-300 whitespace-nowrap">
+                      <td className="py-3 px-3.5 font-mono text-slate-300 whitespace-nowrap align-top">
                         {l.end_date}
                       </td>
-                      <td className="py-3 px-3.5 text-center font-mono text-sky-400 font-bold whitespace-nowrap">
+                      <td className="py-3 px-3.5 text-center font-mono text-sky-400 font-bold whitespace-nowrap align-top">
                         {l.days_count}d
                       </td>
-                      <td className="py-3 px-3.5 text-slate-300 whitespace-nowrap">
+                      <td className="py-3 px-3.5 text-slate-300 whitespace-nowrap align-top">
                         {l.leave_type}
                       </td>
-                      <td className="py-3 px-3.5 text-slate-300">
+                      <td className="py-3 px-3.5 text-slate-300 align-top">
                         {l.reason}
                       </td>
-                      <td className="py-3 px-3.5 text-center whitespace-nowrap">
+                      <td className="py-3 px-3.5 text-slate-300 align-top">
+                        <span className="text-[11px] text-emerald-400 font-medium block">
+                          {l.deliverables_status || 'Completed'}
+                        </span>
+                        {l.deliverables_notes && (
+                          <span className="text-[10px] text-slate-400 block truncate max-w-[150px]">
+                            {l.deliverables_notes}
+                          </span>
+                        )}
+                      </td>
+                      <td className="py-3 px-3.5 text-slate-300 align-top">
+                        <span className="text-[11px] text-sky-300 font-medium block">
+                          {l.backup_person || '—'}
+                        </span>
+                        {l.backup_plan && (
+                          <span className="text-[10px] text-slate-400 block truncate max-w-[150px]">
+                            {l.backup_plan}
+                          </span>
+                        )}
+                      </td>
+                      <td className="py-3 px-3.5 text-center whitespace-nowrap align-top">
                         <span className="px-2 py-0.5 rounded-full text-[10px] font-bold uppercase bg-emerald-500/20 text-emerald-300 border border-emerald-500/30">
                           Approved
                         </span>
                       </td>
-                      <td className="py-3 px-3.5 text-slate-400 whitespace-nowrap">
+                      <td className="py-3 px-3.5 text-slate-400 whitespace-nowrap align-top">
                         {l.approved_by || 'Pod Lead'}
                       </td>
                     </tr>
@@ -775,7 +853,7 @@ export const LeavePlannerPage: React.FC<{ onNavigate?: (path: string) => void }>
         </div>
       )}
 
-      {/* 6. LEAVE APPLICATION MODAL (MANDATORY REASON VALIDATION) */}
+      {/* 6. LEAVE APPLICATION MODAL (DELIVERABLES STATUS & BACKUP PERSON QUESTIONS) */}
       <Modal
         isOpen={isApplyModalOpen}
         onClose={() => setIsApplyModalOpen(false)}
@@ -861,6 +939,64 @@ export const LeavePlannerPage: React.FC<{ onNavigate?: (path: string) => void }>
               placeholder="e.g. Personal work, family travel, health appointment..."
               className="w-full px-3 py-2 bg-slate-900 border border-slate-800 rounded-xl text-xs text-white placeholder-slate-500 focus:outline-none focus:border-maple-500 font-medium"
               required
+            />
+          </div>
+
+          {/* QUESTION 1: WERE YOU ABLE TO COMPLETE DELIVERABLES? */}
+          <div className="p-3.5 rounded-xl bg-slate-900/70 border border-slate-800 space-y-2.5">
+            <div className="flex items-center gap-1.5">
+              <span className="text-sm">📦</span>
+              <label className="text-xs font-bold text-slate-200">
+                Were you able to complete the deliverables? *
+              </label>
+            </div>
+            <select
+              value={deliverablesStatus}
+              onChange={(e) => setDeliverablesStatus(e.target.value)}
+              className="w-full px-3 py-2 bg-slate-900 border border-slate-800 rounded-xl text-xs text-white focus:outline-none focus:border-maple-500 font-medium cursor-pointer"
+              required
+            >
+              <option value="Yes — All deliverables completed">Yes — All deliverables completed</option>
+              <option value="In Progress — Handover provided to backup">In Progress — Handover provided to backup</option>
+              <option value="Pending — Will complete post-leave">Pending — Will complete post-leave</option>
+            </select>
+            <input
+              type="text"
+              value={deliverablesNotes}
+              onChange={(e) => setDeliverablesNotes(e.target.value)}
+              placeholder="Deliverables details / notes (e.g. Sprint tickets closed, PRs merged, docs updated)..."
+              className="w-full px-3 py-1.5 bg-slate-900 border border-slate-800 rounded-xl text-xs text-slate-200 placeholder-slate-500 focus:outline-none focus:border-maple-500 font-medium"
+            />
+          </div>
+
+          {/* QUESTION 2: ANY BACKUP PERSON / HANDOVER IF NEEDED? */}
+          <div className="p-3.5 rounded-xl bg-slate-900/70 border border-slate-800 space-y-2.5">
+            <div className="flex items-center gap-1.5">
+              <span className="text-sm">🤝</span>
+              <label className="text-xs font-bold text-slate-200">
+                Any backup person / handover needed?
+              </label>
+            </div>
+            <div>
+              <input
+                list="colleagues-list"
+                value={backupPerson}
+                onChange={(e) => setBackupPerson(e.target.value)}
+                placeholder="Select or type backup teammate (e.g. Dhana Sekharan)..."
+                className="w-full px-3 py-2 bg-slate-900 border border-slate-800 rounded-xl text-xs text-white placeholder-slate-500 focus:outline-none focus:border-maple-500 font-medium"
+              />
+              <datalist id="colleagues-list">
+                {allProfiles.map((p) => (
+                  <option key={p.id} value={`${p.full_name} (${p.role})`} />
+                ))}
+              </datalist>
+            </div>
+            <input
+              type="text"
+              value={backupPlan}
+              onChange={(e) => setBackupPlan(e.target.value)}
+              placeholder="Handover plan / coverage instructions (e.g. Covers urgent client escalations)..."
+              className="w-full px-3 py-1.5 bg-slate-900 border border-slate-800 rounded-xl text-xs text-slate-200 placeholder-slate-500 focus:outline-none focus:border-maple-500 font-medium"
             />
           </div>
 

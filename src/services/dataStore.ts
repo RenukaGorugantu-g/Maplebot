@@ -1987,6 +1987,10 @@ class MapleDataStore {
       year: leave.year || yr,
       reason: leave.reason || 'Personal planned vacation',
       status: leave.status || 'planned',
+      deliverables_status: leave.deliverables_status || 'Yes — All Completed',
+      deliverables_notes: leave.deliverables_notes || '',
+      backup_person: leave.backup_person || '',
+      backup_plan: leave.backup_plan || '',
       created_at: new Date().toISOString(),
       updated_at: new Date().toISOString(),
     };
@@ -1997,6 +2001,8 @@ class MapleDataStore {
       employee: newLeave.employee_name,
       dates: `${newLeave.start_date} to ${newLeave.end_date}`,
       type: newLeave.leave_type,
+      deliverables_status: newLeave.deliverables_status,
+      backup_person: newLeave.backup_person,
     });
 
     supabase
@@ -2017,6 +2023,10 @@ class MapleDataStore {
         year: newLeave.year,
         reason: newLeave.reason,
         status: newLeave.status,
+        deliverables_status: newLeave.deliverables_status,
+        deliverables_notes: newLeave.deliverables_notes,
+        backup_person: newLeave.backup_person,
+        backup_plan: newLeave.backup_plan,
       })
       .then(() => {});
 
