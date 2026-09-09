@@ -199,6 +199,7 @@ export const performanceExportService = {
       'Assigned Date': l.assigned_date,
       'Expected Completion Date': l.expected_completion_date || 'Pending',
       'Completed Date': l.completed_date || 'Pending',
+      'Member Feedback / Comments': l.feedback_comments || l.comments || '',
       'Hours Invested': l.time_invested || l.duration_hours,
       'Deliverables Count (Units)': l.unit_count_completed || 0,
       'Review Assigned Date': l.review_assigned_date,
@@ -208,7 +209,7 @@ export const performanceExportService = {
       'Quality Score (1-5)': typeof l.quality === 'number' ? `${l.quality}/5` : l.quality || 'Pending',
       'TAT (Turnaround Time)': l.tat || 'Not Available',
       'Efficiency %': l.efficiency || 'Not Available',
-      'Comments & Impediment Notes': l.comments || '',
+      'Reviewer Comments': l.reviewer_comments || '',
       'Delivery Status': l.delivery_status,
       'Workflow Status': l.workflow_status,
     }));
@@ -227,6 +228,7 @@ export const performanceExportService = {
       { wch: 14 }, // Assigned Date
       { wch: 18 }, // Expected Completion Date
       { wch: 16 }, // Completed Date
+      { wch: 32 }, // Member Feedback / Comments
       { wch: 15 }, // Hours Invested
       { wch: 18 }, // Deliverables Count
       { wch: 16 }, // Review Assigned Date
@@ -236,7 +238,7 @@ export const performanceExportService = {
       { wch: 14 }, // Quality Score
       { wch: 16 }, // TAT
       { wch: 14 }, // Efficiency
-      { wch: 40 }, // Comments & Notes
+      { wch: 32 }, // Reviewer Comments
       { wch: 18 }, // Delivery Status
       { wch: 18 }, // Workflow Status
     ];

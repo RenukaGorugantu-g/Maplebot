@@ -34,9 +34,11 @@ interface TaskDraftRow {
   projectName: string;
   task: string;
   assignedDate: string;
+  completedDate: string; // Member Completed Date (Single source of truth)
   timeInvested: number;
   unitCountCompleted: number; // Deliverables count (e.g. 1 feature, 3 pages, 5 leads)
-  reviewAssignedDate: string;
+  reviewAssignedDate?: string;
+  feedbackComments: string; // Individual task Feedback / Comments
   comments: string;
   blocker: string;
 }
@@ -44,6 +46,20 @@ interface TaskDraftRow {
 export const MemberWorkTab: React.FC = () => {
   const { profile, userPod } = useAuth();
   const todayStr = new Date().toISOString().split('T')[0];
+
+  // Helper to calculate the previous working day (skips weekends: Mon -> Fri, Sun -> Fri, Sat -> Fri)
+  const getPreviousWorkingDay = () => {
+    const d = new Date();
+    const day = d.getDay();
+    let daysBack = 1;
+    if (day === 1) daysBack = 3; // Monday -> previous Friday
+    else if (day === 0) daysBack = 2; // Sunday -> previous Friday
+    else if (day === 6) daysBack = 1; // Saturday -> previous Friday
+    d.setDate(d.getDate() - daysBack);
+    return d.toISOString().split('T')[0];
+  };
+
+  const prevWorkingDay = getPreviousWorkingDay();
 
   const getFormattedTime = () => {
     const d = new Date();
@@ -55,8 +71,8 @@ export const MemberWorkTab: React.FC = () => {
     return `${hours.toString().padStart(2, '0')}:${minutes} ${ampm}`;
   };
 
-  // Work Date & Check-in / Submission Time (Auto-captured, read-only)
-  const [workDate] = useState<string>(todayStr);
+  // Reporting Work Date (Previous working day by default) & Check-in / Submission Time
+  const [workDate] = useState<string>(prevWorkingDay);
   const [checkinTime, setCheckinTime] = useState<string>(getFormattedTime());
 
   // Keep live time updated
@@ -74,10 +90,12 @@ export const MemberWorkTab: React.FC = () => {
       category: 'Development',
       projectName: '',
       task: '',
-      assignedDate: todayStr,
+      assignedDate: prevWorkingDay,
+      completedDate: prevWorkingDay,
       timeInvested: 0,
       unitCountCompleted: 1,
-      reviewAssignedDate: todayStr,
+      reviewAssignedDate: prevWorkingDay,
+      feedbackComments: '',
       comments: '',
       blocker: '',
     },
@@ -99,9 +117,11 @@ export const MemberWorkTab: React.FC = () => {
         projectName: '',
         task: '',
         assignedDate: workDate,
+        completedDate: workDate,
         timeInvested: 0,
         unitCountCompleted: 1,
         reviewAssignedDate: workDate,
+        feedbackComments: '',
         comments: '',
         blocker: '',
       },
@@ -161,7 +181,7 @@ export const MemberWorkTab: React.FC = () => {
         setErrorMsg(`Task #${i + 1}: Units Count must be at least 1.`);
         return;
       }
-      if (!r.reviewAssignedDate) {
+      if (!r.completedDate) {
         setErrorMsg(`Task #${i + 1}: Completed Date is required.`);
         return;
       }
@@ -174,6 +194,7 @@ export const MemberWorkTab: React.FC = () => {
     try {
       validRows.forEach((r) => {
         const combinedComments = [
+          r.feedbackComments.trim(),
           r.comments.trim(),
           r.blocker.trim() ? `🚨 BLOCKER: ${r.blocker.trim()}` : '',
         ]
@@ -191,10 +212,12 @@ export const MemberWorkTab: React.FC = () => {
           task: r.task.trim(),
           task_title: r.task.trim(),
           assigned_date: r.assignedDate || workDate,
+          completed_date: r.completedDate || workDate,
           time_invested: Number(r.timeInvested) || 0,
           duration_hours: Number(r.timeInvested) || 0,
           unit_count_completed: Number(r.unitCountCompleted) || 1,
-          review_assigned_date: r.reviewAssignedDate || workDate,
+          review_assigned_date: r.completedDate || workDate,
+          feedback_comments: r.feedbackComments.trim(),
           comments: combinedComments,
           category: r.category || 'Development',
           priority: r.blocker.trim() ? 'high' : 'medium',
@@ -216,7 +239,7 @@ export const MemberWorkTab: React.FC = () => {
           task: r.task.trim(),
           timeInvested: Number(r.timeInvested) || 0,
           unitCountCompleted: Number(r.unitCountCompleted) || 1,
-          comments: r.comments.trim(),
+          comments: r.feedbackComments.trim() || r.comments.trim(),
           blocker: r.blocker.trim(),
         })),
       }).catch((err) => console.warn('GChat summary notice:', err));
@@ -232,9 +255,11 @@ export const MemberWorkTab: React.FC = () => {
           projectName: '',
           task: '',
           assignedDate: workDate,
+          completedDate: workDate,
           timeInvested: 0,
           unitCountCompleted: 1,
           reviewAssignedDate: workDate,
+          feedbackComments: '',
           comments: '',
           blocker: '',
         },
@@ -281,24 +306,24 @@ export const MemberWorkTab: React.FC = () => {
               </span>
             </div>
             <h2 className="text-xl font-semibold text-white tracking-normal mt-1">
-              Log Today's Work Tasks & Deliverables
+              Log Previous Day's Work Tasks & Deliverables
             </h2>
             <p className="text-sm text-slate-300 mt-1 max-w-2xl">
-              Fill in the tasks you worked on today (3-4 tasks or more), specify hours, deliverables, and check-in time, then submit all at once for Pod Lead review.
+              Enter the tasks you worked on during the previous working day, including time invested, deliverables completed, completion details, and relevant feedback. Submit all tasks together for Pod Lead review.
             </p>
           </div>
 
           {/* Date, Check-in Time & Member Badge (Read-Only to prevent tampering) */}
           <div className="flex flex-wrap items-center gap-3">
-            {/* Date Badge (Non-Editable, White Calendar Icon) */}
-            <div className="flex items-center gap-2 bg-slate-900/90 border border-slate-800 px-3.5 py-2 rounded-xl text-sm shadow-sm select-none">
+            {/* Reporting Work Date Badge */}
+            <div className="flex items-center gap-2 bg-slate-900/90 border border-slate-800 px-3.5 py-2 rounded-xl text-sm shadow-sm select-none" title="Date of the previous working day being reported">
               <Calendar className="w-4 h-4 text-white" />
-              <span className="text-slate-400 font-medium">Date:</span>
+              <span className="text-slate-400 font-medium">Work Date:</span>
               <span className="text-white font-mono font-bold">{workDate}</span>
             </div>
 
             {/* Check-in / Submission Time (Non-Editable) */}
-            <div className="flex items-center gap-2 bg-slate-900/90 border border-slate-800 px-3.5 py-2 rounded-xl text-sm shadow-sm select-none">
+            <div className="flex items-center gap-2 bg-slate-900/90 border border-slate-800 px-3.5 py-2 rounded-xl text-sm shadow-sm select-none" title="Today's submission check-in time">
               <Clock className="w-4 h-4 text-emerald-400" />
               <span className="text-slate-400 font-medium">Check-in:</span>
               <span className="text-emerald-300 font-mono font-bold">{checkinTime}</span>
@@ -334,11 +359,11 @@ export const MemberWorkTab: React.FC = () => {
               <thead>
                 <tr className="bg-[#0B1728] border-b border-slate-800 text-[11px] font-semibold uppercase tracking-wider text-slate-300">
                   <th className="py-2.5 px-2 w-8 text-center text-slate-500">#</th>
-                  <th className="py-2.5 px-2 w-[140px]">Project Name</th>
-                  <th className="py-2.5 px-2 w-[28%]">Task Deliverable (Specific activity)</th>
-                  <th className="py-2.5 px-2 w-[110px]">Assigned Date</th>
-                  <th className="py-2.5 px-2 w-[70px] text-left">Hours</th>
-                  <th className="py-2.5 px-2 w-[90px] text-left">
+                  <th className="py-2.5 px-2 w-[130px]">Project Name</th>
+                  <th className="py-2.5 px-2 w-[22%]">Task Deliverable (Specific activity)</th>
+                  <th className="py-2.5 px-2 w-[105px]">Assigned Date</th>
+                  <th className="py-2.5 px-2 w-[65px] text-left">Hours</th>
+                  <th className="py-2.5 px-2 w-[85px] text-left">
                     <div className="flex items-center gap-1">
                       <span>Units</span>
                       <span
@@ -349,13 +374,13 @@ export const MemberWorkTab: React.FC = () => {
                       </span>
                     </div>
                   </th>
-                  <th className="py-2.5 px-2 w-[110px]">Completed Date</th>
-                  <th className="py-2.5 px-2 w-[18%]">Comments / Notes</th>
-                  <th className="py-2.5 px-2 w-[18%]">
+                  <th className="py-2.5 px-2 w-[110px] text-sky-300">Completed Date</th>
+                  <th className="py-2.5 px-2 w-[20%] text-maple-300">Feedback / Comments</th>
+                  <th className="py-2.5 px-2 w-[16%]">
                     <div className="flex items-center gap-1.5 text-rose-400">
-                      <span>Blockers / Impediments</span>
+                      <span>Blockers</span>
                       <span className="text-[9px] px-1.5 py-0.5 rounded bg-rose-500/20 text-rose-300 border border-rose-500/40 font-bold">
-                        🚨 Highlight
+                        🚨
                       </span>
                     </div>
                   </th>
@@ -443,25 +468,25 @@ export const MemberWorkTab: React.FC = () => {
                       </div>
                     </td>
 
-                    {/* Review Assigned Date */}
+                    {/* Completed Date (Member Single Source of Truth) */}
                     <td className="py-2 px-2">
                       <input
                         type="date"
-                        value={row.reviewAssignedDate}
-                        onChange={(e) => handleUpdateRow(row.id, 'reviewAssignedDate', e.target.value)}
-                        className="w-full px-2 py-1.5 bg-slate-900 border border-slate-800 rounded-lg text-slate-200 focus:outline-none focus:border-maple-500 text-xs cursor-pointer font-medium"
+                        value={row.completedDate}
+                        onChange={(e) => handleUpdateRow(row.id, 'completedDate', e.target.value)}
+                        className="w-full px-2 py-1.5 bg-slate-900 border border-slate-800 rounded-lg text-sky-300 font-medium focus:outline-none focus:border-sky-500 text-xs cursor-pointer"
                         required
                       />
                     </td>
 
-                    {/* Comments / Notes */}
+                    {/* Individual Task Feedback / Comments */}
                     <td className="py-2 px-2">
-                      <input
-                        type="text"
-                        value={row.comments}
-                        onChange={(e) => handleUpdateRow(row.id, 'comments', e.target.value)}
-                        placeholder="Progress notes, links..."
-                        className="w-full px-2.5 py-1.5 bg-slate-900 border border-slate-800 rounded-lg text-slate-200 placeholder-slate-600 focus:outline-none focus:border-maple-500 text-xs font-medium"
+                      <textarea
+                        rows={2}
+                        value={row.feedbackComments}
+                        onChange={(e) => handleUpdateRow(row.id, 'feedbackComments', e.target.value)}
+                        placeholder="Task feedback / comments..."
+                        className="w-full px-2.5 py-1.5 bg-slate-900 border border-slate-800 rounded-lg text-slate-200 placeholder-slate-600 focus:outline-none focus:border-maple-500 text-xs resize-none font-medium leading-relaxed"
                       />
                     </td>
 
@@ -471,7 +496,7 @@ export const MemberWorkTab: React.FC = () => {
                         type="text"
                         value={row.blocker}
                         onChange={(e) => handleUpdateRow(row.id, 'blocker', e.target.value)}
-                        placeholder="🚨 Blocker or impediment (if any)..."
+                        placeholder="🚨 Blocker (if any)..."
                         className={`w-full px-2.5 py-1.5 bg-slate-900 border ${
                           row.blocker.trim()
                             ? 'border-rose-500/80 bg-rose-950/20 text-rose-200 font-semibold'
@@ -597,8 +622,8 @@ export const MemberWorkTab: React.FC = () => {
                     <th className="py-3.5 px-3.5 whitespace-nowrap">Assigned Date</th>
                     <th className="py-3.5 px-3.5 text-left whitespace-nowrap">Hours</th>
                     <th className="py-3.5 px-3.5 text-left whitespace-nowrap">Deliverables</th>
-                    <th className="py-3.5 px-3.5 whitespace-nowrap">Review Assigned Date</th>
-                    <th className="py-3.5 px-3.5 min-w-[200px]">Comments</th>
+                    <th className="py-3.5 px-3.5 whitespace-nowrap text-sky-300">Completed Date</th>
+                    <th className="py-3.5 px-3.5 min-w-[200px] text-maple-300">Feedback / Comments</th>
                     <th className="py-3.5 px-3.5 text-center whitespace-nowrap">Workflow Status</th>
                   </tr>
                 </thead>
@@ -629,11 +654,11 @@ export const MemberWorkTab: React.FC = () => {
                       <td className="py-3.5 px-3.5 text-left font-mono text-purple-300 font-bold whitespace-nowrap align-top text-sm">
                         {row.unit_count_completed || 1} items
                       </td>
-                      <td className="py-3.5 px-3.5 font-mono text-xs text-slate-300 whitespace-nowrap align-top">
-                        {row.review_assigned_date || row.date}
+                      <td className="py-3.5 px-3.5 font-mono text-xs text-sky-300 whitespace-nowrap align-top">
+                        {row.completed_date || row.review_assigned_date || row.date}
                       </td>
                       <td className="py-3.5 px-3.5 text-slate-300 text-xs align-top">
-                        {row.comments || <span className="text-slate-600 italic">—</span>}
+                        {row.feedback_comments || row.comments || <span className="text-slate-600 italic">—</span>}
                       </td>
                       <td className="py-3.5 px-3.5 text-center whitespace-nowrap align-top">
                         <span

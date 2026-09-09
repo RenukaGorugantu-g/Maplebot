@@ -466,6 +466,7 @@ export const googleChatService = {
 
   /**
    * Dispatches task review comments / evaluations from Pod Lead or Manager to Google Chat
+   * Tags the employee so they receive an immediate notification/mention alert.
    */
   async sendReviewEvaluationCard(params: {
     log: any;
@@ -479,6 +480,21 @@ export const googleChatService = {
   }): Promise<boolean> {
     const host = typeof window !== 'undefined' ? window.location.origin : 'http://localhost:5173';
     const redirectUrl = `${host}/performance`;
+
+    // Find employee profile to retrieve Google Workspace email for tagging
+    let memberEmail = params.log.employee_email;
+    let memberName = params.log.employee_name || 'Team Member';
+    if (!memberEmail && params.log.employee_id) {
+      const p = dataStore.getProfiles().find((prof) => prof.id === params.log.employee_id);
+      if (p) {
+        if (p.email) memberEmail = p.email;
+        if (p.full_name) memberName = p.full_name;
+      }
+    }
+
+    const userMention = memberEmail ? `<users/${memberEmail}>` : `@${memberName}`;
+    const taskName = params.log.task || params.log.task_title || 'Deliverable';
+    const notificationText = `🔔 ${userMention} You have received new feedback from ${params.reviewerRole} *${params.reviewerName}* on deliverable: *${taskName}*!`;
 
     const metricItems: string[] = [];
     if (params.errorCount !== undefined) {
@@ -497,13 +513,17 @@ export const googleChatService = {
 
     const metricsHtml = metricItems.length > 0 ? metricItems.join('&nbsp;&nbsp;|&nbsp;&nbsp;') : '';
 
+    const memberFeedbackText = params.log.feedback_comments || params.log.comments;
+    const reviewerCommentsText = params.comments || params.log.reviewer_comments || 'Reviewed and approved without additional notes.';
+
     const payload = {
+      text: notificationText,
       cardsV2: [
         {
           cardId: `review-eval-${params.log.id}-${Date.now()}`,
           card: {
             header: {
-              title: `🔍 ${params.reviewerRole} Review — ${params.log.employee_name}`,
+              title: `🔍 ${params.reviewerRole} Review — ${memberName}`,
               subtitle: `Project: ${params.log.project_name || params.log.project || 'General'} • Evaluator: ${params.reviewerName}`,
               imageUrl: params.reviewerRole === 'Manager'
                 ? 'https://cdn-icons-png.flaticon.com/512/3135/3135715.png'
@@ -516,10 +536,13 @@ export const googleChatService = {
                 widgets: [
                   {
                     textParagraph: {
-                      text: `<b>Task:</b> ${params.log.task || params.log.task_title}<br/>` +
+                      text: `👤 <b>Teammate:</b> ${userMention} (${memberName})<br/>` +
+                        `<b>Task:</b> ${taskName}<br/>` +
+                        `<b>Completed Date:</b> ${params.log.completed_date || 'Pending'}<br/>` +
                         `<b>Hours Spent:</b> ${params.log.time_invested || params.log.duration_hours || 0}h &nbsp;|&nbsp; <b>Deliverables:</b> ${params.log.unit_count_completed || 0} unit(s)<br/>` +
                         (metricsHtml ? `${metricsHtml}<br/><br/>` : '<br/>') +
-                        `📝 <b>Reviewer Comments & Feedback:</b><br/><i>"${params.comments || params.log.comments || 'Reviewed and approved without additional notes.'}"</i>`,
+                        (memberFeedbackText ? `💬 <b>Member Feedback / Comments:</b><br/><i>"${memberFeedbackText}"</i><br/><br/>` : '') +
+                        `📝 <b>Reviewer Comments & Feedback:</b><br/><i>"${reviewerCommentsText}"</i>`,
                     },
                   },
                 ],
@@ -552,7 +575,8 @@ export const googleChatService = {
     dataStore.logAudit('GOOGLE_CHAT_REVIEW_EVAL_SENT', 'PerformanceWorkLog', params.log.id, {
       reviewer: params.reviewerName,
       role: params.reviewerRole,
-      employee: params.log.employee_name,
+      employee: memberName,
+      email: memberEmail,
       sent,
     });
     return sent;
@@ -560,8 +584,8 @@ export const googleChatService = {
 
   /**
    * Dispatches an executive Work Deliverables summary to Google Chat:
-   * Displays Task Name, Project, Hours Spent, Deliverables Count, separate Member Comments,
-   * and highlights active Blockers prominently in RED.
+   * Displays Task Name, Project, Hours Spent, Deliverables Count, individual task Member Comments/Feedback,
+   * tags the submitting member, and highlights active Blockers prominently in RED.
    */
   async sendWorkDeliverablesSummaryCard(params: {
     memberName: string;
@@ -581,10 +605,14 @@ export const googleChatService = {
     const totalHours = params.tasks.reduce((sum, t) => sum + (Number(t.timeInvested) || 0), 0);
     const totalUnits = params.tasks.reduce((sum, t) => sum + (Number(t.unitCountCompleted) || 1), 0);
 
-    // Format tasks overview: Project, Task Name, Hours, Units
+    // Format tasks overview: Project, Task Name, Hours, Units, and Feedback / Comments
     const taskLines = params.tasks
       .map((t, idx) => {
-        return `<b>${idx + 1}. [${t.projectName}]</b> ${t.task}<br/>&nbsp;&nbsp;&nbsp;&nbsp;⏱️ <b>${t.timeInvested}h</b> &nbsp;|&nbsp; 📦 <b>${t.unitCountCompleted} item(s)</b>`;
+        let text = `<b>${idx + 1}. [${t.projectName}]</b> ${t.task}<br/>&nbsp;&nbsp;&nbsp;&nbsp;⏱️ <b>${t.timeInvested}h</b> &nbsp;|&nbsp; 📦 <b>${t.unitCountCompleted} item(s)</b>`;
+        if (t.comments && t.comments.trim()) {
+          text += `<br/>&nbsp;&nbsp;&nbsp;&nbsp;💬 <i>"${t.comments.trim()}"</i>`;
+        }
+        return text;
       })
       .join('<br/><br/>');
 
@@ -649,7 +677,7 @@ export const googleChatService = {
 
     if (generalCommentsText) {
       sections.push({
-        header: '📝 Member Notes & Comments',
+        header: '📝 Member Feedback & Notes',
         widgets: [
           {
             textParagraph: {
@@ -694,7 +722,16 @@ export const googleChatService = {
     const statusEmoji = hasBlockers ? '🔴' : '🟢';
     const statusLabel = hasBlockers ? 'Impediment Reported' : 'On Track (100% Progress)';
 
+    // Find profile to tag
+    const memberProfile = dataStore.getProfiles().find((p) => p.full_name === params.memberName);
+    const memberTag = memberProfile?.email ? `<users/${memberProfile.email}>` : `@${params.memberName}`;
+
+    const notificationText = hasBlockers
+      ? `🚨 *ATTENTION* — ${memberTag} (${params.podName}) logged work deliverables with *ACTIVE BLOCKERS* on ${params.date}!`
+      : `📋 *Daily Work Deliverables* — ${memberTag} (${params.podName}) logged previous day deliverables (${totalHours}h • ${totalUnits} items) on ${params.date}.`;
+
     const payload = {
+      text: notificationText,
       cardsV2: [
         {
           cardId: `work-deliverables-${Date.now()}`,

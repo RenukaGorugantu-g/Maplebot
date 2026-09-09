@@ -1554,11 +1554,13 @@ class MapleDataStore {
       task: log.task || log.task_title || '',
       task_title: log.task || log.task_title || '',
       assigned_date: log.assigned_date || log.date || new Date().toISOString().split('T')[0],
+      completed_date: log.completed_date || log.review_assigned_date || log.date || new Date().toISOString().split('T')[0],
       time_invested: Number(log.time_invested || log.duration_hours || 0),
       duration_hours: Number(log.time_invested || log.duration_hours || 0),
       unit_count_completed: Number(log.unit_count_completed || 0),
       review_assigned_date: log.review_assigned_date || new Date().toISOString().split('T')[0],
-      comments: log.comments || '',
+      feedback_comments: log.feedback_comments || log.comments || '',
+      comments: log.comments || log.feedback_comments || '',
       category: log.category || 'Development',
       priority: log.priority || 'medium',
       deliverable: log.deliverable,
@@ -1589,18 +1591,22 @@ class MapleDataStore {
     id: string,
     review: {
       expected_completion_date: string;
-      completed_date: string;
+      completed_date?: string;
       review_completed_date: string;
       reviewer: string;
       reviewer_id?: string;
       error_count?: number;
+      reviewer_comments?: string;
     }
   ): PerformanceWorkLog | undefined {
     const existing = this.getPerformanceWorkLogById(id);
     if (!existing) return undefined;
 
+    // Use member's completed_date as the single source of truth
+    const effectiveCompletedDate = existing.completed_date || review.completed_date || existing.date;
+
     const start = new Date(existing.assigned_date || existing.date);
-    const end = new Date(review.completed_date);
+    const end = new Date(effectiveCompletedDate);
     let tatLabel = 'Not Available';
     let tatDays: number | undefined = undefined;
     if (!isNaN(start.getTime()) && !isNaN(end.getTime())) {
@@ -1619,7 +1625,7 @@ class MapleDataStore {
       else delStatus = 'delayed';
     }
 
-    const revStart = new Date(existing.review_assigned_date);
+    const revStart = new Date(existing.review_assigned_date || existing.date);
     const revEnd = new Date(review.review_completed_date);
     let revTat: number | undefined = undefined;
     if (!isNaN(revStart.getTime()) && !isNaN(revEnd.getTime())) {
@@ -1628,13 +1634,14 @@ class MapleDataStore {
 
     return this.updatePerformanceWorkLog(id, {
       expected_completion_date: review.expected_completion_date,
-      completed_date: review.completed_date,
+      completed_date: effectiveCompletedDate,
       review_completed_date: review.review_completed_date,
       reviewer: review.reviewer,
       reviewer_name: review.reviewer,
       reviewer_id: review.reviewer_id,
       error_count: Number(review.error_count || 0),
       errors: Number(review.error_count || 0),
+      reviewer_comments: review.reviewer_comments !== undefined ? review.reviewer_comments : existing.reviewer_comments,
       tat: tatLabel,
       tat_days: tatDays,
       delivery_status: delStatus,
@@ -1656,6 +1663,7 @@ class MapleDataStore {
       tat_days?: number;
       efficiency?: string | number;
       manager_comments?: string;
+      reviewer_comments?: string;
       manager_id?: string;
     }
   ): PerformanceWorkLog | undefined {
@@ -1695,17 +1703,18 @@ class MapleDataStore {
       calculatedEff = `${calculatedEff}%`;
     }
 
-    const updatedComments = assessment.manager_comments
-      ? existing.comments
-        ? `${existing.comments} | Mgr Note: ${assessment.manager_comments}`
-        : `Mgr Note: ${assessment.manager_comments}`
-      : existing.comments;
+    const reviewNotes = assessment.reviewer_comments || assessment.manager_comments;
+    const updatedReviewerComments = reviewNotes
+      ? existing.reviewer_comments
+        ? `${existing.reviewer_comments} | Mgr Note: ${reviewNotes}`
+        : reviewNotes
+      : existing.reviewer_comments;
 
     return this.updatePerformanceWorkLog(id, {
       quality: assessment.quality,
       tat: calculatedTat,
       efficiency: calculatedEff,
-      comments: updatedComments,
+      reviewer_comments: updatedReviewerComments,
       workflow_status: 'manager_reviewed',
       manager_reviewed_by: assessment.manager_id || 'prof-sandeep',
       manager_reviewed_at: new Date().toISOString(),
@@ -1771,8 +1780,9 @@ class MapleDataStore {
       quality: log.quality || 5.0,
       tat: tatLabel,
       tat_days: tatDays,
-      efficiency: log.efficiency || '95%',
-      comments: log.comments || '',
+      comments: log.comments || log.feedback_comments || '',
+      feedback_comments: log.feedback_comments || log.comments || '',
+      reviewer_comments: log.reviewer_comments || '',
       category: log.category || 'Coordination',
       priority: log.priority || 'high',
       workflow_status: 'pod_lead_reviewed',

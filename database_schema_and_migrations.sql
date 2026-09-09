@@ -131,6 +131,8 @@ CREATE TABLE IF NOT EXISTS work_performance_logs (
     unit_count_completed INT NOT NULL DEFAULT 1, -- Deliverables Count (Quantity)
     review_assigned_date DATE NOT NULL DEFAULT CURRENT_DATE,
     comments TEXT,
+    feedback_comments TEXT,
+    reviewer_comments TEXT,
     category TEXT DEFAULT 'Development',
     priority TEXT DEFAULT 'medium',
     deliverable TEXT,

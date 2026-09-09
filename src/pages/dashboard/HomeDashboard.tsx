@@ -108,7 +108,7 @@ export const HomeDashboard: React.FC<{
         {/* Warm Welcome Greeting Banner */}
         <WarmGreetingBanner
           variant="dashboard"
-          actionLabel="Log Today's Work Tasks"
+          actionLabel="Log Previous Day's Work Tasks & Deliverables"
           onActionClick={() => onNavigate('/performance')}
         />
 
@@ -167,11 +167,11 @@ export const HomeDashboard: React.FC<{
                     <Table className="w-5 h-5" />
                   </div>
                   <div>
-                    <h3 className="text-base font-bold text-white">Today's Work Performance Check-in</h3>
+                    <h3 className="text-base font-bold text-white">Previous Day's Work Tasks & Deliverables</h3>
                     <span className="text-xs text-slate-400">
                       {hasLoggedToday
                         ? `${myTodayLogs.length} deliverable task(s) logged (${totalLoggedHours} hrs)`
-                        : 'Awaiting your daily deliverables and work check-in'}
+                        : 'Awaiting your previous day deliverables and work check-in'}
                     </span>
                   </div>
                 </div>
@@ -182,7 +182,7 @@ export const HomeDashboard: React.FC<{
                   </span>
                 ) : (
                   <span className="px-3 py-1 rounded-full bg-amber-500/10 text-amber-400 border border-amber-500/20 text-xs font-semibold flex items-center gap-1.5 self-start sm:self-center">
-                    <Clock className="w-3.5 h-3.5" /> Pending Today's Check-in
+                    <Clock className="w-3.5 h-3.5" /> Pending Work Log
                   </span>
                 )}
               </div>
@@ -234,14 +234,14 @@ export const HomeDashboard: React.FC<{
                 /* Prompt to log Work Performance Check-in */
                 <div className="p-6 rounded-2xl bg-slate-900/60 border border-slate-800 text-center space-y-3">
                   <p className="text-xs text-slate-300 max-w-md mx-auto">
-                    Log your deliverables, task description, hours invested, and completed units directly in your Daily Work Performance Table.
+                    Log your deliverables, task description, hours invested, and completed units directly in your Previous Day's Work Tasks Table.
                   </p>
                   <GradientButton
                     size="sm"
-                    onClick={() => onNavigate('/updates/my-update')}
+                    onClick={() => onNavigate('/performance')}
                     leftIcon={<Table className="w-4 h-4" />}
                   >
-                    Log Today's Work Check-in
+                    Log Previous Day's Work Tasks & Deliverables
                   </GradientButton>
                 </div>
               )}

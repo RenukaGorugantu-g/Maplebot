@@ -85,16 +85,18 @@ export interface PerformanceWorkLog {
   duration_hours?: number; // Compatibility alias
   unit_count_completed: number; // 9. Unit Count Completed (Numeric)
   review_assigned_date: string; // 10. Review Assigned Date (YYYY-MM-DD)
-  comments?: string; // 17. Comments (Context, notes, blockers, achievements)
+  completed_date?: string; // 7. Completed Date (YYYY-MM-DD) - Single source of truth entered by Member
+  feedback_comments?: string; // Member Feedback / Comments specific to this task
+  reviewer_comments?: string; // Reviewer Comments entered by Pod Lead / Manager
+  comments?: string; // Compatibility alias / general notes
   category?: WorkCategory;
   priority?: WorkPriority;
   deliverable?: string;
   outcome?: string;
   impact?: string;
 
-  // 2. POD LEAD REVIEW (5 FIELDS ADDED BY POD LEAD)
+  // 2. POD LEAD REVIEW (Verification Fields)
   expected_completion_date?: string; // 6. Expected Completion Date (YYYY-MM-DD)
-  completed_date?: string; // 7. Completed Date (YYYY-MM-DD)
   review_completed_date?: string; // 11. Review Completed Date (YYYY-MM-DD)
   reviewer?: string; // 12. Reviewer (alias: reviewer_name)
   reviewer_id?: string;

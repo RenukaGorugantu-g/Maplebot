@@ -94,19 +94,19 @@ export const PodLeadReviewTab: React.FC = () => {
     setReviewingLog(log);
     const today = new Date().toISOString().split('T')[0];
     setExpectedCompletionDate(log.expected_completion_date || log.assigned_date || today);
-    setCompletedDate(log.completed_date || today);
+    setCompletedDate(log.completed_date || log.review_assigned_date || log.date || today);
     setReviewCompletedDate(log.review_completed_date || today);
     setReviewer(log.reviewer || profile?.full_name || 'Pod Lead');
     setErrorCount(log.error_count ?? 0);
-    setReviewComments(log.comments || '');
+    setReviewComments(log.reviewer_comments || '');
     setReviewErrorMsg('');
   };
 
   const handleSaveReview = (e: React.FormEvent) => {
     e.preventDefault();
     if (!reviewingLog) return;
-    if (!expectedCompletionDate || !completedDate || !reviewCompletedDate || !reviewer.trim()) {
-      setReviewErrorMsg('Please fill in all 5 review fields.');
+    if (!expectedCompletionDate || !reviewCompletedDate || !reviewer.trim()) {
+      setReviewErrorMsg('Please fill in Expected Date, Review Completed Date, and Reviewer Name.');
       return;
     }
 
@@ -114,28 +114,24 @@ export const PodLeadReviewTab: React.FC = () => {
     setReviewErrorMsg('');
 
     try {
+      // Completed date is automatically preserved from member task (single source of truth)
       const updated = dataStore.savePodLeadReview(reviewingLog.id, {
         expected_completion_date: expectedCompletionDate,
-        completed_date: completedDate,
+        completed_date: reviewingLog.completed_date || completedDate,
         review_completed_date: reviewCompletedDate,
         reviewer: reviewer.trim(),
         error_count: Number(errorCount),
+        reviewer_comments: reviewComments.trim(),
       });
 
-      if (updated && reviewComments.trim() !== (reviewingLog.comments || '')) {
-        dataStore.updatePerformanceWorkLog(reviewingLog.id, {
-          comments: reviewComments.trim(),
-        });
-      }
-
       if (updated) {
-        const finalComments = reviewComments.trim() || updated.comments || 'Deliverable verified and advanced to manager review.';
+        const finalReviewComments = reviewComments.trim() || 'Deliverable verified by Pod Lead.';
         googleChatService.sendReviewEvaluationCard({
-          log: { ...updated, comments: finalComments },
+          log: updated,
           reviewerName: reviewer.trim() || profile?.full_name || 'Pod Lead',
           reviewerRole: 'Pod Lead',
           errorCount: Number(errorCount),
-          comments: finalComments,
+          comments: finalReviewComments,
         });
 
         // Trigger targeted in-app feedback notification to the team member
@@ -145,7 +141,7 @@ export const PodLeadReviewTab: React.FC = () => {
             memberName: reviewingLog.employee_name,
             reviewerName: reviewer.trim() || profile?.full_name || 'Pod Lead',
             date: reviewingLog.date,
-            comments: finalComments,
+            comments: finalReviewComments,
             workLogId: reviewingLog.id,
           });
         }
@@ -319,14 +315,20 @@ export const PodLeadReviewTab: React.FC = () => {
                     <th className="py-3 px-3 whitespace-nowrap">Date & Check-in Time</th>
                     <th className="py-3 px-3 whitespace-nowrap">Project</th>
                     <th className="py-3 px-3 min-w-[200px]">Task Deliverable</th>
+                    <th className="py-3 px-3 whitespace-nowrap">Assigned Date</th>
+                    <th className="py-3 px-3 whitespace-nowrap text-emerald-300">Completed Date</th>
+                    <th className="py-3 px-3 min-w-[160px] text-slate-300">Member Feedback</th>
                     <th className="py-3 px-3 text-left whitespace-nowrap">Hours</th>
                     <th className="py-3 px-3 text-left whitespace-nowrap" title="Quantity of finished items: e.g. 1 feature, 3 pages, 5 leads">Deliverables</th>
-                    {/* POD LEAD 5 FIELDS */}
+                    {/* POD LEAD VERIFICATION & EVALUATION */}
                     <th className="py-3 px-3 whitespace-nowrap text-maple-300">Expected Date</th>
-                    <th className="py-3 px-3 whitespace-nowrap text-maple-300">Completed Date</th>
                     <th className="py-3 px-3 whitespace-nowrap text-maple-300">Review Completed</th>
                     <th className="py-3 px-3 whitespace-nowrap text-maple-300">Reviewer</th>
                     <th className="py-3 px-3 text-left whitespace-nowrap text-maple-300">Errors</th>
+                    <th className="py-3 px-3 text-center whitespace-nowrap text-maple-300">Quality</th>
+                    <th className="py-3 px-3 text-center whitespace-nowrap text-maple-300">TAT</th>
+                    <th className="py-3 px-3 text-center whitespace-nowrap text-maple-300">Efficiency</th>
+                    <th className="py-3 px-3 min-w-[160px] text-sky-300">Reviewer Comments</th>
                     <th className="py-3 px-3 text-center whitespace-nowrap">Status</th>
                     <th className="py-3 px-3 text-center whitespace-nowrap">Action</th>
                   </tr>
@@ -358,9 +360,19 @@ export const PodLeadReviewTab: React.FC = () => {
                         </td>
                         <td className="py-3 px-3 align-top">
                           <span className="font-medium text-slate-100 block">{row.task || row.task_title}</span>
-                          {row.comments && (
-                            <span className="text-[11px] text-slate-400 block mt-0.5">{row.comments}</span>
+                        </td>
+                        <td className="py-3 px-3 font-mono text-[11px] text-slate-400 whitespace-nowrap align-top">
+                          {row.assigned_date || row.date}
+                        </td>
+                        <td className="py-3 px-3 font-mono text-[11px] whitespace-nowrap align-top">
+                          {row.completed_date ? (
+                            <span className="text-emerald-300 font-semibold">{row.completed_date}</span>
+                          ) : (
+                            <span className="text-amber-400 italic">Pending</span>
                           )}
+                        </td>
+                        <td className="py-3 px-3 text-[11px] text-slate-300 align-top max-w-[200px]">
+                          {row.feedback_comments || row.comments || <span className="text-slate-600 italic">—</span>}
                         </td>
                         <td className="py-3 px-3 text-left font-mono text-sky-400 font-bold whitespace-nowrap align-top">
                           {row.time_invested || row.duration_hours}h
@@ -372,9 +384,6 @@ export const PodLeadReviewTab: React.FC = () => {
                           {row.expected_completion_date || <span className="text-amber-400 italic">Pending</span>}
                         </td>
                         <td className="py-3 px-3 font-mono text-[11px] whitespace-nowrap align-top">
-                          {row.completed_date || <span className="text-amber-400 italic">Pending</span>}
-                        </td>
-                        <td className="py-3 px-3 font-mono text-[11px] whitespace-nowrap align-top">
                           {row.review_completed_date || <span className="text-amber-400 italic">Pending</span>}
                         </td>
                         <td className="py-3 px-3 text-slate-300 whitespace-nowrap align-top text-[11px]">
@@ -382,6 +391,24 @@ export const PodLeadReviewTab: React.FC = () => {
                         </td>
                         <td className="py-3 px-3 text-right font-mono text-rose-300 font-bold whitespace-nowrap align-top">
                           {row.error_count ?? 0}
+                        </td>
+                        <td className="py-3 px-3 text-center whitespace-nowrap align-top">
+                          {row.quality !== undefined && row.quality !== null ? (
+                            <span className="px-1.5 py-0.5 rounded text-[10px] font-bold bg-emerald-500/20 text-emerald-300 border border-emerald-500/30">
+                              {typeof row.quality === 'number' ? `${row.quality}/5` : row.quality}
+                            </span>
+                          ) : (
+                            <span className="text-slate-600">—</span>
+                          )}
+                        </td>
+                        <td className="py-3 px-3 text-center font-mono text-sky-300 whitespace-nowrap align-top text-[11px]">
+                          {row.tat || <span className="text-slate-600">—</span>}
+                        </td>
+                        <td className="py-3 px-3 text-center font-mono text-maple-300 whitespace-nowrap align-top text-[11px]">
+                          {row.efficiency || <span className="text-slate-600">—</span>}
+                        </td>
+                        <td className="py-3 px-3 text-[11px] text-sky-300 align-top max-w-[200px]">
+                          {row.reviewer_comments || <span className="text-slate-600 italic">—</span>}
                         </td>
                         <td className="py-3 px-3 text-center whitespace-nowrap align-top">
                           <span
@@ -573,11 +600,27 @@ export const PodLeadReviewTab: React.FC = () => {
                         <span className="font-mono text-purple-300 font-bold text-xs">{reviewingLog.unit_count_completed}</span>
                       </div>
                     </div>
+
+                    <div className="pt-2 border-t border-slate-800">
+                      <span className="text-slate-400 block text-[10px]">Completed Date (Single Source of Truth)</span>
+                      <span className="font-mono text-emerald-300 font-semibold text-xs">
+                        {reviewingLog.completed_date || <span className="text-amber-400 italic">Pending</span>}
+                      </span>
+                    </div>
+
+                    <div className="pt-2 border-t border-slate-800">
+                      <span className="text-slate-400 block text-[10px]">Member Feedback / Comments</span>
+                      <div className="text-slate-200 text-xs bg-slate-900/80 p-2.5 rounded-xl border border-slate-800 mt-1 whitespace-pre-wrap leading-relaxed">
+                        {reviewingLog.feedback_comments || reviewingLog.comments || (
+                          <span className="text-slate-500 italic">No feedback provided by member</span>
+                        )}
+                      </div>
+                    </div>
                   </div>
                 </div>
               </div>
 
-              {/* RIGHT COLUMN (7 Cols): 5 Pod Lead Review Fields & Comments */}
+              {/* RIGHT COLUMN (7 Cols): 4 Pod Lead Review Fields & Reviewer Comments */}
               <div className="lg:col-span-7 space-y-4">
                 <div className="p-4 rounded-2xl bg-sky-950/20 border border-sky-500/30 space-y-4">
                   <div className="flex items-center justify-between">
@@ -586,11 +629,11 @@ export const PodLeadReviewTab: React.FC = () => {
                       Pod Lead Verification Fields
                     </span>
                     <span className="text-[10px] px-2 py-0.5 rounded bg-sky-500/20 text-sky-300 font-bold">
-                      5 Required Fields
+                      Completed Date: {reviewingLog.completed_date || 'Pending'} (Auto-fetched)
                     </span>
                   </div>
 
-                  {/* Expected Completion Date & Completed Date */}
+                  {/* Expected Completion Date & Review Completed Date */}
                   <div className="grid grid-cols-1 sm:grid-cols-2 gap-3.5">
                     <div className="space-y-1">
                       <label className="text-slate-200 font-bold block text-xs">
@@ -606,23 +649,7 @@ export const PodLeadReviewTab: React.FC = () => {
                     </div>
                     <div className="space-y-1">
                       <label className="text-slate-200 font-bold block text-xs">
-                        2. Completed Date *
-                      </label>
-                      <input
-                        type="date"
-                        value={completedDate}
-                        onChange={(e) => setCompletedDate(e.target.value)}
-                        className="w-full px-3.5 py-2.5 bg-slate-900 border border-slate-700 rounded-xl text-white focus:outline-none focus:border-sky-500 text-xs cursor-pointer"
-                        required
-                      />
-                    </div>
-                  </div>
-
-                  {/* Review Completed Date & Reviewer */}
-                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3.5">
-                    <div className="space-y-1">
-                      <label className="text-slate-200 font-bold block text-xs">
-                        3. Review Completed Date *
+                        2. Review Completed Date *
                       </label>
                       <input
                         type="date"
@@ -632,25 +659,27 @@ export const PodLeadReviewTab: React.FC = () => {
                         required
                       />
                     </div>
-                    <div className="space-y-1">
-                      <label className="text-slate-200 font-bold block text-xs">
-                        4. Reviewer *
-                      </label>
-                      <input
-                        type="text"
-                        value={reviewer}
-                        onChange={(e) => setReviewer(e.target.value)}
-                        placeholder="e.g. Renuka Gorugantu"
-                        className="w-full px-3.5 py-2.5 bg-slate-900 border border-slate-700 rounded-xl text-white focus:outline-none focus:border-sky-500 text-xs"
-                        required
-                      />
-                    </div>
+                  </div>
+
+                  {/* Reviewer Name */}
+                  <div className="space-y-1">
+                    <label className="text-slate-200 font-bold block text-xs">
+                      3. Reviewer Name *
+                    </label>
+                    <input
+                      type="text"
+                      value={reviewer}
+                      onChange={(e) => setReviewer(e.target.value)}
+                      placeholder="e.g. Renuka Gorugantu"
+                      className="w-full px-3.5 py-2.5 bg-slate-900 border border-slate-700 rounded-xl text-white focus:outline-none focus:border-sky-500 text-xs"
+                      required
+                    />
                   </div>
 
                   {/* Error Count */}
                   <div className="space-y-1">
                     <label className="text-slate-200 font-bold block text-xs">
-                      5. Errors Identified During Review *
+                      4. Errors Identified During Review *
                     </label>
                     <div className="flex items-center gap-3">
                       <input
@@ -671,7 +700,7 @@ export const PodLeadReviewTab: React.FC = () => {
                   {/* Reviewer Comments & Feedback */}
                   <div className="space-y-1 pt-1">
                     <label className="text-slate-200 font-bold block text-xs">
-                      Reviewer Feedback / Comments (Synced to Google Chat)
+                      5. Reviewer Feedback / Comments (Synced to Google Chat)
                     </label>
                     <textarea
                       value={reviewComments}
