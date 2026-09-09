@@ -7,6 +7,8 @@ import { StatusBadge } from '../../components/ui/StatusBadge';
 import { Avatar } from '../../components/ui/Avatar';
 import { GradientButton } from '../../components/ui/Button';
 import { EmptyState } from '../../components/ui/EmptyState';
+import { PodLeadReviewTab } from '../performance/components/PodLeadReviewTab';
+import { ManagerReviewTab } from '../performance/components/ManagerReviewTab';
 import {
   Search,
   AlertTriangle,
@@ -18,7 +20,9 @@ import {
   MessageSquare,
   Send,
   ChevronDown,
-  ChevronUp
+  ChevronUp,
+  Table,
+  Users,
 } from 'lucide-react';
 
 export const TeamUpdatesPage: React.FC<{
@@ -35,6 +39,7 @@ export const TeamUpdatesPage: React.FC<{
   const [statusFilter, setStatusFilter] = useState<string>('');
   const [dateFilter, setDateFilter] = useState<string>('');
   const [onlyBlockers, setOnlyBlockers] = useState<boolean>(false);
+  const [viewTab, setViewTab] = useState<'deliverables_table' | 'standup_feed'>('deliverables_table');
   const [, setTick] = useState(0);
 
   // Sync with Supabase on mount and poll
@@ -118,10 +123,46 @@ export const TeamUpdatesPage: React.FC<{
         </GradientButton>
       </div>
 
-      {/* Filter Controls Bar */}
-      <div className="glass-card p-4 border border-slate-800 flex flex-wrap items-center gap-3">
-        {/* Search */}
-        <div className="relative flex-1 min-w-[200px]">
+      {/* View Switcher: Task Performance Ledger vs Standup Feed */}
+      <div className="flex items-center gap-2 p-1.5 rounded-2xl bg-slate-900/80 border border-slate-800 shadow-lg self-start">
+        <button
+          type="button"
+          onClick={() => setViewTab('deliverables_table')}
+          className={`flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-bold transition-all ${
+            viewTab === 'deliverables_table'
+              ? 'bg-maple-500 text-white shadow-lg shadow-maple-500/20'
+              : 'text-slate-400 hover:text-white hover:bg-slate-800/60'
+          }`}
+        >
+          <Table className="w-4 h-4" />
+          <span>Task Deliverables & Review Table</span>
+        </button>
+        <button
+          type="button"
+          onClick={() => setViewTab('standup_feed')}
+          className={`flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-bold transition-all ${
+            viewTab === 'standup_feed'
+              ? 'bg-maple-500 text-white shadow-lg shadow-maple-500/20'
+              : 'text-slate-400 hover:text-white hover:bg-slate-800/60'
+          }`}
+        >
+          <MessageSquare className="w-4 h-4" />
+          <span>Daily Standup Feed</span>
+        </button>
+      </div>
+
+      {viewTab === 'deliverables_table' ? (
+        currentRole === 'manager' || currentRole === 'admin' ? (
+          <ManagerReviewTab />
+        ) : (
+          <PodLeadReviewTab />
+        )
+      ) : (
+        <>
+          {/* Filter Controls Bar */}
+          <div className="glass-card p-4 border border-slate-800 flex flex-wrap items-center gap-3">
+            {/* Search */}
+            <div className="relative flex-1 min-w-[200px]">
           <Search className="w-4 h-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
           <input
             type="text"
@@ -414,6 +455,8 @@ export const TeamUpdatesPage: React.FC<{
           })
         )}
       </div>
+        </>
+      )}
     </div>
   );
 };

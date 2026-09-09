@@ -108,10 +108,10 @@ CREATE TABLE IF NOT EXISTS profiles (
 );
 
 -- ==============================================================================
--- 6. WORK PERFORMANCE LOGS TABLE (PRIMARY 17-COLUMN + CHECK-IN TIME LEDGER)
+-- 6. PERFORMANCE WORK LOGS TABLE (PRIMARY 17-COLUMN + CHECK-IN TIME LEDGER)
 -- ==============================================================================
 
-CREATE TABLE IF NOT EXISTS work_performance_logs (
+CREATE TABLE IF NOT EXISTS performance_work_logs (
     id TEXT PRIMARY KEY DEFAULT ('pwl-' || uuid_generate_v4()),
     organization_id TEXT NOT NULL REFERENCES organizations(id) ON DELETE CASCADE,
     employee_id TEXT NOT NULL REFERENCES profiles(id) ON DELETE CASCADE,
