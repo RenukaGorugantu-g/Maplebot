@@ -795,9 +795,12 @@ export const PodLeadReviewTab: React.FC = () => {
                 <label className="text-slate-300 font-semibold block mb-1">Hours Invested *</label>
                 <input
                   type="number"
-                  step="0.5"
-                  value={ownTime}
-                  onChange={(e) => setOwnTime(parseFloat(e.target.value) || 0)}
+                  step="any"
+                  min="0"
+                  max="24"
+                  value={ownTime === 0 ? '' : ownTime}
+                  onChange={(e) => setOwnTime(e.target.value === '' ? 0 : parseFloat(e.target.value) || 0)}
+                  placeholder="e.g. 2 or 1.5"
                   className="w-full px-3 py-2 bg-slate-900 border border-slate-700 rounded-xl text-sky-400 font-mono font-bold text-xs"
                   required
                 />

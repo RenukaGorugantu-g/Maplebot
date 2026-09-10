@@ -589,15 +589,15 @@ export const MemberWorkTab: React.FC = () => {
                       <div className="relative flex items-center">
                         <input
                           type="number"
-                          step="0.25"
-                          min="0.1"
+                          step="any"
+                          min="0"
                           max="24"
                           value={row.timeInvested === 0 ? '' : row.timeInvested}
                           onChange={(e) => {
                             const v = e.target.value === '' ? 0 : parseFloat(e.target.value);
-                            handleUpdateRow(row.id, 'timeInvested', v);
+                            handleUpdateRow(row.id, 'timeInvested', isNaN(v) ? 0 : v);
                           }}
-                          placeholder="0.0"
+                          placeholder="e.g. 2 or 1.5"
                           className="w-full pr-7 pl-2.5 py-1.5 bg-slate-900 border border-slate-700/80 rounded-lg text-sky-400 font-mono font-bold text-xs focus:outline-none focus:border-maple-500 [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
                           required
                         />

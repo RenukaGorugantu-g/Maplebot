@@ -210,11 +210,12 @@ export const CreateWorkLogModal: React.FC<CreateWorkLogModalProps> = ({
             <label className="text-slate-300 font-semibold block mb-1">Hours Spent</label>
             <input
               type="number"
-              min="0.25"
+              min="0"
               max="24"
-              step="0.5"
-              value={durationHours}
-              onChange={(e) => setDurationHours(parseFloat(e.target.value) || 0)}
+              step="any"
+              value={durationHours === 0 ? '' : durationHours}
+              onChange={(e) => setDurationHours(e.target.value === '' ? 0 : parseFloat(e.target.value) || 0)}
+              placeholder="e.g. 2 or 1.5"
               className="w-full px-2.5 py-2 bg-slate-900 border border-slate-800 rounded-xl text-white focus:outline-none focus:border-maple-500 font-mono"
             />
           </div>
