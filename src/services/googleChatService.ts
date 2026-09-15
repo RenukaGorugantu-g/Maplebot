@@ -591,6 +591,7 @@ export const googleChatService = {
     memberName: string;
     podName: string;
     date: string;
+    workDate?: string;
     checkinTime: string;
     tasks: Array<{
       projectName: string;
@@ -726,9 +727,14 @@ export const googleChatService = {
     const memberProfile = dataStore.getProfiles().find((p) => p.full_name === params.memberName);
     const memberTag = memberProfile?.email ? `<users/${memberProfile.email}>` : `@${params.memberName}`;
 
+    const reportingDate = params.workDate && params.workDate !== params.date ? params.workDate : params.date;
     const notificationText = hasBlockers
-      ? `🚨 *ATTENTION* — ${memberTag} (${params.podName}) logged work deliverables with *ACTIVE BLOCKERS* on ${params.date}!`
-      : `📋 *Daily Work Deliverables* — ${memberTag} (${params.podName}) logged previous day deliverables (${totalHours}h • ${totalUnits} items) on ${params.date}.`;
+      ? `🚨 *ATTENTION* — ${memberTag} (${params.podName}) logged work deliverables with *ACTIVE BLOCKERS* on ${params.date} (Work Date: ${reportingDate})!`
+      : `📋 *Daily Work Deliverables* — ${memberTag} (${params.podName}) checked in today (${params.date} at ${params.checkinTime}) for work date ${reportingDate} (${totalHours}h • ${totalUnits} items).`;
+
+    const subtitleText = params.workDate && params.workDate !== params.date
+      ? `Pod: ${params.podName} • Status: ${statusEmoji} ${statusLabel} • Check-in: ${params.checkinTime} (${params.date}) • Work Date: ${params.workDate}`
+      : `Pod: ${params.podName} • Status: ${statusEmoji} ${statusLabel} • Check-in: ${params.checkinTime} • ${params.date}`;
 
     const payload = {
       text: notificationText,
@@ -738,7 +744,7 @@ export const googleChatService = {
           card: {
             header: {
               title: `Daily Standup — ${params.memberName}`,
-              subtitle: `Pod: ${params.podName} • Status: ${statusEmoji} ${statusLabel} • Check-in: ${params.checkinTime} • ${params.date}`,
+              subtitle: subtitleText,
               imageUrl: 'https://cdn-icons-png.flaticon.com/512/3233/3233508.png',
               imageType: 'CIRCLE',
             },

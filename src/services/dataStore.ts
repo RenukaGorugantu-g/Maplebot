@@ -177,7 +177,20 @@ class MapleDataStore {
     this.googleChatSettings = INITIAL_GOOGLE_CHAT;
     this.auditLogs = savedAudit ? JSON.parse(savedAudit) : INITIAL_AUDIT_LOGS;
 
-    this.performanceWorkLogs = (savedWorkLogs ? JSON.parse(savedWorkLogs) : INITIAL_PERFORMANCE_WORK_LOGS).filter((l: any) => !this.isSeedItem(l));
+    const rawWorkLogs = (savedWorkLogs ? JSON.parse(savedWorkLogs) : INITIAL_PERFORMANCE_WORK_LOGS).filter((l: any) => !this.isSeedItem(l));
+    this.performanceWorkLogs = rawWorkLogs.map((l: any) => {
+      let checkinDate = l.checkin_date || l.date;
+      if (l.submitted_at) {
+        const subDate = new Date(new Date(l.submitted_at).getTime() + (5.5 * 60 * 60 * 1000)).toISOString().split('T')[0];
+        if (subDate) checkinDate = subDate;
+      }
+      return {
+        ...l,
+        date: checkinDate,
+        checkin_date: checkinDate,
+        work_date: l.work_date || l.completed_date || l.assigned_date || l.date,
+      };
+    });
     this.performanceKpis = savedKpis ? JSON.parse(savedKpis) : INITIAL_PERFORMANCE_KPIS;
     this.performanceReports = savedReports ? JSON.parse(savedReports) : INITIAL_PERFORMANCE_REPORTS;
     this.companyHolidays = savedHolidays ? JSON.parse(savedHolidays) : INITIAL_COMPANY_HOLIDAYS_2026;
@@ -332,7 +345,19 @@ class MapleDataStore {
           .order('date', { ascending: false });
 
         if (!logError && dbWorkLogs) {
-          this.performanceWorkLogs = dbWorkLogs.filter((l) => !this.isSeedItem(l));
+          this.performanceWorkLogs = dbWorkLogs.map((l: any) => {
+            let checkinDate = l.checkin_date || l.date;
+            if (l.submitted_at) {
+              const subDate = new Date(new Date(l.submitted_at).getTime() + (5.5 * 60 * 60 * 1000)).toISOString().split('T')[0];
+              if (subDate) checkinDate = subDate;
+            }
+            return {
+              ...l,
+              date: checkinDate,
+              checkin_date: checkinDate,
+              work_date: l.work_date || l.completed_date || l.assigned_date || l.date,
+            };
+          }).filter((l: any) => !this.isSeedItem(l));
           try {
             localStorage.setItem('maplebot_performance_work_logs', JSON.stringify(this.performanceWorkLogs));
           } catch {}
@@ -1519,6 +1544,14 @@ class MapleDataStore {
     return false;
   }
 
+  // Helper for YYYY-MM-DD local date (prevents UTC date shifts)
+  public getLocalDateString(d: Date = new Date()): string {
+    const year = d.getFullYear();
+    const month = String(d.getMonth() + 1).padStart(2, '0');
+    const day = String(d.getDate()).padStart(2, '0');
+    return `${year}-${month}-${day}`;
+  }
+
   // Helper for human-readable check-in time e.g. "10:15 AM"
   private formatCurrentTime(): string {
     const d = new Date();
@@ -1536,6 +1569,9 @@ class MapleDataStore {
     const profile = this.getProfileById(empId);
     const pod = profile?.pod_id ? this.getPodById(profile.pod_id) : undefined;
     const subTime = log.submission_time || log.checkin_time || this.formatCurrentTime();
+    const localToday = this.getLocalDateString();
+    const checkinDate = log.checkin_date || log.date || localToday;
+    const workDate = log.work_date || log.completed_date || log.assigned_date || localToday;
 
     const newLog: PerformanceWorkLog = {
       id: `pwl-${Date.now()}-${Math.random().toString(36).substr(2, 6)}`,
@@ -1546,19 +1582,21 @@ class MapleDataStore {
       department: pod?.name || 'General',
       pod_id: profile?.pod_id,
       pod_name: pod?.name,
-      date: log.date || new Date().toISOString().split('T')[0],
+      date: checkinDate,
+      checkin_date: checkinDate,
+      work_date: workDate,
       submission_time: subTime,
       checkin_time: subTime,
       project_name: log.project_name || log.project || 'General',
       project: log.project_name || log.project || 'General',
       task: log.task || log.task_title || '',
       task_title: log.task || log.task_title || '',
-      assigned_date: log.assigned_date || log.date || new Date().toISOString().split('T')[0],
-      completed_date: log.completed_date || log.review_assigned_date || log.date || new Date().toISOString().split('T')[0],
+      assigned_date: log.assigned_date || workDate,
+      completed_date: log.completed_date || log.review_assigned_date || workDate,
       time_invested: Number(log.time_invested || log.duration_hours || 0),
       duration_hours: Number(log.time_invested || log.duration_hours || 0),
       unit_count_completed: Number(log.unit_count_completed || 0),
-      review_assigned_date: log.review_assigned_date || new Date().toISOString().split('T')[0],
+      review_assigned_date: log.review_assigned_date || workDate,
       feedback_comments: log.feedback_comments || log.comments || '',
       comments: log.comments || log.feedback_comments || '',
       category: log.category || 'Development',
@@ -1748,6 +1786,10 @@ class MapleDataStore {
       else delStatus = 'delayed';
     }
 
+    const localToday = this.getLocalDateString();
+    const checkinDate = log.checkin_date || log.date || localToday;
+    const workDate = log.work_date || log.completed_date || log.assigned_date || localToday;
+
     const newLog: PerformanceWorkLog = {
       id: `pwl-lead-${Date.now()}-${Math.random().toString(36).substr(2, 6)}`,
       organization_id: profile?.organization_id || 'org-maple-01',
@@ -1757,18 +1799,20 @@ class MapleDataStore {
       department: pod?.name || 'Web & Sales',
       pod_id: profile?.pod_id,
       pod_name: pod?.name,
-      date: log.date || new Date().toISOString().split('T')[0],
+      date: checkinDate,
+      checkin_date: checkinDate,
+      work_date: workDate,
       submission_time: subTime,
       checkin_time: subTime,
       project_name: log.project_name || log.project || 'General',
       project: log.project_name || log.project || 'General',
       task: log.task || log.task_title || '',
       task_title: log.task || log.task_title || '',
-      assigned_date: log.assigned_date || log.date || new Date().toISOString().split('T')[0],
+      assigned_date: log.assigned_date || workDate,
       time_invested: Number(log.time_invested || log.duration_hours || 0),
       duration_hours: Number(log.time_invested || log.duration_hours || 0),
       unit_count_completed: Number(log.unit_count_completed || 0),
-      review_assigned_date: log.review_assigned_date || log.date || new Date().toISOString().split('T')[0],
+      review_assigned_date: log.review_assigned_date || workDate,
       expected_completion_date: log.expected_completion_date,
       completed_date: log.completed_date,
       review_completed_date: log.review_completed_date,

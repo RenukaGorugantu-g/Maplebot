@@ -53,7 +53,15 @@ interface TaskDraftRow {
 export const MemberWorkTab: React.FC = () => {
   const { profile, userPod, isPodLead, isManager, isAdmin, currentRole } = useAuth();
   const isPrivileged = Boolean(isPodLead || isManager || isAdmin);
-  const todayStr = new Date().toISOString().split('T')[0];
+
+  const getLocalDateString = (d: Date = new Date()) => {
+    const year = d.getFullYear();
+    const month = String(d.getMonth() + 1).padStart(2, '0');
+    const day = String(d.getDate()).padStart(2, '0');
+    return `${year}-${month}-${day}`;
+  };
+
+  const todayStr = getLocalDateString();
 
   // Helper to calculate the previous working day (skips weekends: Mon -> Fri, Sun -> Fri, Sat -> Fri)
   const getPreviousWorkingDay = () => {
@@ -64,7 +72,7 @@ export const MemberWorkTab: React.FC = () => {
     else if (day === 0) daysBack = 2; // Sunday -> previous Friday
     else if (day === 6) daysBack = 1; // Saturday -> previous Friday
     d.setDate(d.getDate() - daysBack);
-    return d.toISOString().split('T')[0];
+    return getLocalDateString(d);
   };
 
   const prevWorkingDay = getPreviousWorkingDay();
@@ -79,8 +87,9 @@ export const MemberWorkTab: React.FC = () => {
     return `${hours.toString().padStart(2, '0')}:${minutes} ${ampm}`;
   };
 
-  // Reporting Work Date (Previous working day by default) & Check-in / Submission Time
+  // Reporting Work Date (Previous working day by default) & Today's Check-in Date / Time
   const [workDate] = useState<string>(prevWorkingDay);
+  const [checkinDate] = useState<string>(todayStr);
   const [checkinTime, setCheckinTime] = useState<string>(getFormattedTime());
 
   // Keep live time updated
@@ -229,7 +238,9 @@ export const MemberWorkTab: React.FC = () => {
         dataStore.submitMemberWork({
           employee_id: profile?.id || '',
           employee_name: profile?.full_name || 'Team Member',
-          date: workDate,
+          date: todayStr,
+          checkin_date: todayStr,
+          work_date: workDate,
           submission_time: checkinTime,
           checkin_time: checkinTime,
           project_name: r.projectName.trim() || 'General',
@@ -257,7 +268,8 @@ export const MemberWorkTab: React.FC = () => {
       googleChatService.sendWorkDeliverablesSummaryCard({
         memberName,
         podName,
-        date: workDate,
+        date: todayStr,
+        workDate: workDate,
         checkinTime: checkinTime,
         tasks: validRows.map((r) => ({
           projectName: r.projectName.trim() || 'General',
@@ -269,7 +281,7 @@ export const MemberWorkTab: React.FC = () => {
         })),
       }).catch((err) => console.warn('GChat summary notice:', err));
 
-      setSuccessNotice(`🎉 Fantastic work! Successfully submitted ${validRows.length} task deliverable(s) for ${workDate} at ${checkinTime}! High-level overview dispatched to Google Chat with blockers highlighted.`);
+      setSuccessNotice(`🎉 Fantastic work! Successfully submitted ${validRows.length} task deliverable(s) for work date ${workDate} (Checked in: ${todayStr} at ${checkinTime})! High-level overview dispatched to Google Chat.`);
       setTimeout(() => setSuccessNotice(''), 7000);
 
       // Reset empty rows with hours set to 0
@@ -473,21 +485,21 @@ export const MemberWorkTab: React.FC = () => {
           <div className="flex flex-wrap items-center gap-3">
             {/* Reporting Work Date Badge */}
             <div className="flex items-center gap-2 bg-slate-900/90 border border-slate-800 px-3.5 py-2 rounded-xl text-sm shadow-sm select-none" title="Date of the previous working day being reported">
-              <Calendar className="w-4 h-4 text-white" />
+              <Calendar className="w-4 h-4 text-sky-400" />
               <span className="text-slate-400 font-medium">Work Date:</span>
               <span className="text-white font-mono font-bold">{workDate}</span>
             </div>
 
-            {/* Check-in / Submission Time (Non-Editable) */}
-            <div className="flex items-center gap-2 bg-slate-900/90 border border-slate-800 px-3.5 py-2 rounded-xl text-sm shadow-sm select-none" title="Today's submission check-in time">
+            {/* Check-in / Submission Date & Time (Non-Editable) */}
+            <div className="flex items-center gap-2 bg-slate-900/90 border border-slate-800 px-3.5 py-2 rounded-xl text-sm shadow-sm select-none" title="Today's submission check-in date and time">
               <Clock className="w-4 h-4 text-emerald-400" />
               <span className="text-slate-400 font-medium">Check-in:</span>
-              <span className="text-emerald-300 font-mono font-bold">{checkinTime}</span>
+              <span className="text-emerald-300 font-mono font-bold">{checkinDate} • {checkinTime}</span>
             </div>
 
             {/* Member Name Badge */}
             <div className="flex items-center gap-2 bg-slate-900/90 border border-slate-800 px-3.5 py-2 rounded-xl text-sm shadow-sm select-none">
-              <User className="w-4 h-4 text-sky-400" />
+              <User className="w-4 h-4 text-purple-400" />
               <span className="text-slate-200 font-bold">{profile?.full_name || 'Team Member'}</span>
             </div>
           </div>
@@ -896,11 +908,16 @@ export const MemberWorkTab: React.FC = () => {
 
                       {/* Date & Check-in Time */}
                       <td className="py-3 px-3.5 whitespace-nowrap align-top">
-                        <span className="font-mono text-xs text-white block font-bold">{row.date}</span>
+                        <span className="font-mono text-xs text-white block font-bold">{row.checkin_date || row.date}</span>
                         <span className="inline-flex items-center gap-1 text-[11px] text-emerald-400 font-mono font-semibold bg-emerald-500/10 px-2 py-0.5 rounded border border-emerald-500/20 mt-1">
                           <Clock className="w-3 h-3 text-emerald-400" />
                           {row.submission_time || row.checkin_time || '10:00 AM'}
                         </span>
+                        {row.work_date && row.work_date !== (row.checkin_date || row.date) && (
+                          <span className="text-[10px] text-slate-400 block font-mono mt-0.5" title="Work Performance Date">
+                            Work: {row.work_date}
+                          </span>
+                        )}
                       </td>
 
                       {/* Project */}

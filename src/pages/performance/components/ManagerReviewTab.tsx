@@ -600,11 +600,16 @@ export const ManagerReviewTab: React.FC<ManagerReviewTabProps> = ({
                   <tr key={row.id} className="hover:bg-slate-800/40 transition-colors">
                     {/* 1. Work Info (Pod Member) */}
                     <td className="py-3.5 px-3.5 whitespace-nowrap align-top">
-                      <span className="font-mono text-xs text-white block font-bold">{row.date}</span>
+                      <span className="font-mono text-xs text-white block font-bold">{row.checkin_date || row.date}</span>
                       <span className="inline-flex items-center gap-1 text-xs text-emerald-400 font-mono font-semibold bg-emerald-500/10 px-2 py-0.5 rounded border border-emerald-500/20 mt-1">
                         <Clock className="w-3.5 h-3.5 text-emerald-400" />
                         {row.submission_time || row.checkin_time || '10:00 AM'}
                       </span>
+                      {row.work_date && row.work_date !== (row.checkin_date || row.date) && (
+                        <span className="text-[10px] text-slate-400 block font-mono mt-0.5" title="Work Performance Date">
+                          Work: {row.work_date}
+                        </span>
+                      )}
                     </td>
                     <td className="py-3.5 px-3.5 font-bold text-white whitespace-nowrap align-top text-sm">
                       {row.employee_name}

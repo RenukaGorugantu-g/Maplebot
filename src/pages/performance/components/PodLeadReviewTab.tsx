@@ -349,11 +349,16 @@ export const PodLeadReviewTab: React.FC = () => {
                           </div>
                         </td>
                         <td className="py-3 px-3 whitespace-nowrap align-top">
-                          <span className="font-mono text-[11px] text-white block font-bold">{row.date}</span>
+                          <span className="font-mono text-[11px] text-white block font-bold">{row.checkin_date || row.date}</span>
                           <span className="inline-flex items-center gap-1 text-[10px] text-emerald-400 font-mono font-semibold bg-emerald-500/10 px-1.5 py-0.5 rounded border border-emerald-500/20 mt-1">
                             <Clock className="w-3 h-3 text-emerald-400" />
                             {row.submission_time || row.checkin_time || '10:00 AM'}
                           </span>
+                          {row.work_date && row.work_date !== (row.checkin_date || row.date) && (
+                            <span className="text-[10px] text-slate-400 block font-mono mt-0.5" title="Work Performance Date">
+                              Work: {row.work_date}
+                            </span>
+                          )}
                         </td>
                         <td className="py-3 px-3 font-medium text-slate-300 whitespace-nowrap align-top">
                           {row.project_name || row.project}

@@ -496,3 +496,25 @@ VALUES
     ('leave-ren-01', 'org-maple-01', 'prof-sample-podlead', 'Renuka Gorugantu (Pod Lead)', 'pod-web-sales', 'Web & Sales', 'Paid Time Off (PTO)', '2026-10-19', '2026-10-23', 5, 'Q4', 'H2', 2026, 'Dussehra festival & travel', 'approved', 'Sandeep Guntupalli')
 ON CONFLICT (id) DO NOTHING;
 
+-- ==============================================================================
+-- 21. FIX CHECK-IN DATES & ADD WORK_DATE (2026-09-15)
+-- ==============================================================================
+
+ALTER TABLE public.performance_work_logs 
+ADD COLUMN IF NOT EXISTS work_date DATE;
+
+ALTER TABLE public.performance_work_logs 
+ADD COLUMN IF NOT EXISTS checkin_date DATE;
+
+UPDATE public.performance_work_logs
+SET work_date = COALESCE(completed_date, assigned_date, date)
+WHERE work_date IS NULL;
+
+UPDATE public.performance_work_logs
+SET 
+  date = (submitted_at AT TIME ZONE 'Asia/Kolkata')::date,
+  checkin_date = (submitted_at AT TIME ZONE 'Asia/Kolkata')::date
+WHERE submitted_at IS NOT NULL;
+
+CREATE INDEX IF NOT EXISTS idx_pwl_checkin_date ON public.performance_work_logs(date);
+CREATE INDEX IF NOT EXISTS idx_pwl_work_date ON public.performance_work_logs(work_date);

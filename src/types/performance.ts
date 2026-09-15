@@ -72,7 +72,9 @@ export interface PerformanceWorkLog {
   pod_name?: string;
 
   // 1. WORK INFORMATION (POD MEMBER ENTERS 9 FIELDS + CHECK-IN TIME)
-  date: string; // 1. Date (YYYY-MM-DD)
+  date: string; // 1. Date (YYYY-MM-DD) - Check-in / Submission Date
+  checkin_date?: string; // Explicit Check-in Date alias (YYYY-MM-DD)
+  work_date?: string; // Reporting Work Date (YYYY-MM-DD) e.g. previous working day
   submission_time?: string; // Check-in Time / Update Given Time (e.g. "10:15 AM")
   checkin_time?: string; // Compatibility alias
   project_name: string; // 3. Project Name (alias: project)

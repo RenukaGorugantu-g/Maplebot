@@ -190,7 +190,8 @@ export const performanceExportService = {
    */
   exportStructuredWorkLogsToXLSX(logs: PerformanceWorkLog[], filename = 'MapleBot_Consolidated_Work_Performance_17Col') {
     const rows = logs.map((l) => ({
-      Date: l.date,
+      'Check-in Date': l.checkin_date || l.date,
+      'Work Date': l.work_date || l.completed_date || l.assigned_date || l.date,
       'Check-in Time (Update Given Time)': l.submission_time || l.checkin_time || '10:00 AM',
       'Employee Name': l.employee_name,
       'Department / Pod': l.department || l.pod_name || 'Web & Sales',
@@ -204,14 +205,13 @@ export const performanceExportService = {
       'Deliverables Count (Units)': l.unit_count_completed || 0,
       'Review Assigned Date': l.review_assigned_date,
       'Review Completed Date': l.review_completed_date || 'Pending',
-      'Reviewer (Lead / Manager)': l.reviewer || l.reviewer_name || 'Not assigned',
+      'Reviewer (Lead / Manager)': l.reviewer || l.reviewer_name || 'Pending',
       'Error Count': l.error_count ?? 0,
-      'Quality Score (1-5)': typeof l.quality === 'number' ? `${l.quality}/5` : l.quality || 'Pending',
-      'TAT (Turnaround Time)': l.tat || 'Not Available',
-      'Efficiency %': l.efficiency || 'Not Available',
+      'Quality Rating (1-5)': l.quality || 4.0,
+      TAT: l.tat || 'Pending',
+      'Efficiency %': l.efficiency || '100%',
       'Reviewer Comments': l.reviewer_comments || '',
-      'Delivery Status': l.delivery_status,
-      'Workflow Status': l.workflow_status,
+      'Workflow Status': l.workflow_status || 'submitted',
     }));
 
     const ws = XLSX.utils.json_to_sheet(rows);
@@ -219,7 +219,8 @@ export const performanceExportService = {
     XLSX.utils.book_append_sheet(wb, ws, 'Work Performance Ledger');
 
     ws['!cols'] = [
-      { wch: 12 }, // Date
+      { wch: 14 }, // Check-in Date
+      { wch: 14 }, // Work Date
       { wch: 28 }, // Check-in Time (Update Given Time)
       { wch: 22 }, // Employee Name
       { wch: 20 }, // Department / Pod

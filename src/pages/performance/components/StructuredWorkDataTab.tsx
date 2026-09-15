@@ -421,7 +421,7 @@ export const StructuredWorkDataTab: React.FC = () => {
                 {paginatedLogs.map((row) => (
                   <tr key={row.id} className="hover:bg-slate-800/40 transition-colors">
                     <td className="py-3 px-3.5 font-mono text-[11px] text-slate-400 whitespace-nowrap align-top">
-                      {row.date}
+                      {row.checkin_date || row.date}
                     </td>
                     <td className="py-3 px-3.5 font-mono text-[11px] text-emerald-400 font-semibold whitespace-nowrap align-top">
                       {row.submission_time || row.checkin_time || '10:00 AM'}

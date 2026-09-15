@@ -693,10 +693,15 @@ The sprint is verified as Complete & Approved. Management can proceed with produ
                   {activeEmployeeSummary.tasks.map((t) => (
                     <tr key={t.id} className="hover:bg-slate-800/40">
                       <td className="py-2.5 px-3 whitespace-nowrap">
-                        <span className="font-mono text-white font-bold block">{t.date}</span>
+                        <span className="font-mono text-white font-bold block">{t.checkin_date || t.date}</span>
                         <span className="text-[10px] text-emerald-400 font-mono font-semibold">
                           {t.submission_time || t.checkin_time || '10:00 AM'}
                         </span>
+                        {t.work_date && t.work_date !== (t.checkin_date || t.date) && (
+                          <span className="text-[10px] text-slate-400 block font-mono">
+                            Work: {t.work_date}
+                          </span>
+                        )}
                       </td>
                       <td className="py-2.5 px-3 font-semibold text-white">{t.project_name || t.project}</td>
                       <td className="py-2.5 px-3">{t.task || t.task_title}</td>
@@ -858,11 +863,16 @@ The sprint is verified as Complete & Approved. Management can proceed with produ
                 {filteredCompletedTasks.map((t) => (
                   <tr key={t.id} className="hover:bg-slate-800/40 transition-colors">
                     <td className="py-3 px-3.5 whitespace-nowrap align-top">
-                      <span className="font-mono text-white font-bold block">{t.date}</span>
+                      <span className="font-mono text-white font-bold block">{t.checkin_date || t.date}</span>
                       <span className="inline-flex items-center gap-1 text-[10px] text-emerald-400 font-mono font-semibold bg-emerald-500/10 px-1.5 py-0.5 rounded border border-emerald-500/20 mt-1">
                         <Clock className="w-3 h-3" />
                         {t.submission_time || t.checkin_time || '10:00 AM'}
                       </span>
+                      {t.work_date && t.work_date !== (t.checkin_date || t.date) && (
+                        <span className="text-[10px] text-slate-400 block font-mono mt-0.5">
+                          Work: {t.work_date}
+                        </span>
+                      )}
                     </td>
                     <td className="py-3 px-3.5 font-bold text-white whitespace-nowrap align-top">
                       {t.employee_name}
