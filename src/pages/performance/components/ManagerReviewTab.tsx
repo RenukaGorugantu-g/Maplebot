@@ -39,18 +39,28 @@ interface ManagerReviewTabProps {
 export const ManagerReviewTab: React.FC<ManagerReviewTabProps> = ({
   onGenerateReportForEmployee,
 }) => {
-  const { profile, currentRole } = useAuth();
+  const { profile, currentRole, userPod } = useAuth();
   const isAdmin = currentRole === 'admin';
   const isManager = currentRole === 'manager';
 
+  const [tick, setTick] = useState<number>(0);
+  React.useEffect(() => {
+    const unsub = dataStore.subscribe(() => setTick((t) => t + 1));
+    return () => unsub();
+  }, []);
+
   const pods = dataStore.getPods();
-  const allProfiles = dataStore.getProfiles().filter((p) => p.status === 'active');
-  const availableProfiles = isManager
-    ? allProfiles.filter((p) => p.pod_id === profile?.pod_id || (p.pod_ids && p.pod_ids.includes(profile?.pod_id || '')))
-    : allProfiles;
+  const allProfiles = useMemo(() => dataStore.getProfiles().filter((p) => p.status === 'active'), [tick]);
+  const defaultPodId = userPod?.id || profile?.pod_id || '';
+  const availableProfiles = useMemo(() => {
+    if (isManager && defaultPodId) {
+      return allProfiles.filter((p) => p.pod_id === defaultPodId || (p.pod_ids && p.pod_ids.includes(defaultPodId)));
+    }
+    return allProfiles;
+  }, [allProfiles, isManager, defaultPodId]);
 
   // Multi-Filter States
-  const [selectedPodId, setSelectedPodId] = useState<string>(isManager ? (profile?.pod_id || '') : '');
+  const [selectedPodId, setSelectedPodId] = useState<string>(isManager ? defaultPodId : '');
   const [selectedEmployeeId, setSelectedEmployeeId] = useState<string>('');
   const [selectedProject, setSelectedProject] = useState<string>('');
   const [selectedCompletionStatus, setSelectedCompletionStatus] = useState<string>('');
@@ -77,8 +87,8 @@ export const ManagerReviewTab: React.FC<ManagerReviewTabProps> = ({
   // Filter profiles based on selected pod
   const filteredProfiles = useMemo(() => {
     if (!selectedPodId) return availableProfiles;
-    return availableProfiles.filter((p) => p.pod_id === selectedPodId || (p.pod_ids && p.pod_ids.includes(selectedPodId)));
-  }, [availableProfiles, selectedPodId]);
+    return allProfiles.filter((p) => p.pod_id === selectedPodId || (p.pod_ids && p.pod_ids.includes(selectedPodId)));
+  }, [availableProfiles, allProfiles, selectedPodId]);
 
   // Retrieve enriched logs
   const allLogs = useMemo(() => {
@@ -88,7 +98,7 @@ export const ManagerReviewTab: React.FC<ManagerReviewTabProps> = ({
       startDate || undefined,
       endDate || undefined
     );
-  }, [selectedEmployeeId, selectedPodId, startDate, endDate, assessingLog, isSavingAssessment]);
+  }, [selectedEmployeeId, selectedPodId, startDate, endDate, assessingLog, isSavingAssessment, tick]);
 
   // Distinct projects
   const distinctProjects = useMemo(() => {
@@ -110,10 +120,14 @@ export const ManagerReviewTab: React.FC<ManagerReviewTabProps> = ({
         const q = searchQuery.toLowerCase();
         const match =
           (l.task && l.task.toLowerCase().includes(q)) ||
+          (l.task_title && l.task_title.toLowerCase().includes(q)) ||
           (l.employee_name && l.employee_name.toLowerCase().includes(q)) ||
           (l.project_name && l.project_name.toLowerCase().includes(q)) ||
+          (l.project && l.project.toLowerCase().includes(q)) ||
           (l.reviewer && l.reviewer.toLowerCase().includes(q)) ||
-          (l.comments && l.comments.toLowerCase().includes(q));
+          (l.comments && l.comments.toLowerCase().includes(q)) ||
+          (l.feedback_comments && l.feedback_comments.toLowerCase().includes(q)) ||
+          (l.reviewer_comments && l.reviewer_comments.toLowerCase().includes(q));
         if (!match) return false;
       }
       return true;

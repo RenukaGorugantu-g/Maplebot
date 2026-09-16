@@ -127,6 +127,12 @@ export const MemberWorkTab: React.FC = () => {
   const [ledgerMode, setLedgerMode] = useState<'team' | 'own'>(isPrivileged ? 'team' : 'own');
   const [selectedMemberFilter, setSelectedMemberFilter] = useState<string>('');
   const [statusFilter, setStatusFilter] = useState<string>('');
+  const [tick, setTick] = useState<number>(0);
+
+  React.useEffect(() => {
+    const unsub = dataStore.subscribe(() => setTick((t) => t + 1));
+    return () => unsub();
+  }, []);
 
   // Review Modal State
   const [reviewingLog, setReviewingLog] = useState<PerformanceWorkLog | null>(null);
@@ -308,10 +314,10 @@ export const MemberWorkTab: React.FC = () => {
     }
   };
 
-  const podId = profile?.pod_id || userPod?.id;
+  const podId = userPod?.id || profile?.pod_id;
 
   // Retrieve team members for dropdown
-  const allProfiles = useMemo(() => dataStore.getProfiles().filter((p) => p.status === 'active'), []);
+  const allProfiles = useMemo(() => dataStore.getProfiles().filter((p) => p.status === 'active'), [tick]);
   const availableTeamProfiles = useMemo(() => {
     if (isAdmin) return allProfiles;
     if (podId) {
@@ -328,7 +334,7 @@ export const MemberWorkTab: React.FC = () => {
     return dataStore.getPerformanceWorkLogs({
       employeeId: profile.id,
     });
-  }, [profile?.id, isSubmitting, isSavingReview]);
+  }, [profile?.id, isSubmitting, isSavingReview, tick]);
 
   // Query team logs for Managers / Pod Leads / Admins
   const teamLogs = useMemo(() => {
@@ -337,7 +343,7 @@ export const MemberWorkTab: React.FC = () => {
       return dataStore.getPerformanceWorkLogs({});
     }
     return dataStore.getPerformanceWorkLogs(podId ? { podId } : {});
-  }, [isPrivileged, isAdmin, podId, isSubmitting, isSavingReview]);
+  }, [isPrivileged, isAdmin, podId, isSubmitting, isSavingReview, tick]);
 
   // Active ledger list depending on selected mode
   const activeLogs = ledgerMode === 'team' && isPrivileged ? teamLogs : memberLogs;

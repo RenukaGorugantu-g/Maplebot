@@ -25,18 +25,28 @@ import {
 } from 'lucide-react';
 
 export const StructuredWorkDataTab: React.FC = () => {
-  const { profile, currentRole } = useAuth();
+  const { profile, currentRole, userPod } = useAuth();
   const isAdmin = currentRole === 'admin';
   const isManager = currentRole === 'manager';
 
+  const [tick, setTick] = useState<number>(0);
+  React.useEffect(() => {
+    const unsub = dataStore.subscribe(() => setTick((t) => t + 1));
+    return () => unsub();
+  }, []);
+
   const pods = dataStore.getPods();
-  const allProfiles = dataStore.getProfiles().filter((p) => p.status === 'active');
-  const availableProfiles = isManager
-    ? allProfiles.filter((p) => p.pod_id === profile?.pod_id || (p.pod_ids && p.pod_ids.includes(profile?.pod_id || '')))
-    : allProfiles;
+  const allProfiles = useMemo(() => dataStore.getProfiles().filter((p) => p.status === 'active'), [tick]);
+  const defaultPodId = userPod?.id || profile?.pod_id || '';
+  const availableProfiles = useMemo(() => {
+    if (isManager && defaultPodId) {
+      return allProfiles.filter((p) => p.pod_id === defaultPodId || (p.pod_ids && p.pod_ids.includes(defaultPodId)));
+    }
+    return allProfiles;
+  }, [allProfiles, isManager, defaultPodId]);
 
   // Filter states
-  const [selectedPodId, setSelectedPodId] = useState<string>(isManager ? (profile?.pod_id || '') : '');
+  const [selectedPodId, setSelectedPodId] = useState<string>(isManager ? defaultPodId : '');
   const [selectedEmployeeId, setSelectedEmployeeId] = useState<string>('');
   const [selectedProject, setSelectedProject] = useState<string>('');
   const [selectedCategory, setSelectedCategory] = useState<string>('');
@@ -58,8 +68,8 @@ export const StructuredWorkDataTab: React.FC = () => {
   // Filter profiles based on selected pod
   const filteredProfiles = useMemo(() => {
     if (!selectedPodId) return availableProfiles;
-    return availableProfiles.filter((p) => p.pod_id === selectedPodId || (p.pod_ids && p.pod_ids.includes(selectedPodId)));
-  }, [availableProfiles, selectedPodId]);
+    return allProfiles.filter((p) => p.pod_id === selectedPodId || (p.pod_ids && p.pod_ids.includes(selectedPodId)));
+  }, [availableProfiles, allProfiles, selectedPodId]);
 
   // Retrieve raw combined logs
   const allLogs = useMemo(() => {
@@ -69,7 +79,7 @@ export const StructuredWorkDataTab: React.FC = () => {
       startDate || undefined,
       endDate || undefined
     );
-  }, [selectedEmployeeId, selectedPodId, startDate, endDate]);
+  }, [selectedEmployeeId, selectedPodId, startDate, endDate, isCreateModalOpen, isImporting, tick]);
 
   // Extract distinct projects
   const distinctProjects = useMemo(() => {

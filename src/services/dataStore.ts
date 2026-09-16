@@ -184,8 +184,28 @@ class MapleDataStore {
         const subDate = new Date(new Date(l.submitted_at).getTime() + (5.5 * 60 * 60 * 1000)).toISOString().split('T')[0];
         if (subDate) checkinDate = subDate;
       }
+      let podId = l.pod_id;
+      let depId = l.department_id;
+      let dep = l.department;
+      let podName = l.pod_name;
+      const author = this.profiles.find((p) => p.id === l.employee_id || p.email?.toLowerCase() === l.employee_id?.toLowerCase());
+      if (author && author.pod_id) {
+        if (!podId || (podId === 'pod-web-sales' && author.pod_id !== 'pod-web-sales')) {
+          podId = author.pod_id;
+          depId = author.pod_id;
+          const matchedPod = this.pods.find((p) => p.id === author.pod_id);
+          if (matchedPod) {
+            dep = matchedPod.name;
+            podName = matchedPod.name;
+          }
+        }
+      }
       return {
         ...l,
+        pod_id: podId,
+        department_id: depId,
+        department: dep || l.department,
+        pod_name: podName || l.pod_name,
         date: checkinDate,
         checkin_date: checkinDate,
         work_date: l.work_date || l.completed_date || l.assigned_date || l.date,
@@ -351,8 +371,28 @@ class MapleDataStore {
               const subDate = new Date(new Date(l.submitted_at).getTime() + (5.5 * 60 * 60 * 1000)).toISOString().split('T')[0];
               if (subDate) checkinDate = subDate;
             }
+            let podId = l.pod_id;
+            let depId = l.department_id;
+            let dep = l.department;
+            let podName = l.pod_name;
+            const author = this.profiles.find((p) => p.id === l.employee_id || p.email?.toLowerCase() === l.employee_id?.toLowerCase());
+            if (author && author.pod_id) {
+              if (!podId || (podId === 'pod-web-sales' && author.pod_id !== 'pod-web-sales')) {
+                podId = author.pod_id;
+                depId = author.pod_id;
+                const matchedPod = this.pods.find((p) => p.id === author.pod_id);
+                if (matchedPod) {
+                  dep = matchedPod.name;
+                  podName = matchedPod.name;
+                }
+              }
+            }
             return {
               ...l,
+              pod_id: podId,
+              department_id: depId,
+              department: dep || l.department,
+              pod_name: podName || l.pod_name,
               date: checkinDate,
               checkin_date: checkinDate,
               work_date: l.work_date || l.completed_date || l.assigned_date || l.date,
@@ -772,6 +812,53 @@ class MapleDataStore {
       if (!kudError && dbKudos) {
         this.kudos = dbKudos;
       }
+
+      // 7. Sync Performance Work Logs
+      try {
+        const { data: dbWorkLogs, error: logError } = await supabase
+          .from('performance_work_logs')
+          .select('*')
+          .order('date', { ascending: false });
+
+        if (!logError && dbWorkLogs) {
+          this.performanceWorkLogs = dbWorkLogs.map((l: any) => {
+            let checkinDate = l.checkin_date || l.date;
+            if (l.submitted_at) {
+              const subDate = new Date(new Date(l.submitted_at).getTime() + (5.5 * 60 * 60 * 1000)).toISOString().split('T')[0];
+              if (subDate) checkinDate = subDate;
+            }
+            let podId = l.pod_id;
+            let depId = l.department_id;
+            let dep = l.department;
+            let podName = l.pod_name;
+            const author = this.profiles.find((p) => p.id === l.employee_id || p.email?.toLowerCase() === l.employee_id?.toLowerCase());
+            if (author && author.pod_id) {
+              if (!podId || (podId === 'pod-web-sales' && author.pod_id !== 'pod-web-sales')) {
+                podId = author.pod_id;
+                depId = author.pod_id;
+                const matchedPod = this.pods.find((p) => p.id === author.pod_id);
+                if (matchedPod) {
+                  dep = matchedPod.name;
+                  podName = matchedPod.name;
+                }
+              }
+            }
+            return {
+              ...l,
+              pod_id: podId,
+              department_id: depId,
+              department: dep || l.department,
+              pod_name: podName || l.pod_name,
+              date: checkinDate,
+              checkin_date: checkinDate,
+              work_date: l.work_date || l.completed_date || l.assigned_date || l.date,
+            };
+          }).filter((l: any) => !this.isSeedItem(l));
+          try {
+            localStorage.setItem('maplebot_performance_work_logs', JSON.stringify(this.performanceWorkLogs));
+          } catch {}
+        }
+      } catch (err) {}
 
       this.notify();
     } catch (e) {
@@ -1428,6 +1515,13 @@ class MapleDataStore {
   // ============================================================================
 
   // --- 1. WORK LOGS ---
+  private sanitizeWorkLogForDb(log: any): any {
+    const { checkin_date, work_date, ...sanitized } = log;
+    if (!sanitized.project && sanitized.project_name) sanitized.project = sanitized.project_name;
+    if (!sanitized.task_title && sanitized.task) sanitized.task_title = sanitized.task;
+    return sanitized;
+  }
+
   public getPerformanceWorkLogs(filters?: {
     employeeId?: string;
     podId?: string;
@@ -1444,7 +1538,22 @@ class MapleDataStore {
       list = list.filter((l) => l.employee_id === filters.employeeId);
     }
     if (filters?.podId) {
-      list = list.filter((l) => l.department_id === filters.podId || l.department.toLowerCase().includes(filters.podId.toLowerCase()));
+      const targetPod = this.getPodById(filters.podId);
+      const targetPodName = targetPod?.name?.toLowerCase();
+      const filterPodIdLower = filters.podId.toLowerCase();
+
+      list = list.filter((l) => {
+        if (l.pod_id && l.pod_id === filters.podId) return true;
+        if (l.department_id && l.department_id === filters.podId) return true;
+        if (targetPodName && (l.department?.toLowerCase() === targetPodName || l.pod_name?.toLowerCase() === targetPodName)) return true;
+        if (l.department && (l.department.toLowerCase() === filterPodIdLower || filterPodIdLower.includes(l.department.toLowerCase()))) return true;
+        const author = this.getProfileById(l.employee_id);
+        if (author) {
+          if (author.pod_id === filters.podId) return true;
+          if (author.pod_ids && author.pod_ids.includes(filters.podId)) return true;
+        }
+        return false;
+      });
     }
     if (filters?.project) {
       list = list.filter((l) => l.project === filters.project);
@@ -1491,7 +1600,7 @@ class MapleDataStore {
 
     supabase
       .from('performance_work_logs')
-      .upsert(newLog)
+      .upsert(this.sanitizeWorkLogForDb(newLog))
       .then(({ error }) => {
         if (error) console.warn('Supabase work log upsert note:', error);
       });
@@ -1514,11 +1623,14 @@ class MapleDataStore {
       const updated = this.performanceWorkLogs[idx];
       this.logAudit('PERFORMANCE_WORK_LOG_UPDATED', 'PerformanceWorkLog', id, updates);
 
+      const sanitizedUpdates = this.sanitizeWorkLogForDb({ ...updates, updated_at: new Date().toISOString() });
       supabase
         .from('performance_work_logs')
-        .update({ ...updates, updated_at: new Date().toISOString() })
+        .update(sanitizedUpdates)
         .eq('id', id)
-        .then(() => {});
+        .then(({ error }) => {
+          if (error) console.warn('Supabase work log update note:', error);
+        });
 
       this.notify();
       return updated;
@@ -1567,7 +1679,8 @@ class MapleDataStore {
   public submitMemberWork(log: Partial<PerformanceWorkLog>): PerformanceWorkLog {
     const empId = log.employee_id || 'prof-harshika';
     const profile = this.getProfileById(empId);
-    const pod = profile?.pod_id ? this.getPodById(profile.pod_id) : undefined;
+    const pod = (profile?.pod_id ? this.getPodById(profile.pod_id) : undefined) ||
+                (profile?.id ? this.getPods().find((p) => p.manager_id === profile.id) : undefined);
     const subTime = log.submission_time || log.checkin_time || this.formatCurrentTime();
     const localToday = this.getLocalDateString();
     const checkinDate = log.checkin_date || log.date || localToday;
@@ -1578,9 +1691,9 @@ class MapleDataStore {
       organization_id: profile?.organization_id || 'org-maple-01',
       employee_id: empId,
       employee_name: profile?.full_name || log.employee_name || 'Team Member',
-      department_id: pod?.id || 'pod-web-sales',
-      department: pod?.name || 'General',
-      pod_id: profile?.pod_id,
+      department_id: pod?.id || profile?.pod_id || 'pod-marketing',
+      department: pod?.name || 'Marketing',
+      pod_id: pod?.id || profile?.pod_id,
       pod_name: pod?.name,
       date: checkinDate,
       checkin_date: checkinDate,
@@ -1619,7 +1732,12 @@ class MapleDataStore {
       submission_time: subTime,
     });
 
-    supabase.from('performance_work_logs').upsert(newLog).then(() => {});
+    supabase
+      .from('performance_work_logs')
+      .upsert(this.sanitizeWorkLogForDb(newLog))
+      .then(({ error }) => {
+        if (error) console.error('Supabase submitMemberWork upsert error:', error);
+      });
     this.notify();
     return newLog;
   }
@@ -1763,7 +1881,8 @@ class MapleDataStore {
   public savePodLeadOwnWork(log: Partial<PerformanceWorkLog>): PerformanceWorkLog {
     const empId = log.employee_id || 'prof-renuka';
     const profile = this.getProfileById(empId);
-    const pod = profile?.pod_id ? this.getPodById(profile.pod_id) : undefined;
+    const pod = (profile?.pod_id ? this.getPodById(profile.pod_id) : undefined) ||
+                (profile?.id ? this.getPods().find((p) => p.manager_id === profile.id) : undefined);
     const subTime = log.submission_time || log.checkin_time || this.formatCurrentTime();
 
     const start = new Date(log.assigned_date || log.date || new Date().toISOString());
@@ -1795,9 +1914,9 @@ class MapleDataStore {
       organization_id: profile?.organization_id || 'org-maple-01',
       employee_id: empId,
       employee_name: profile?.full_name || 'Pod Lead',
-      department_id: pod?.id || 'pod-web-sales',
+      department_id: pod?.id || profile?.pod_id || 'pod-web-sales',
       department: pod?.name || 'Web & Sales',
-      pod_id: profile?.pod_id,
+      pod_id: pod?.id || profile?.pod_id,
       pod_name: pod?.name,
       date: checkinDate,
       checkin_date: checkinDate,
@@ -1847,7 +1966,12 @@ class MapleDataStore {
       submission_time: subTime,
     });
 
-    supabase.from('performance_work_logs').upsert(newLog).then(() => {});
+    supabase
+      .from('performance_work_logs')
+      .upsert(this.sanitizeWorkLogForDb(newLog))
+      .then(({ error }) => {
+        if (error) console.error('Supabase savePodLeadOwnWork upsert error:', error);
+      });
     this.notify();
     return newLog;
   }

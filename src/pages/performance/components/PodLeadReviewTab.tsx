@@ -64,18 +64,27 @@ export const PodLeadReviewTab: React.FC = () => {
   const [reviewComments, setReviewComments] = useState<string>('');
   const [searchQuery, setSearchQuery] = useState<string>('');
   const [successNotice, setSuccessNotice] = useState<string>('');
+  const [tick, setTick] = useState<number>(0);
 
-  const podId = profile?.pod_id || userPod?.id || 'pod-web-sales';
+  React.useEffect(() => {
+    const unsub = dataStore.subscribe(() => setTick((t) => t + 1));
+    return () => unsub();
+  }, []);
+
+  const pods = dataStore.getPods();
+  const defaultPodId = userPod?.id || profile?.pod_id || 'pod-marketing';
+  const [selectedPodId, setSelectedPodId] = useState<string>(defaultPodId);
+  const podId = selectedPodId || defaultPodId;
 
   // Retrieve submitted pod logs (including both team members and pod lead's own submissions)
   const podMemberLogs = useMemo(() => {
     return dataStore.getPerformanceWorkLogs({ podId });
-  }, [podId, profile?.id, reviewingLog, isSavingReview]);
+  }, [podId, profile?.id, reviewingLog, isSavingReview, tick]);
 
   // Retrieve lead's own logs
   const leadOwnLogs = useMemo(() => {
     return dataStore.getPerformanceWorkLogs({ employeeId: profile?.id });
-  }, [profile?.id, isOwnWorkModalOpen, isSavingReview]);
+  }, [profile?.id, isOwnWorkModalOpen, isSavingReview, tick]);
 
   const activeList = subView === 'review_queue' ? podMemberLogs : leadOwnLogs;
   const filteredList = useMemo(() => {
@@ -207,6 +216,21 @@ export const PodLeadReviewTab: React.FC = () => {
         </div>
 
         <div className="flex items-center gap-3">
+          {/* Pod Selector for Multi-Pod Leads and Admins */}
+          {pods.length > 1 && (
+            <select
+              value={podId}
+              onChange={(e) => setSelectedPodId(e.target.value)}
+              className="bg-slate-900 border border-slate-700/80 rounded-xl px-3 py-1.5 text-xs text-slate-200 font-semibold focus:outline-none focus:ring-1 focus:ring-maple-400 cursor-pointer"
+            >
+              {pods.map((p) => (
+                <option key={p.id} value={p.id} className="bg-slate-900 text-slate-200">
+                  {p.name} Pod
+                </option>
+              ))}
+            </select>
+          )}
+
           {/* Sub-view switcher */}
           <div className="flex bg-slate-900 border border-slate-800 p-1 rounded-xl">
             <button

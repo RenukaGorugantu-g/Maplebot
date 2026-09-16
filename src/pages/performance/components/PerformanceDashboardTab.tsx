@@ -28,25 +28,35 @@ export const PerformanceDashboardTab: React.FC<PerformanceDashboardTabProps> = (
   onNavigateToReport,
   onNavigateToWorkData,
 }) => {
-  const { profile, currentRole } = useAuth();
+  const { profile, currentRole, userPod } = useAuth();
   const isAdmin = currentRole === 'admin';
   const isManager = currentRole === 'manager';
 
-  const pods = dataStore.getPods();
-  const allProfiles = dataStore.getProfiles().filter((p) => p.status === 'active');
-  const availableProfiles = isManager
-    ? allProfiles.filter((p) => p.pod_id === profile?.pod_id || (p.pod_ids && p.pod_ids.includes(profile?.pod_id || '')))
-    : allProfiles;
+  const [tick, setTick] = useState<number>(0);
+  React.useEffect(() => {
+    const unsub = dataStore.subscribe(() => setTick((t) => t + 1));
+    return () => unsub();
+  }, []);
 
-  const [selectedPodId, setSelectedPodId] = useState<string>(isManager ? (profile?.pod_id || '') : '');
+  const pods = dataStore.getPods();
+  const allProfiles = useMemo(() => dataStore.getProfiles().filter((p) => p.status === 'active'), [tick]);
+  const defaultPodId = userPod?.id || profile?.pod_id || '';
+  const availableProfiles = useMemo(() => {
+    if (isManager && defaultPodId) {
+      return allProfiles.filter((p) => p.pod_id === defaultPodId || (p.pod_ids && p.pod_ids.includes(defaultPodId)));
+    }
+    return allProfiles;
+  }, [allProfiles, isManager, defaultPodId]);
+
+  const [selectedPodId, setSelectedPodId] = useState<string>(isManager ? defaultPodId : '');
   const [selectedEmployeeId, setSelectedEmployeeId] = useState<string>('');
   const [dateRangePreset, setDateRangePreset] = useState<string>('month');
 
   // Filter profiles based on selected pod
   const filteredProfiles = useMemo(() => {
     if (!selectedPodId) return availableProfiles;
-    return availableProfiles.filter((p) => p.pod_id === selectedPodId || (p.pod_ids && p.pod_ids.includes(selectedPodId)));
-  }, [availableProfiles, selectedPodId]);
+    return allProfiles.filter((p) => p.pod_id === selectedPodId || (p.pod_ids && p.pod_ids.includes(selectedPodId)));
+  }, [availableProfiles, allProfiles, selectedPodId]);
 
   // Compute date range
   const { startDate, endDate, periodLabel } = useMemo(() => {
@@ -70,7 +80,7 @@ export const PerformanceDashboardTab: React.FC<PerformanceDashboardTabProps> = (
       startDate,
       endDate
     );
-  }, [selectedEmployeeId, selectedPodId, startDate, endDate]);
+  }, [selectedEmployeeId, selectedPodId, startDate, endDate, tick]);
 
   // Deterministic metrics
   const snapshot = useMemo(() => performanceService.computeSnapshotMetrics(logs), [logs]);

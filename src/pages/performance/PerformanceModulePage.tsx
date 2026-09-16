@@ -5,6 +5,7 @@
 
 import React, { useState, useEffect } from 'react';
 import { useAuth } from '../../context/AuthContext';
+import { dataStore } from '../../services/dataStore';
 import { MemberWorkTab } from './components/MemberWorkTab';
 import { PodLeadReviewTab } from './components/PodLeadReviewTab';
 import { ManagerReviewTab } from './components/ManagerReviewTab';
@@ -60,6 +61,10 @@ export const PerformanceModulePage: React.FC<{ initialTab?: string }> = ({
     (initialTab as PerformanceTabId) || defaultTab
   );
   const [focusedEmployeeId, setFocusedEmployeeId] = useState<string | undefined>(undefined);
+
+  useEffect(() => {
+    dataStore.refreshFromSupabase();
+  }, []);
 
   useEffect(() => {
     if (initialTab) {
