@@ -195,7 +195,7 @@ export const MemberWorkTab: React.FC = () => {
   }, [taskRows]);
 
   // Submit all rows for the day
-  const handleSubmitAll = (e: React.FormEvent) => {
+  const handleSubmitAll = async (e: React.FormEvent) => {
     e.preventDefault();
 
     // Validation: ensure every operational required field is filled
@@ -232,7 +232,7 @@ export const MemberWorkTab: React.FC = () => {
     setErrorMsg('');
 
     try {
-      validRows.forEach((r) => {
+      for (const r of validRows) {
         const combinedComments = [
           r.feedbackComments.trim(),
           r.comments.trim(),
@@ -241,9 +241,11 @@ export const MemberWorkTab: React.FC = () => {
           .filter(Boolean)
           .join(' | ');
 
-        dataStore.submitMemberWork({
+        await dataStore.submitMemberWork({
           employee_id: profile?.id || '',
           employee_name: profile?.full_name || 'Team Member',
+          pod_id: userPod?.id || profile?.pod_id,
+          department_id: userPod?.id || profile?.pod_id,
           date: todayStr,
           checkin_date: todayStr,
           work_date: workDate,
@@ -264,7 +266,7 @@ export const MemberWorkTab: React.FC = () => {
           category: r.category || 'Development',
           priority: r.blocker.trim() ? 'high' : 'medium',
         });
-      });
+      }
 
       // Dispatch high-level summary overview to Google Chat (with highlighted red blockers)
       const memberPod = profile?.pod_id ? dataStore.getPodById(profile.pod_id) : userPod;

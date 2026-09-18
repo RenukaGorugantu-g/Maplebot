@@ -1676,11 +1676,18 @@ class MapleDataStore {
   }
 
   // --- POD MEMBER: SUBMIT WORK (9 REQUIRED FIELDS + CHECK-IN TIME) ---
-  public submitMemberWork(log: Partial<PerformanceWorkLog>): PerformanceWorkLog {
+  public async submitMemberWork(log: Partial<PerformanceWorkLog>): Promise<PerformanceWorkLog> {
     const empId = log.employee_id || 'prof-harshika';
-    const profile = this.getProfileById(empId);
-    const pod = (profile?.pod_id ? this.getPodById(profile.pod_id) : undefined) ||
-                (profile?.id ? this.getPods().find((p) => p.manager_id === profile.id) : undefined);
+    let profile = this.getProfileById(empId);
+    if (!profile && log.employee_name) {
+      const lowerName = log.employee_name.toLowerCase().trim();
+      profile = this.profiles.find((p) => p.full_name.toLowerCase().trim() === lowerName);
+    }
+    const resolvedPodId = log.pod_id || log.department_id || profile?.pod_id;
+    const pod = (resolvedPodId ? this.getPodById(resolvedPodId) : undefined) ||
+                (profile?.pod_id ? this.getPodById(profile.pod_id) : undefined) ||
+                (profile?.id ? this.getPods().find((p) => p.manager_id === profile.id) : undefined) ||
+                this.getPodById('pod-web-sales');
     const subTime = log.submission_time || log.checkin_time || this.formatCurrentTime();
     const localToday = this.getLocalDateString();
     const checkinDate = log.checkin_date || log.date || localToday;
@@ -1691,10 +1698,10 @@ class MapleDataStore {
       organization_id: profile?.organization_id || 'org-maple-01',
       employee_id: empId,
       employee_name: profile?.full_name || log.employee_name || 'Team Member',
-      department_id: pod?.id || profile?.pod_id || 'pod-marketing',
-      department: pod?.name || 'Marketing',
-      pod_id: pod?.id || profile?.pod_id,
-      pod_name: pod?.name,
+      department_id: pod?.id || profile?.pod_id || 'pod-web-sales',
+      department: pod?.name || 'Web & Sales',
+      pod_id: pod?.id || profile?.pod_id || 'pod-web-sales',
+      pod_name: pod?.name || 'Web & Sales',
       date: checkinDate,
       checkin_date: checkinDate,
       work_date: workDate,
@@ -1732,12 +1739,16 @@ class MapleDataStore {
       submission_time: subTime,
     });
 
-    supabase
-      .from('performance_work_logs')
-      .upsert(this.sanitizeWorkLogForDb(newLog))
-      .then(({ error }) => {
-        if (error) console.error('Supabase submitMemberWork upsert error:', error);
-      });
+    try {
+      const { error } = await supabase
+        .from('performance_work_logs')
+        .upsert(this.sanitizeWorkLogForDb(newLog));
+      if (error) {
+        console.error('Supabase submitMemberWork upsert error:', error);
+      }
+    } catch (dbErr) {
+      console.error('Supabase network error during submitMemberWork:', dbErr);
+    }
     this.notify();
     return newLog;
   }
