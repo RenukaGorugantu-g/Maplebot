@@ -30,19 +30,7 @@ import {
   ShieldCheck,
   User,
   CheckSquare,
-  Sun,
-  Moon,
-  RefreshCw,
-  Calendar,
-  Users,
-  LogIn,
-  LogOut,
-  ChevronDown,
-  ChevronUp,
-  Briefcase,
-  AlertCircle,
 } from 'lucide-react';
-import { getTodayIST, formatDateFriendlyIST, getPreviousWorkingDayIST } from '../../../utils/timezone';
 
 interface ManagerReviewTabProps {
   onGenerateReportForEmployee?: (employeeId: string) => void;
@@ -95,31 +83,6 @@ export const ManagerReviewTab: React.FC<ManagerReviewTabProps> = ({
   const [pageSize, setPageSize] = useState<number>(50);
   const [sortKey, setSortKey] = useState<keyof PerformanceWorkLog>('date');
   const [sortOrder, setSortOrder] = useState<'asc' | 'desc'>('desc');
-
-  // Daily Attendance Tracker State (defaults to today IST)
-  const [attendanceDate, setAttendanceDate] = useState<string>(getTodayIST());
-  const [isAttendanceRosterOpen, setIsAttendanceRosterOpen] = useState<boolean>(false);
-
-  // Real-time Daily Attendance Summary computed for selected date & pod
-  const attendanceItems = useMemo(() => {
-    return dataStore.getDailyAttendanceSummary(attendanceDate, selectedPodId || undefined);
-  }, [attendanceDate, selectedPodId, tick]);
-
-  const attendanceSummary = useMemo(() => {
-    const teamSize = attendanceItems.length;
-    const checkedInCount = attendanceItems.filter((i) => i.status !== 'not_checked_in' || i.checkin_time).length;
-    const checkedOutCount = attendanceItems.filter((i) => i.status === 'checked_out' || i.checkout_time).length;
-    const inProgressCount = attendanceItems.filter((i) => i.status === 'in_progress').length;
-    const totalHours = Math.round(attendanceItems.reduce((acc, i) => acc + (Number(i.total_hours) || 0), 0) * 10) / 10;
-    return {
-      teamSize,
-      checkedInCount,
-      checkedOutCount,
-      inProgressCount,
-      totalHours,
-      items: attendanceItems,
-    };
-  }, [attendanceItems]);
 
   // Filter profiles based on selected pod
   const filteredProfiles = useMemo(() => {
@@ -429,236 +392,6 @@ export const ManagerReviewTab: React.FC<ManagerReviewTabProps> = ({
         </div>
       )}
 
-      {/* 1.5 DAILY TEAM ATTENDANCE & CHECK-IN TRACKER */}
-      <div className="glass-card p-5 border border-slate-800 bg-[#081426]/95 rounded-2xl shadow-xl space-y-4">
-        <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 border-b border-slate-800/80 pb-4">
-          <div className="space-y-1">
-            <div className="flex items-center gap-2">
-              <span className="p-1 rounded-md bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">
-                <LogIn className="w-3.5 h-3.5" />
-              </span>
-              <span className="text-[11px] font-extrabold uppercase tracking-wider text-emerald-400">
-                Daily Work Attendance & Check-in Tracker
-              </span>
-            </div>
-            <h3 className="text-base font-bold text-white flex items-center gap-2">
-              <span>Attendance Status:</span>
-              <span className="text-maple-400">{formatDateFriendlyIST(attendanceDate)}</span>
-              {attendanceDate === getTodayIST() && (
-                <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-emerald-500/20 text-emerald-300 border border-emerald-500/30 uppercase tracking-wide">
-                  Live Today
-                </span>
-              )}
-            </h3>
-            <p className="text-xs text-slate-400">
-              Tracking morning check-in (login), evening check-out (logout), working status, and carry-forward WPI items.
-            </p>
-          </div>
-
-          <div className="flex flex-wrap items-center gap-2">
-            <div className="flex items-center gap-1.5 p-1 rounded-xl bg-slate-900 border border-slate-800 text-xs">
-              <button
-                type="button"
-                onClick={() => setAttendanceDate(getTodayIST())}
-                className={`px-3 py-1.5 rounded-lg font-semibold transition-all ${
-                  attendanceDate === getTodayIST()
-                    ? 'bg-maple-500 text-white shadow-md'
-                    : 'text-slate-400 hover:text-white'
-                }`}
-              >
-                Today
-              </button>
-              <button
-                type="button"
-                onClick={() => setAttendanceDate(getPreviousWorkingDayIST(getTodayIST()))}
-                className={`px-3 py-1.5 rounded-lg font-semibold transition-all ${
-                  attendanceDate === getPreviousWorkingDayIST(getTodayIST())
-                    ? 'bg-maple-500 text-white shadow-md'
-                    : 'text-slate-400 hover:text-white'
-                }`}
-              >
-                Previous Day
-              </button>
-            </div>
-
-            <div className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-slate-900 border border-slate-800 text-xs text-slate-300">
-              <Calendar className="w-3.5 h-3.5 text-slate-400" />
-              <input
-                type="date"
-                value={attendanceDate}
-                onChange={(e) => setAttendanceDate(e.target.value)}
-                className="bg-transparent text-white border-0 p-0 focus:outline-none cursor-pointer text-xs"
-              />
-            </div>
-
-            <button
-              type="button"
-              onClick={() => setIsAttendanceRosterOpen(!isAttendanceRosterOpen)}
-              className="flex items-center gap-1.5 px-3 py-2 rounded-xl bg-slate-800/80 hover:bg-slate-700/80 border border-slate-700 text-xs font-semibold text-slate-200 transition-all"
-            >
-              <Users className="w-3.5 h-3.5 text-maple-400" />
-              <span>Roster ({attendanceSummary.items.length})</span>
-              {isAttendanceRosterOpen ? <ChevronUp className="w-3.5 h-3.5" /> : <ChevronDown className="w-3.5 h-3.5" />}
-            </button>
-          </div>
-        </div>
-
-        {/* 5 KPI Metric Cards */}
-        <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3">
-          <div className="p-3.5 rounded-xl bg-slate-900/80 border border-slate-800 flex items-center justify-between">
-            <div>
-              <span className="text-[10px] font-bold uppercase tracking-wider text-slate-400 block">Team Members</span>
-              <span className="text-xl font-extrabold text-white">{attendanceSummary.teamSize}</span>
-              <span className="text-[10px] text-slate-500 block">Active in view</span>
-            </div>
-            <div className="p-2 rounded-xl bg-slate-800/60 text-slate-400">
-              <Users className="w-5 h-5" />
-            </div>
-          </div>
-
-          <div className="p-3.5 rounded-xl bg-slate-900/80 border border-slate-800 flex items-center justify-between">
-            <div>
-              <span className="text-[10px] font-bold uppercase tracking-wider text-emerald-400 block">Checked In (Logged In)</span>
-              <span className="text-xl font-extrabold text-emerald-300">
-                {attendanceSummary.checkedInCount}{' '}
-                <span className="text-xs font-normal text-slate-400">/ {attendanceSummary.teamSize}</span>
-              </span>
-              <span className="text-[10px] text-emerald-500 font-semibold block">
-                {Math.round((attendanceSummary.checkedInCount / (attendanceSummary.teamSize || 1)) * 100)}% morning rate
-              </span>
-            </div>
-            <div className="p-2 rounded-xl bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">
-              <LogIn className="w-5 h-5" />
-            </div>
-          </div>
-
-          <div className="p-3.5 rounded-xl bg-slate-900/80 border border-slate-800 flex items-center justify-between">
-            <div>
-              <span className="text-[10px] font-bold uppercase tracking-wider text-indigo-400 block">Checked Out (Done)</span>
-              <span className="text-xl font-extrabold text-indigo-300">
-                {attendanceSummary.checkedOutCount}
-              </span>
-              <span className="text-[10px] text-indigo-400/80 block">Day completed</span>
-            </div>
-            <div className="p-2 rounded-xl bg-indigo-500/10 text-indigo-400 border border-indigo-500/20">
-              <LogOut className="w-5 h-5" />
-            </div>
-          </div>
-
-          <div className="p-3.5 rounded-xl bg-slate-900/80 border border-slate-800 flex items-center justify-between">
-            <div>
-              <span className="text-[10px] font-bold uppercase tracking-wider text-amber-400 block">In Progress (Working)</span>
-              <span className="text-xl font-extrabold text-amber-300">
-                {attendanceSummary.inProgressCount}
-              </span>
-              <span className="text-[10px] text-amber-500/80 block">Active sessions</span>
-            </div>
-            <div className="p-2 rounded-xl bg-amber-500/10 text-amber-400 border border-amber-500/20">
-              <Clock className="w-5 h-5" />
-            </div>
-          </div>
-
-          <div className="p-3.5 rounded-xl bg-slate-900/80 border border-slate-800 flex items-center justify-between col-span-2 sm:col-span-1">
-            <div>
-              <span className="text-[10px] font-bold uppercase tracking-wider text-sky-400 block">Hours Logged</span>
-              <span className="text-xl font-extrabold text-sky-300 font-mono">
-                {attendanceSummary.totalHours.toFixed(1)}h
-              </span>
-              <span className="text-[10px] text-sky-500/80 block">Total for {attendanceDate}</span>
-            </div>
-            <div className="p-2 rounded-xl bg-sky-500/10 text-sky-400 border border-sky-500/20">
-              <Briefcase className="w-5 h-5" />
-            </div>
-          </div>
-        </div>
-
-        {/* Expandable Member Attendance Roster */}
-        {isAttendanceRosterOpen && (
-          <div className="pt-2 border-t border-slate-800/80 space-y-2">
-            <div className="flex items-center justify-between text-xs text-slate-400 px-1">
-              <span className="font-semibold text-slate-300 uppercase tracking-wider text-[10px]">
-                Member Attendance Breakdown for {formatDateFriendlyIST(attendanceDate)}
-              </span>
-              <span className="text-[10px] text-slate-500">
-                Click any teammate to filter the performance ledger below
-              </span>
-            </div>
-
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-2.5 max-h-72 overflow-y-auto p-1">
-              {attendanceSummary.items.map((item) => {
-                const isSelected = selectedEmployeeId === item.employee_id;
-                return (
-                  <div
-                    key={item.employee_id}
-                    onClick={() => {
-                      if (isSelected) {
-                        setSelectedEmployeeId('');
-                      } else {
-                        setSelectedEmployeeId(item.employee_id);
-                        setStartDate(attendanceDate);
-                        setEndDate(attendanceDate);
-                        setCurrentPage(1);
-                      }
-                    }}
-                    className={`p-3 rounded-xl border transition-all cursor-pointer text-xs ${
-                      isSelected
-                        ? 'bg-maple-500/15 border-maple-500/40 shadow-lg shadow-maple-500/10'
-                        : 'bg-slate-900/60 hover:bg-slate-900 border-slate-800 hover:border-slate-700'
-                    }`}
-                  >
-                    <div className="flex items-start justify-between gap-2">
-                      <div className="min-w-0">
-                        <span className="font-bold text-white block truncate text-xs">{item.employee_name}</span>
-                        <span className="text-[10px] text-slate-400 block truncate">{item.pod_name || 'Web & Sales'}</span>
-                      </div>
-                      {item.status === 'checked_out' ? (
-                        <span className="text-[9px] font-extrabold px-1.5 py-0.5 rounded bg-indigo-500/20 text-indigo-300 border border-indigo-500/30 whitespace-nowrap">
-                          Checked Out
-                        </span>
-                      ) : item.status === 'in_progress' ? (
-                        <span className="text-[9px] font-extrabold px-1.5 py-0.5 rounded bg-emerald-500/20 text-emerald-300 border border-emerald-500/30 whitespace-nowrap animate-pulse">
-                          Checked In
-                        </span>
-                      ) : (
-                        <span className="text-[9px] font-bold px-1.5 py-0.5 rounded bg-slate-800 text-slate-400 border border-slate-700 whitespace-nowrap">
-                          Not Started
-                        </span>
-                      )}
-                    </div>
-
-                    <div className="mt-2.5 pt-2 border-t border-slate-800/60 grid grid-cols-2 gap-2 text-[11px] font-mono">
-                      <div>
-                        <span className="text-[9px] text-slate-500 block uppercase font-sans">Check-in</span>
-                        <span className={`font-semibold ${item.checkin_time ? 'text-emerald-400' : 'text-slate-500'}`}>
-                          {item.checkin_time || '—'}
-                        </span>
-                      </div>
-                      <div>
-                        <span className="text-[9px] text-slate-500 block uppercase font-sans">Check-out</span>
-                        <span className={`font-semibold ${item.checkout_time ? 'text-indigo-400' : item.status === 'in_progress' ? 'text-amber-400 italic font-sans text-[10px]' : 'text-slate-500'}`}>
-                          {item.checkout_time || (item.status === 'in_progress' ? 'In Progress' : '—')}
-                        </span>
-                      </div>
-                    </div>
-
-                    <div className="mt-2 flex items-center justify-between text-[10px] text-slate-400 pt-1.5 border-t border-slate-800/40">
-                      <span>{item.action_items?.length || (item.completed_count + item.wpi_count) || 0} task(s) • {item.total_hours}h</span>
-                      {item.wpi_count > 0 ? (
-                        <span className="text-amber-400 font-bold font-mono bg-amber-500/10 px-1.5 py-0.5 rounded border border-amber-500/20">
-                          {item.wpi_count} WPI
-                        </span>
-                      ) : (
-                        <span className="text-emerald-400/80">0 WPI</span>
-                      )}
-                    </div>
-                  </div>
-                );
-              })}
-            </div>
-          </div>
-        )}
-      </div>
-
       {/* 2. ADVANCED FILTER BAR */}
       <div className="glass-card p-5 border border-slate-800 space-y-4 bg-[#081426]/90">
         <div className="flex flex-col md:flex-row md:items-center justify-between gap-3">
@@ -858,7 +591,7 @@ export const ManagerReviewTab: React.FC<ManagerReviewTabProps> = ({
                 {/* Column Headers */}
                 <tr className="bg-[#0B1728] border-b border-slate-800 text-xs font-semibold uppercase tracking-wider text-slate-300">
                   <th onClick={() => handleSort('date')} className="py-3.5 px-3.5 cursor-pointer hover:text-white whitespace-nowrap">
-                    Date & Times
+                    Date & Check-in Time
                   </th>
                   <th onClick={() => handleSort('employee_name')} className="py-3.5 px-3.5 cursor-pointer hover:text-white whitespace-nowrap">
                     Teammate
@@ -866,10 +599,10 @@ export const ManagerReviewTab: React.FC<ManagerReviewTabProps> = ({
                   <th onClick={() => handleSort('project_name')} className="py-3.5 px-3.5 cursor-pointer hover:text-white whitespace-nowrap">
                     Project
                   </th>
-                  <th className="py-3.5 px-3.5 min-w-[360px]">Task Deliverable & Status</th>
+                  <th className="py-3.5 px-3.5 min-w-[360px]">Task Deliverable</th>
                   <th className="py-3.5 px-3.5 whitespace-nowrap">Assigned Date</th>
                   <th className="py-3.5 px-3.5 whitespace-nowrap text-emerald-300">Completed Date</th>
-                  <th className="py-3.5 px-3.5 min-w-[220px] text-slate-300">Feedback / WPI Reason</th>
+                  <th className="py-3.5 px-3.5 min-w-[220px] text-slate-300">Member Feedback</th>
                   <th className="py-3.5 px-3.5 text-left whitespace-nowrap">Hours</th>
                   <th className="py-3.5 px-3.5 text-left whitespace-nowrap border-r border-slate-800">Deliverables</th>
 
@@ -902,25 +635,12 @@ export const ManagerReviewTab: React.FC<ManagerReviewTabProps> = ({
                     {/* 1. Work Info (Pod Member) */}
                     <td className="py-3.5 px-3.5 whitespace-nowrap align-top">
                       <span className="font-mono text-xs text-white block font-bold">{row.checkin_date || row.date}</span>
-                      <div className="flex flex-col gap-1 mt-1">
-                        <span className="inline-flex items-center gap-1 text-[11px] text-emerald-400 font-mono font-semibold bg-emerald-500/10 px-2 py-0.5 rounded border border-emerald-500/20" title="Morning Check-in / Login Time">
-                          <LogIn className="w-3 h-3 text-emerald-400" />
-                          In: {row.checkin_time || row.submission_time || '10:00 AM'}
-                        </span>
-                        {row.checkout_time ? (
-                          <span className="inline-flex items-center gap-1 text-[11px] text-indigo-400 font-mono font-semibold bg-indigo-500/10 px-2 py-0.5 rounded border border-indigo-500/20" title="Evening Check-out / Logout Time">
-                            <LogOut className="w-3 h-3 text-indigo-400" />
-                            Out: {row.checkout_time}
-                          </span>
-                        ) : (
-                          <span className="inline-flex items-center gap-1 text-[10px] text-amber-400/90 font-mono bg-amber-500/10 px-1.5 py-0.5 rounded border border-amber-500/20" title="Active Session">
-                            <Clock className="w-2.5 h-2.5 text-amber-400" />
-                            In Progress
-                          </span>
-                        )}
-                      </div>
+                      <span className="inline-flex items-center gap-1 text-xs text-emerald-400 font-mono font-semibold bg-emerald-500/10 px-2 py-0.5 rounded border border-emerald-500/20 mt-1">
+                        <Clock className="w-3.5 h-3.5 text-emerald-400" />
+                        {row.submission_time || row.checkin_time || '10:00 AM'}
+                      </span>
                       {row.work_date && row.work_date !== (row.checkin_date || row.date) && (
-                        <span className="text-[10px] text-slate-400 block font-mono mt-1" title="Work Performance Date">
+                        <span className="text-[10px] text-slate-400 block font-mono mt-0.5" title="Work Performance Date">
                           Work: {row.work_date}
                         </span>
                       )}
@@ -932,46 +652,7 @@ export const ManagerReviewTab: React.FC<ManagerReviewTabProps> = ({
                       {row.project_name || row.project}
                     </td>
                     <td className="py-3.5 px-3.5 align-top min-w-[360px]">
-                      <div className="space-y-2">
-                        <div className="flex flex-wrap items-center gap-1.5">
-                          {row.is_carried_forward && (
-                            <span className="inline-flex items-center gap-1 text-[10px] font-bold px-2 py-0.5 rounded bg-blue-500/15 text-blue-300 border border-blue-500/30">
-                              <RefreshCw className="w-2.5 h-2.5" />
-                              Carried Forward {row.carried_from_date ? `from ${row.carried_from_date}` : ''}
-                            </span>
-                          )}
-                          {row.status === 'wpi' ? (
-                            <span className="inline-flex items-center gap-1 text-[10px] font-bold px-2 py-0.5 rounded bg-amber-500/20 text-amber-300 border border-amber-500/30">
-                              <Clock className="w-2.5 h-2.5 text-amber-400" />
-                              Work In Progress (WPI)
-                            </span>
-                          ) : (
-                            <span className="inline-flex items-center gap-1 text-[10px] font-semibold px-1.5 py-0.5 rounded bg-emerald-500/15 text-emerald-300 border border-emerald-500/25">
-                              <CheckCircle2 className="w-2.5 h-2.5" />
-                              Completed
-                            </span>
-                          )}
-                          {row.priority && (
-                            <span className="text-[10px] font-mono px-1.5 py-0.5 rounded bg-slate-800 text-slate-300 uppercase">
-                              {row.priority}
-                            </span>
-                          )}
-                        </div>
-
-                        <span className="font-medium text-slate-100 block text-sm leading-relaxed break-words">
-                          {row.task || row.task_title}
-                        </span>
-
-                        {(row.wpi_reason || row.carried_from_reason) && (
-                          <div className="p-2.5 rounded-lg bg-amber-950/40 border border-amber-500/30 text-xs text-amber-200">
-                            <span className="font-bold uppercase tracking-wider text-[10px] text-amber-400 block mb-0.5 flex items-center gap-1">
-                              <Clock className="w-3 h-3 text-amber-400" />
-                              WPI Reason & Continuation Plan:
-                            </span>
-                            <p className="leading-relaxed text-amber-100/90">{row.wpi_reason || row.carried_from_reason}</p>
-                          </div>
-                        )}
-                      </div>
+                      <span className="font-medium text-slate-100 block text-sm leading-relaxed break-words">{row.task || row.task_title}</span>
                     </td>
                     <td className="py-3.5 px-3.5 font-mono text-xs text-slate-300 whitespace-nowrap align-top">
                       {row.assigned_date}
@@ -983,21 +664,8 @@ export const ManagerReviewTab: React.FC<ManagerReviewTabProps> = ({
                         <span className="text-amber-400 font-semibold italic">Pending</span>
                       )}
                     </td>
-                    <td className="py-3.5 px-3.5 text-slate-300 text-xs align-top max-w-[220px]">
-                      <div className="space-y-1">
-                        {row.feedback_comments ? (
-                          <div className="text-slate-200 leading-relaxed">{row.feedback_comments}</div>
-                        ) : row.comments ? (
-                          <div className="text-slate-300 leading-relaxed">{row.comments}</div>
-                        ) : (
-                          <span className="text-slate-600 italic">—</span>
-                        )}
-                        {row.wpi_reason && !row.feedback_comments?.includes(row.wpi_reason) && (
-                          <div className="text-[10px] text-amber-400/90 italic mt-1 font-mono">
-                            WPI: {row.wpi_reason}
-                          </div>
-                        )}
-                      </div>
+                    <td className="py-3.5 px-3.5 text-slate-300 text-xs align-top max-w-[200px]">
+                      {row.feedback_comments || row.comments || <span className="text-slate-600 italic">—</span>}
                     </td>
                     <td className="py-3.5 px-3.5 text-right font-mono text-sky-400 font-bold whitespace-nowrap align-top text-sm">
                       {row.time_invested || row.duration_hours}h

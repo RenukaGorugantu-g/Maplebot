@@ -34,26 +34,7 @@ import {
   Edit2,
   Save,
   ClipboardList,
-  Sun,
-  Moon,
-  Lock,
-  Unlock,
-  ArrowRight,
-  RefreshCw,
-  AlertCircle,
-  FileCheck,
 } from 'lucide-react';
-import {
-  getTodayIST,
-  getTimeIST,
-  getPreviousWorkingDayIST,
-  formatDateFriendlyIST,
-} from '../../../utils/timezone';
-import {
-  DailyWorkSession,
-  DailyActionItem,
-  ActionItemStatus,
-} from '../../../types/attendance';
 
 interface TaskDraftRow {
   id: string;
@@ -68,56 +49,76 @@ interface TaskDraftRow {
   feedbackComments: string; // Individual task Feedback / Comments
   comments: string;
   blocker: string;
-  status: ActionItemStatus; // 'completed' | 'wpi'
-  isCarriedForward?: boolean;
-  carriedFromDate?: string;
-  carriedFromReason?: string;
-  wpiReason?: string;
 }
 
 export const MemberWorkTab: React.FC = () => {
   const { profile, userPod, isPodLead, isManager, isAdmin, currentRole } = useAuth();
   const isPrivileged = Boolean(isPodLead || isManager || isAdmin);
 
-  const todayStr = getTodayIST();
-  const prevWorkingDay = getPreviousWorkingDayIST();
+  const getLocalDateString = (d: Date = new Date()) => {
+    const year = d.getFullYear();
+    const month = String(d.getMonth() + 1).padStart(2, '0');
+    const day = String(d.getDate()).padStart(2, '0');
+    return `${year}-${month}-${day}`;
+  };
 
-  // Reporting Work Date & Today's Check-in Date / Time (IST)
-  const [workDate, setWorkDate] = useState<string>(todayStr);
+  const todayStr = getLocalDateString();
+
+  // Helper to calculate the previous working day (skips weekends: Mon -> Fri, Sun -> Fri, Sat -> Fri)
+  const getPreviousWorkingDay = () => {
+    const d = new Date();
+    const day = d.getDay();
+    let daysBack = 1;
+    if (day === 1) daysBack = 3; // Monday -> previous Friday
+    else if (day === 0) daysBack = 2; // Sunday -> previous Friday
+    else if (day === 6) daysBack = 1; // Saturday -> previous Friday
+    d.setDate(d.getDate() - daysBack);
+    return getLocalDateString(d);
+  };
+
+  const prevWorkingDay = getPreviousWorkingDay();
+
+  const getFormattedTime = () => {
+    const d = new Date();
+    let hours = d.getHours();
+    const minutes = d.getMinutes().toString().padStart(2, '0');
+    const ampm = hours >= 12 ? 'PM' : 'AM';
+    hours = hours % 12;
+    hours = hours ? hours : 12;
+    return `${hours.toString().padStart(2, '0')}:${minutes} ${ampm}`;
+  };
+
+  // Reporting Work Date & Today's Check-in Date / Time
+  const [workDate, setWorkDate] = useState<string>(prevWorkingDay);
   const [checkinDate] = useState<string>(todayStr);
-  const [liveIstTime, setLiveIstTime] = useState<string>(getTimeIST());
+  const [checkinTime, setCheckinTime] = useState<string>(getFormattedTime());
   const [selectedEmployeeId, setSelectedEmployeeId] = useState<string>('');
-  const [workflowMode, setWorkflowMode] = useState<'morning_action_items' | 'evening_checkout'>('morning_action_items');
-  const [carriedNotice, setCarriedNotice] = useState<string>('');
   const [isPasteModalOpen, setIsPasteModalOpen] = useState<boolean>(false);
   const [pastedChatText, setPastedChatText] = useState<string>('');
 
-  // Keep live IST time updated every 15 seconds
+  // Keep live time updated
   React.useEffect(() => {
     const timer = setInterval(() => {
-      setLiveIstTime(getTimeIST());
+      setCheckinTime(getFormattedTime());
     }, 15000);
     return () => clearInterval(timer);
   }, []);
 
-  // Multi-task draft rows state
+  // Multi-task draft rows state (Starts with 1 mandatory task row with initial hours at 0)
   const [taskRows, setTaskRows] = useState<TaskDraftRow[]>([
     {
       id: 'row-1',
       category: 'Development',
       projectName: '',
       task: '',
-      assignedDate: todayStr,
-      completedDate: todayStr,
+      assignedDate: prevWorkingDay,
+      completedDate: prevWorkingDay,
       timeInvested: 0,
       unitCountCompleted: 1,
-      reviewAssignedDate: todayStr,
+      reviewAssignedDate: prevWorkingDay,
       feedbackComments: '',
       comments: '',
       blocker: '',
-      status: 'wpi',
-      isCarriedForward: false,
-      wpiReason: '',
     },
   ]);
 
@@ -149,107 +150,7 @@ export const MemberWorkTab: React.FC = () => {
   const [isSavingReview, setIsSavingReview] = useState<boolean>(false);
   const [reviewModalError, setReviewModalError] = useState<string>('');
 
-  const targetEmployeeId = (isPrivileged && selectedEmployeeId) ? selectedEmployeeId : (profile?.id || '');
-  const dailySession = useMemo(() => {
-    if (!targetEmployeeId) return undefined;
-    return dataStore.getDailySession(targetEmployeeId, workDate);
-  }, [targetEmployeeId, workDate, tick]);
-
-  const isCheckedIn = Boolean(dailySession?.checkin_time || dailySession?.status === 'checked_in' || dailySession?.status === 'checked_out');
-  const isCheckedOut = Boolean(dailySession?.checkout_time || dailySession?.status === 'checked_out');
-
-  // Automatic load & WPI Carry-Forward on date or employee change
-  React.useEffect(() => {
-    if (!targetEmployeeId) return;
-
-    // 1. Check existing items for this employee & workDate
-    const existingItems = dataStore.getDailyActionItems(targetEmployeeId, workDate);
-    if (existingItems.length > 0) {
-      setTaskRows(
-        existingItems.map((item) => ({
-          id: item.id,
-          category: 'Development',
-          projectName: item.project_name,
-          task: item.task_title,
-          assignedDate: workDate,
-          completedDate: workDate,
-          timeInvested: item.time_invested || 0,
-          unitCountCompleted: item.unit_count || 1,
-          reviewAssignedDate: workDate,
-          feedbackComments: item.wpi_reason || item.completion_comment || '',
-          comments: item.completion_comment || '',
-          blocker: '',
-          status: item.status,
-          isCarriedForward: item.is_carried_forward,
-          carriedFromDate: item.carried_from_date,
-          carriedFromReason: item.carried_from_reason,
-          wpiReason: item.wpi_reason || '',
-        }))
-      );
-      setCarriedNotice('');
-      if (dailySession?.checkout_time || dailySession?.status === 'checked_out') {
-        setWorkflowMode('evening_checkout');
-      } else if (dailySession?.checkin_time) {
-        setWorkflowMode('evening_checkout');
-      }
-      return;
-    }
-
-    // 2. If NO items exist yet, check for WPI carry-forward from previous day
-    const wpiCarried = dataStore.getPreviousDayWpiItems(targetEmployeeId, workDate);
-    if (wpiCarried.length > 0) {
-      const prevDate = getPreviousWorkingDayIST(workDate);
-      setTaskRows(
-        wpiCarried.map((item) => ({
-          id: item.id,
-          category: 'Development',
-          projectName: item.project_name,
-          task: item.task_title,
-          assignedDate: workDate,
-          completedDate: workDate,
-          timeInvested: 0,
-          unitCountCompleted: item.unit_count || 1,
-          reviewAssignedDate: workDate,
-          feedbackComments: '',
-          comments: '',
-          blocker: '',
-          status: 'wpi',
-          isCarriedForward: true,
-          carriedFromDate: item.carried_from_date || prevDate,
-          carriedFromReason: item.carried_from_reason,
-          wpiReason: '',
-        }))
-      );
-      setCarriedNotice(
-        `🔄 Pre-populated ${wpiCarried.length} Work in Progress (WPI) task(s) carried forward from previous working day (${formatDateFriendlyIST(prevDate)}). Review them and add today's action items below!`
-      );
-      setWorkflowMode(isCheckedIn ? 'evening_checkout' : 'morning_action_items');
-    } else {
-      setTaskRows([
-        {
-          id: `row-${Date.now()}-1`,
-          category: 'Development',
-          projectName: '',
-          task: '',
-          assignedDate: workDate,
-          completedDate: workDate,
-          timeInvested: 0,
-          unitCountCompleted: 1,
-          reviewAssignedDate: workDate,
-          feedbackComments: '',
-          comments: '',
-          blocker: '',
-          status: 'completed',
-          isCarriedForward: false,
-          wpiReason: '',
-        },
-      ]);
-      setCarriedNotice('');
-      setWorkflowMode(isCheckedIn ? 'evening_checkout' : 'morning_action_items');
-    }
-  }, [targetEmployeeId, workDate, tick]);
-
-  // Add new task row
+  // Add new task row (Allows adding 2nd, 3rd, 4th, or more tasks with initial hours at 0)
   const handleAddRow = () => {
     const newId = `row-${Date.now()}`;
     setTaskRows((prev) => [
@@ -267,9 +168,6 @@ export const MemberWorkTab: React.FC = () => {
         feedbackComments: '',
         comments: '',
         blocker: '',
-        status: 'completed',
-        isCarriedForward: false,
-        wpiReason: '',
       },
     ]);
   };
@@ -300,80 +198,11 @@ export const MemberWorkTab: React.FC = () => {
     return taskRows.reduce((acc, r) => acc + (Number(r.unitCountCompleted) || 0), 0);
   }, [taskRows]);
 
-  // 1. SUBMIT MORNING ACTION ITEMS & CHECK IN (Locks Login Time)
-  const handleMorningCheckin = async (e: React.FormEvent) => {
+  // Submit all rows for the day
+  const handleSubmitAll = async (e: React.FormEvent) => {
     e.preventDefault();
-    setErrorMsg('');
 
-    for (let i = 0; i < taskRows.length; i++) {
-      const r = taskRows[i];
-      if (!r.projectName.trim()) {
-        setErrorMsg(`Action Item #${i + 1}: Project Name is required.`);
-        return;
-      }
-      if (!r.task.trim()) {
-        setErrorMsg(`Action Item #${i + 1}: Task deliverable description is required.`);
-        return;
-      }
-    }
-
-    setIsSubmitting(true);
-    const targetProfile = (isPrivileged && selectedEmployeeId)
-      ? dataStore.getProfileById(selectedEmployeeId) || profile
-      : profile;
-    const targetPod = targetProfile?.pod_id ? dataStore.getPodById(targetProfile.pod_id) : userPod;
-    const memberName = targetProfile?.full_name || profile?.full_name || 'Team Member';
-    const memberPodName = targetPod?.name || userPod?.name || 'Web & Sales';
-
-    try {
-      const result = await dataStore.submitMorningActionItems({
-        employee_id: targetProfile?.id || profile?.id || '',
-        employee_name: memberName,
-        pod_id: targetPod?.id || targetProfile?.pod_id,
-        pod_name: memberPodName,
-        work_date: workDate,
-        checkin_time: dailySession?.checkin_time || liveIstTime,
-        action_items: taskRows.map((r) => ({
-          projectName: r.projectName.trim(),
-          task: r.task.trim(),
-          category: r.category || 'Development',
-          isCarriedForward: r.isCarriedForward,
-          carriedFromDate: r.carriedFromDate,
-          carriedFromReason: r.carriedFromReason,
-          estimatedUnits: r.unitCountCompleted || 1,
-        })),
-      });
-
-      // Google Chat notification ONLY sent after database write succeeds
-      googleChatService.sendMorningActionItemsCard({
-        memberName,
-        podName: memberPodName,
-        workDate,
-        checkinTime: result.session.checkin_time || liveIstTime,
-        items: taskRows.map((r) => ({
-          projectName: r.projectName.trim(),
-          task: r.task.trim(),
-          isCarriedForward: r.isCarriedForward,
-          carriedFromDate: r.carriedFromDate,
-          carriedReason: r.carriedFromReason,
-        })),
-      }).catch((err) => console.warn('GChat morning checkin notice:', err));
-
-      setSuccessNotice(`🌅 Morning check-in confirmed at ${result.session.checkin_time} IST! Action items saved and Google Chat notified. Time to execute!`);
-      setTimeout(() => setSuccessNotice(''), 7000);
-      setWorkflowMode('evening_checkout');
-    } catch (err: any) {
-      setErrorMsg(err.message || 'Failed to submit morning check-in. Please try again.');
-    } finally {
-      setIsSubmitting(false);
-    }
-  };
-
-  // 2. SUBMIT END-OF-DAY DELIVERABLES & CHECK OUT (Locks Logout Time)
-  const handleEveningCheckout = async (e: React.FormEvent) => {
-    e.preventDefault();
-    setErrorMsg('');
-
+    // Validation: ensure every operational required field is filled
     for (let i = 0; i < taskRows.length; i++) {
       const r = taskRows[i];
       if (!r.projectName.trim()) {
@@ -384,73 +213,113 @@ export const MemberWorkTab: React.FC = () => {
         setErrorMsg(`Task #${i + 1}: Task Deliverable description is required.`);
         return;
       }
+      if (!r.assignedDate) {
+        setErrorMsg(`Task #${i + 1}: Assigned Date is required.`);
+        return;
+      }
       if (!r.timeInvested || Number(r.timeInvested) <= 0) {
         setErrorMsg(`Task #${i + 1}: Hours Invested must be greater than 0.`);
         return;
       }
-      if (r.status === 'wpi') {
-        const reason = (r.wpiReason || r.feedbackComments || r.comments || '').trim();
-        if (!reason || reason.length < 5) {
-          setErrorMsg(`Task #${i + 1} ("${r.task}") is marked as Work in Progress (WPI). A mandatory explanation (reason why still in progress & continuation plan) is required before check-out.`);
-          return;
-        }
+      if (!r.unitCountCompleted || Number(r.unitCountCompleted) < 1) {
+        setErrorMsg(`Task #${i + 1}: Units Count must be at least 1.`);
+        return;
+      }
+      if (!r.completedDate) {
+        setErrorMsg(`Task #${i + 1}: Completed Date is required.`);
+        return;
       }
     }
 
+    const validRows = taskRows;
     setIsSubmitting(true);
+    setErrorMsg('');
+
     const targetProfile = (isPrivileged && selectedEmployeeId)
       ? dataStore.getProfileById(selectedEmployeeId) || profile
       : profile;
     const targetPod = targetProfile?.pod_id ? dataStore.getPodById(targetProfile.pod_id) : userPod;
-    const memberName = targetProfile?.full_name || profile?.full_name || 'Team Member';
-    const memberPodName = targetPod?.name || userPod?.name || 'Web & Sales';
 
     try {
-      const result = await dataStore.submitEndOfDayCheckout({
-        employee_id: targetProfile?.id || profile?.id || '',
-        work_date: workDate,
-        checkout_time: liveIstTime,
-        items: taskRows.map((r) => ({
-          projectName: r.projectName.trim(),
+      for (const r of validRows) {
+        const combinedComments = [
+          r.feedbackComments.trim(),
+          r.comments.trim(),
+          r.blocker.trim() ? `🚨 BLOCKER: ${r.blocker.trim()}` : '',
+        ]
+          .filter(Boolean)
+          .join(' | ');
+
+        await dataStore.submitMemberWork({
+          employee_id: targetProfile?.id || profile?.id || '',
+          employee_name: targetProfile?.full_name || profile?.full_name || 'Team Member',
+          pod_id: targetPod?.id || targetProfile?.pod_id || userPod?.id || 'pod-web-sales',
+          department_id: targetPod?.id || targetProfile?.pod_id || userPod?.id || 'pod-web-sales',
+          date: todayStr,
+          checkin_date: todayStr,
+          work_date: workDate,
+          submission_time: checkinTime,
+          checkin_time: checkinTime,
+          project_name: r.projectName.trim() || 'General',
+          project: r.projectName.trim() || 'General',
           task: r.task.trim(),
-          timeInvested: Number(r.timeInvested) || 0,
-          unitCountCompleted: Number(r.unitCountCompleted) || 1,
-          status: r.status,
-          wpiReason: r.wpiReason?.trim() || r.feedbackComments?.trim(),
-          comments: r.status === 'completed' ? (r.feedbackComments?.trim() || r.comments?.trim() || 'Completed on schedule') : undefined,
-          blocker: r.blocker?.trim(),
+          task_title: r.task.trim(),
+          assigned_date: r.assignedDate || workDate,
+          completed_date: r.completedDate || workDate,
+          time_invested: Number(r.timeInvested) || 0,
+          duration_hours: Number(r.timeInvested) || 0,
+          unit_count_completed: Number(r.unitCountCompleted) || 1,
+          review_assigned_date: r.completedDate || workDate,
+          feedback_comments: r.feedbackComments.trim(),
+          comments: combinedComments,
           category: r.category || 'Development',
-          isCarriedForward: r.isCarriedForward,
-          carriedFromDate: r.carriedFromDate,
-        })),
-      });
+          priority: r.blocker.trim() ? 'high' : 'medium',
+        });
+      }
 
-      const completedCount = taskRows.filter((r) => r.status === 'completed').length;
-      const wpiCount = taskRows.filter((r) => r.status === 'wpi').length;
+      // Dispatch high-level summary overview to Google Chat (with highlighted red blockers)
+      const memberPod = targetProfile?.pod_id ? dataStore.getPodById(targetProfile.pod_id) : targetPod;
+      const podName = memberPod?.name || targetPod?.name || 'Web & Sales';
+      const memberName = targetProfile?.full_name || 'Team Member';
 
-      googleChatService.sendEndOfDayCheckoutCard({
+      googleChatService.sendWorkDeliverablesSummaryCard({
         memberName,
-        podName: memberPodName,
-        workDate,
-        checkinTime: result.session.checkin_time || liveIstTime,
-        checkoutTime: result.session.checkout_time || liveIstTime,
-        totalHours: result.session.total_hours_invested,
-        items: taskRows.map((r) => ({
-          projectName: r.projectName.trim(),
+        podName,
+        date: todayStr,
+        workDate: workDate,
+        checkinTime: checkinTime,
+        tasks: validRows.map((r) => ({
+          projectName: r.projectName.trim() || 'General',
           task: r.task.trim(),
           timeInvested: Number(r.timeInvested) || 0,
           unitCountCompleted: Number(r.unitCountCompleted) || 1,
-          status: r.status,
-          wpiReason: r.wpiReason?.trim() || r.feedbackComments?.trim(),
-          comments: r.feedbackComments?.trim() || r.comments?.trim(),
-          isCarriedForward: r.isCarriedForward,
+          comments: r.feedbackComments.trim() || r.comments.trim(),
+          blocker: r.blocker.trim(),
         })),
-      }).catch((err) => console.warn('GChat checkout notice:', err));
+      }).catch((err) => console.warn('GChat summary notice:', err));
 
-      setSuccessNotice(`🎉 Outstanding work! Successfully checked out at ${result.session.checkout_time} IST (${result.session.total_hours_invested}h logged, ${completedCount} completed, ${wpiCount} WPI carried forward). Overview sent to Google Chat!`);
-      setTimeout(() => setSuccessNotice(''), 8000);
+      setSuccessNotice(`🎉 Fantastic work! Successfully submitted ${validRows.length} task deliverable(s) for ${memberName} (work date ${workDate}, checked in: ${todayStr} at ${checkinTime})! High-level overview dispatched to Google Chat.`);
+      setTimeout(() => setSuccessNotice(''), 7000);
+
+      // Reset empty rows with hours set to 0
+      setTaskRows([
+        {
+          id: `row-${Date.now()}-1`,
+          category: 'Development',
+          projectName: '',
+          task: '',
+          assignedDate: workDate,
+          completedDate: workDate,
+          timeInvested: 0,
+          unitCountCompleted: 1,
+          reviewAssignedDate: workDate,
+          feedbackComments: '',
+          comments: '',
+          blocker: '',
+        },
+      ]);
     } catch (err: any) {
-      setErrorMsg(err.message || 'Failed to submit end-of-day check-out. Please try again.');
+      setErrorMsg(err.message || 'Failed to submit work updates.');
     } finally {
       setIsSubmitting(false);
     }
@@ -509,9 +378,6 @@ export const MemberWorkTab: React.FC = () => {
         feedbackComments: '',
         comments: '',
         blocker: '',
-        status: 'completed',
-        isCarriedForward: false,
-        wpiReason: '',
       });
     }
 
@@ -684,33 +550,21 @@ export const MemberWorkTab: React.FC = () => {
               <span className="w-2.5 h-2.5 rounded-full bg-maple-400 animate-pulse" />
               <span className="text-xs font-bold uppercase tracking-wider text-maple-400 flex items-center gap-1.5">
                 <TableIcon className="w-4 h-4" />
-                Daily Work & Attendance Workflow (Asia/Kolkata IST)
+                Daily Multi-Task Performance Table (Pod Member Entry)
               </span>
             </div>
-            <h2 className="text-xl font-semibold text-white tracking-normal mt-1 flex items-center gap-2">
-              {workflowMode === 'morning_action_items' ? (
-                <>
-                  <Sun className="w-5 h-5 text-amber-400" />
-                  <span>Morning: Planned Action Items & Check-in</span>
-                </>
-              ) : (
-                <>
-                  <Moon className="w-5 h-5 text-sky-400" />
-                  <span>Evening: Deliverables Review & Check-out</span>
-                </>
-              )}
+            <h2 className="text-xl font-semibold text-white tracking-normal mt-1">
+              Log Previous Day's Work Tasks & Deliverables
             </h2>
-            <p className="text-xs text-slate-300 mt-1 max-w-3xl leading-relaxed">
-              {workflowMode === 'morning_action_items'
-                ? "Record today's planned action items. Any incomplete tasks (WPI) from the previous working day are automatically carried forward below. Submitting will lock your official Check-in time."
-                : "Review your day's tasks, log hours invested, and set final delivery status (Completed vs Work in Progress). If a task is still WPI, a continuation explanation is required before checking out."}
+            <p className="text-sm text-slate-300 mt-1 max-w-2xl">
+              Enter the tasks you worked on during the previous working day, including time invested, deliverables completed, completion details, and relevant feedback. Submit all tasks together for Pod Lead review.
             </p>
           </div>
 
           {/* Date, Check-in Time & Member Badge / Selector */}
-          <div className="flex flex-wrap items-center gap-2.5">
+          <div className="flex flex-wrap items-center gap-3">
             {/* Reporting Work Date Picker */}
-            <div className="flex items-center gap-2 bg-slate-900/90 border border-slate-800 px-3 py-1.5 rounded-xl text-xs shadow-sm" title="Reporting work date">
+            <div className="flex items-center gap-2 bg-slate-900/90 border border-slate-800 px-3 py-1.5 rounded-xl text-xs shadow-sm" title="Date of the working day being reported">
               <Calendar className="w-4 h-4 text-sky-400 flex-shrink-0" />
               <span className="text-slate-400 font-medium whitespace-nowrap">Work Date:</span>
               <input
@@ -719,9 +573,24 @@ export const MemberWorkTab: React.FC = () => {
                 onChange={(e) => {
                   const newDate = e.target.value;
                   setWorkDate(newDate);
+                  setTaskRows((prev) =>
+                    prev.map((r) => ({
+                      ...r,
+                      assignedDate: newDate,
+                      completedDate: newDate,
+                      reviewAssignedDate: newDate,
+                    }))
+                  );
                 }}
                 className="bg-slate-800 border border-slate-700 text-white font-mono font-bold rounded-lg px-2 py-1 text-xs focus:outline-none focus:border-sky-500 cursor-pointer"
               />
+            </div>
+
+            {/* Check-in / Submission Date & Time (Live) */}
+            <div className="flex items-center gap-2 bg-slate-900/90 border border-slate-800 px-3 py-1.5 rounded-xl text-xs shadow-sm select-none" title="Today's submission check-in date and time">
+              <Clock className="w-4 h-4 text-emerald-400 flex-shrink-0" />
+              <span className="text-slate-400 font-medium whitespace-nowrap">Check-in:</span>
+              <span className="text-emerald-300 font-mono font-bold">{checkinDate} • {checkinTime}</span>
             </div>
 
             {/* Member Selector or Badge */}
@@ -745,7 +614,7 @@ export const MemberWorkTab: React.FC = () => {
                 </select>
               </div>
             ) : (
-              <div className="flex items-center gap-2 bg-slate-900/90 border border-slate-800 px-3 py-1.5 rounded-xl text-xs shadow-sm select-none">
+              <div className="flex items-center gap-2 bg-slate-900/90 border border-slate-800 px-3.5 py-2 rounded-xl text-sm shadow-sm select-none">
                 <User className="w-4 h-4 text-purple-400" />
                 <span className="text-slate-200 font-bold">{profile?.full_name || 'Team Member'}</span>
               </div>
@@ -753,107 +622,7 @@ export const MemberWorkTab: React.FC = () => {
           </div>
         </div>
 
-        {/* Daily Attendance Status Bar & Stepper Tabs */}
-        <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 p-4 rounded-2xl bg-slate-950/70 border border-slate-800 shadow-inner">
-          {/* Left: Check-in & Check-out Live Badges */}
-          <div className="flex flex-wrap items-center gap-3 text-xs">
-            {/* Overall Session Status */}
-            <div className="flex items-center gap-2">
-              <span className="text-slate-400 font-medium">Daily Status:</span>
-              {isCheckedOut ? (
-                <span className="px-2.5 py-1 rounded-lg bg-emerald-500/15 border border-emerald-500/30 text-emerald-300 font-bold flex items-center gap-1.5">
-                  <CheckCircle2 className="w-3.5 h-3.5 text-emerald-400" /> Day Completed (Checked Out)
-                </span>
-              ) : isCheckedIn ? (
-                <span className="px-2.5 py-1 rounded-lg bg-sky-500/15 border border-sky-500/30 text-sky-300 font-bold flex items-center gap-1.5">
-                  <Clock className="w-3.5 h-3.5 text-sky-400 animate-pulse" /> Working Day in Progress
-                </span>
-              ) : (
-                <span className="px-2.5 py-1 rounded-lg bg-amber-500/15 border border-amber-500/30 text-amber-300 font-bold flex items-center gap-1.5">
-                  <Sun className="w-3.5 h-3.5 text-amber-400" /> Action Items Draft (Not Checked In)
-                </span>
-              )}
-            </div>
-
-            {/* Check-in Timestamp */}
-            <div className="flex items-center gap-1.5 font-mono">
-              <span className="text-slate-500">|</span>
-              <span className="text-slate-400 font-sans">Login:</span>
-              {dailySession?.checkin_time ? (
-                <span className="text-emerald-300 font-bold bg-emerald-950/40 border border-emerald-800/60 px-2 py-0.5 rounded flex items-center gap-1" title="Locked server timestamp">
-                  <Lock className="w-3 h-3 text-emerald-400" /> {dailySession.checkin_time} (Locked)
-                </span>
-              ) : (
-                <span className="text-amber-300 font-semibold bg-amber-950/30 border border-amber-800/40 px-2 py-0.5 rounded flex items-center gap-1" title="Live IST time (will lock upon check-in)">
-                  <Clock className="w-3 h-3 text-amber-400" /> {liveIstTime} (Pending)
-                </span>
-              )}
-            </div>
-
-            {/* Check-out Timestamp */}
-            <div className="flex items-center gap-1.5 font-mono">
-              <span className="text-slate-500">|</span>
-              <span className="text-slate-400 font-sans">Logout:</span>
-              {dailySession?.checkout_time ? (
-                <span className="text-sky-300 font-bold bg-sky-950/40 border border-sky-800/60 px-2 py-0.5 rounded flex items-center gap-1" title="Locked server timestamp">
-                  <Lock className="w-3 h-3 text-sky-400" /> {dailySession.checkout_time} (Locked)
-                </span>
-              ) : isCheckedIn ? (
-                <span className="text-slate-400 italic bg-slate-900 border border-slate-800 px-2 py-0.5 rounded flex items-center gap-1">
-                  <Clock className="w-3 h-3 text-sky-400" /> Pending Evening Checkout
-                </span>
-              ) : (
-                <span className="text-slate-600">—</span>
-              )}
-            </div>
-          </div>
-
-          {/* Right: Step Switcher Tabs */}
-          <div className="flex items-center gap-1 p-1 rounded-xl bg-slate-900 border border-slate-800 self-start md:self-auto">
-            <button
-              type="button"
-              onClick={() => setWorkflowMode('morning_action_items')}
-              className={`flex items-center gap-2 px-3 py-1.5 rounded-lg text-xs font-bold transition-all ${
-                workflowMode === 'morning_action_items'
-                  ? 'bg-amber-500 text-slate-950 shadow-md'
-                  : 'text-slate-400 hover:text-white hover:bg-slate-800/60'
-              }`}
-            >
-              <Sun className="w-3.5 h-3.5" />
-              <span>Step 1: Morning Action Items</span>
-              {isCheckedIn && <CheckCircle2 className="w-3 h-3 text-emerald-700 ml-0.5" />}
-            </button>
-
-            <button
-              type="button"
-              onClick={() => setWorkflowMode('evening_checkout')}
-              className={`flex items-center gap-2 px-3 py-1.5 rounded-lg text-xs font-bold transition-all ${
-                workflowMode === 'evening_checkout'
-                  ? 'bg-sky-500 text-white shadow-md'
-                  : 'text-slate-400 hover:text-white hover:bg-slate-800/60'
-              }`}
-            >
-              <Moon className="w-3.5 h-3.5" />
-              <span>Step 2: Evening Check-out</span>
-              {isCheckedOut && <CheckCircle2 className="w-3 h-3 text-emerald-300 ml-0.5" />}
-            </button>
-          </div>
-        </div>
-
-        {/* WPI Automatic Carry-Forward Notice Banner */}
-        {carriedNotice && (
-          <div className="p-3.5 rounded-xl bg-amber-500/10 border border-amber-500/30 text-amber-300 text-xs font-semibold flex items-center justify-between gap-3 animate-in fade-in">
-            <div className="flex items-center gap-2.5">
-              <RefreshCw className="w-4 h-4 text-amber-400 flex-shrink-0 animate-spin-slow" />
-              <span>{carriedNotice}</span>
-            </div>
-            <span className="text-[10px] px-2 py-0.5 rounded bg-amber-500/20 text-amber-200 uppercase tracking-wider font-bold">
-              Carry-Forward Active
-            </span>
-          </div>
-        )}
-
-        {/* Error and Success Notices */}
+        {/* Notices */}
         {errorMsg && (
           <div className="p-4 rounded-xl bg-rose-500/15 border border-rose-500/30 text-rose-300 text-sm font-semibold flex items-center gap-2.5">
             <AlertTriangle className="w-5 h-5 flex-shrink-0 text-rose-400" />
@@ -868,410 +637,223 @@ export const MemberWorkTab: React.FC = () => {
           </div>
         )}
 
-        {/* ==================================================================== */}
-        {/* WORKFLOW MODE 1: MORNING ACTION ITEMS & CHECK-IN FORM */}
-        {/* ==================================================================== */}
-        {workflowMode === 'morning_action_items' ? (
-          <form onSubmit={handleMorningCheckin} className="space-y-4">
-            <div className="rounded-xl border border-slate-800 bg-[#060E1A] shadow-xl overflow-x-auto">
-              <table className="w-full text-left text-xs border-collapse min-w-[1200px]">
-                <thead>
-                  <tr className="bg-[#0B1728] border-b border-slate-800 text-[11px] font-semibold uppercase tracking-wider text-slate-300">
-                    <th className="py-3 px-3 w-10 text-center text-slate-500">#</th>
-                    <th className="py-3 px-3.5 min-w-[200px] w-[240px]">Project Name</th>
-                    <th className="py-3 px-3.5 min-w-[500px]">Today's Planned Action Item / Task Deliverable</th>
-                    <th className="py-3 px-3 w-[160px]">Category</th>
-                    <th className="py-3 px-3 w-[120px] text-left">
-                      <div className="flex items-center gap-1">
-                        <span>Target Units</span>
-                        <span title="Expected number of items" className="cursor-help text-maple-400">
-                          <HelpCircle className="w-3.5 h-3.5" />
-                        </span>
-                      </div>
-                    </th>
-                    <th className="py-3 px-2 w-10 text-center">Del</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-slate-800/80 text-slate-200">
-                  {taskRows.map((row, idx) => (
-                    <tr
-                      key={row.id}
-                      className={`hover:bg-slate-800/30 transition-colors ${
-                        row.isCarriedForward ? 'bg-amber-950/10 border-l-2 border-amber-500' : ''
-                      }`}
-                    >
-                      {/* Index */}
-                      <td className="py-3 px-3 text-center font-mono text-slate-400 font-bold text-xs align-top pt-4">
-                        {idx + 1}
-                      </td>
-
-                      {/* Project Name */}
-                      <td className="py-3 px-3.5 align-top">
-                        <input
-                          type="text"
-                          value={row.projectName}
-                          onChange={(e) => handleUpdateRow(row.id, 'projectName', e.target.value)}
-                          placeholder="e.g. MapleBot, LXD..."
-                          className="w-full px-3 py-2 bg-slate-900 border border-slate-700/80 rounded-lg text-white placeholder-slate-500 focus:outline-none focus:border-maple-500 text-xs font-medium"
-                          required
-                        />
-                      </td>
-
-                      {/* Task Deliverable Description */}
-                      <td className="py-3 px-3.5 align-top">
-                        {row.isCarriedForward && (
-                          <div className="mb-2 flex flex-wrap items-center gap-2">
-                            <span className="inline-flex items-center gap-1 text-[10px] font-bold px-2 py-0.5 rounded-full bg-amber-500/20 text-amber-300 border border-amber-500/30">
-                              <RefreshCw className="w-3 h-3" /> Carried Forward from {row.carriedFromDate || 'previous day'}
-                            </span>
-                            {row.carriedFromReason && (
-                              <span className="text-[11px] text-slate-400 italic">
-                                Previous WPI Note: "{row.carriedFromReason}"
-                              </span>
-                            )}
-                          </div>
-                        )}
-                        <textarea
-                          rows={2}
-                          value={row.task}
-                          onChange={(e) => handleUpdateRow(row.id, 'task', e.target.value)}
-                          placeholder={`Action Item ${idx + 1}: Specific deliverable planned for today...`}
-                          className="w-full px-3 py-2 bg-slate-900 border border-slate-700/80 rounded-lg text-white placeholder-slate-500 focus:outline-none focus:border-maple-500 text-xs font-medium leading-relaxed resize-y min-h-[56px]"
-                          required
-                        />
-                      </td>
-
-                      {/* Category */}
-                      <td className="py-3 px-3 align-top">
-                        <select
-                          value={row.category}
-                          onChange={(e) => handleUpdateRow(row.id, 'category', e.target.value as WorkCategory)}
-                          className="w-full px-2.5 py-2 bg-slate-900 border border-slate-700/80 rounded-lg text-slate-200 focus:outline-none focus:border-maple-500 text-xs cursor-pointer font-medium"
-                        >
-                          <option value="Development">Development</option>
-                          <option value="SEO">SEO</option>
-                          <option value="Sales">Sales</option>
-                          <option value="LMS">LMS Delivery</option>
-                          <option value="Marketing">Marketing</option>
-                          <option value="Design">Design</option>
-                          <option value="Coordination">Coordination</option>
-                          <option value="Operations">Operations</option>
-                          <option value="Quality Assurance">Quality Assurance</option>
-                          <option value="Client Support">Client Support</option>
-                          <option value="Other">Other</option>
-                        </select>
-                      </td>
-
-                      {/* Target Units */}
-                      <td className="py-3 px-3 text-left align-top">
-                        <div className="relative flex items-center">
-                          <input
-                            type="number"
-                            min="1"
-                            max="999"
-                            value={row.unitCountCompleted || 1}
-                            onChange={(e) => {
-                              const v = e.target.value === '' ? 1 : parseInt(e.target.value);
-                              handleUpdateRow(row.id, 'unitCountCompleted', v);
-                            }}
-                            className="w-full pr-10 pl-2.5 py-2 bg-slate-900 border border-slate-700/80 rounded-lg text-purple-300 font-mono font-bold text-xs focus:outline-none focus:border-maple-500"
-                            required
-                          />
-                          <span className="absolute right-2 text-[10px] text-slate-400 font-medium pointer-events-none">units</span>
-                        </div>
-                      </td>
-
-                      {/* Delete */}
-                      <td className="py-3 px-2 text-center align-top pt-3.5">
-                        <button
-                          type="button"
-                          onClick={() => handleRemoveRow(row.id)}
-                          disabled={taskRows.length <= 1}
-                          className="p-1.5 rounded-lg text-slate-500 hover:text-rose-400 hover:bg-rose-500/10 transition-colors disabled:opacity-30 disabled:cursor-not-allowed"
-                          title="Remove item"
-                        >
-                          <Trash2 className="w-4 h-4" />
-                        </button>
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-
-            {/* Morning Footer Controls */}
-            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 p-4 rounded-xl bg-slate-900/90 border border-slate-800">
-              <div className="flex flex-wrap items-center gap-3">
-                <Button
-                  type="button"
-                  variant="secondary"
-                  size="sm"
-                  onClick={handleAddRow}
-                  leftIcon={<Plus className="w-4 h-4 text-maple-400" />}
-                >
-                  Add Action Item
-                </Button>
-
-                <Button
-                  type="button"
-                  variant="outline"
-                  size="sm"
-                  onClick={() => setIsPasteModalOpen(true)}
-                  leftIcon={<ClipboardList className="w-4 h-4 text-sky-400" />}
-                >
-                  Paste from Chat
-                </Button>
-
-                <div className="hidden md:flex items-center gap-3 pl-3 border-l border-slate-800 text-xs">
-                  <span className="text-slate-400">Total Action Items:</span>
-                  <span className="font-bold text-white font-mono">{taskRows.length} items</span>
-                </div>
-              </div>
-
-              <GradientButton
-                type="submit"
-                size="sm"
-                disabled={isSubmitting}
-                leftIcon={<Sun className="w-4 h-4" />}
-              >
-                {isSubmitting ? 'Saving Action Items...' : isCheckedIn ? 'Update Action Items & Confirm Check-in' : `🚀 Submit Action Items & Check In (${dailySession?.checkin_time || liveIstTime})`}
-              </GradientButton>
-            </div>
-          </form>
-        ) : (
-          /* ==================================================================== */
-          /* WORKFLOW MODE 2: EVENING DELIVERABLES REVIEW & CHECK-OUT FORM */
-          /* ==================================================================== */
-          <form onSubmit={handleEveningCheckout} className="space-y-4">
-            <div className="rounded-xl border border-slate-800 bg-[#060E1A] shadow-xl overflow-x-auto">
-              <table className="w-full text-left text-xs border-collapse min-w-[1680px]">
-                <thead>
-                  <tr className="bg-[#0B1728] border-b border-slate-800 text-[11px] font-semibold uppercase tracking-wider text-slate-300">
-                    <th className="py-3 px-3 w-10 text-center text-slate-500">#</th>
-                    <th className="py-3 px-3.5 min-w-[180px] w-[200px]">Project Name</th>
-                    <th className="py-3 px-3.5 min-w-[420px]">Task Deliverable</th>
-                    <th className="py-3 px-3 w-[170px] text-center">Status</th>
-                    <th className="py-3 px-3 w-[115px] text-left">Hours</th>
-                    <th className="py-3 px-3 w-[100px] text-left">Units</th>
-                    <th className="py-3 px-3.5 min-w-[340px] text-maple-300">
-                      Completion Note / <span className="text-amber-400 font-bold">*Mandatory WPI Reason</span>
-                    </th>
-                    <th className="py-3 px-3.5 min-w-[170px] w-[190px] text-rose-400">Blockers</th>
-                    <th className="py-3 px-2 w-10 text-center">Del</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-slate-800/80 text-slate-200">
-                  {taskRows.map((row, idx) => {
-                    const isWpi = row.status === 'wpi';
-                    return (
-                      <tr
-                        key={row.id}
-                        className={`hover:bg-slate-800/30 transition-colors ${
-                          isWpi ? 'bg-amber-950/15' : ''
-                        }`}
+        {/* THE EDITABLE MULTI-TASK TABLE GRID (Spacious, Clear & Clean) */}
+        <form onSubmit={handleSubmitAll} className="space-y-4">
+          <div className="rounded-xl border border-slate-800 bg-[#060E1A] shadow-xl overflow-x-auto">
+            <table className="w-full text-left text-xs border-collapse min-w-[1600px]">
+              <thead>
+                <tr className="bg-[#0B1728] border-b border-slate-800 text-[11px] font-semibold uppercase tracking-wider text-slate-300">
+                  <th className="py-3 px-3 w-10 text-center text-slate-500">#</th>
+                  <th className="py-3 px-3.5 min-w-[180px] w-[200px]">Project Name</th>
+                  <th className="py-3 px-3.5 min-w-[460px] w-[480px]">Task Deliverable (Specific activity)</th>
+                  <th className="py-3 px-3 w-[135px]">Assigned Date</th>
+                  <th className="py-3 px-3 w-[115px] text-left">Hours</th>
+                  <th className="py-3 px-3 w-[100px] text-left">
+                    <div className="flex items-center gap-1">
+                      <span>Units</span>
+                      <span
+                        title="Quantity of finished items: e.g. 1 feature, 3 pages, 5 leads"
+                        className="cursor-help text-maple-400"
                       >
-                        {/* Index */}
-                        <td className="py-3 px-3 text-center font-mono text-slate-400 font-bold text-xs align-top pt-4">
-                          {idx + 1}
-                        </td>
+                        <HelpCircle className="w-3.5 h-3.5" />
+                      </span>
+                    </div>
+                  </th>
+                  <th className="py-3 px-3 w-[135px] text-sky-300">Completed Date</th>
+                  <th className="py-3 px-3.5 min-w-[260px] w-[280px] text-maple-300">Feedback / Comments</th>
+                  <th className="py-3 px-3.5 min-w-[190px] w-[220px]">
+                    <div className="flex items-center gap-1.5 text-rose-400 font-semibold">
+                      <span>Blockers</span>
+                      <span className="text-[10px] text-slate-400 font-normal">(Optional)</span>
+                    </div>
+                  </th>
+                  <th className="py-3 px-2 w-10 text-center">Del</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-slate-800/80 text-slate-200">
+                {taskRows.map((row, idx) => (
+                  <tr key={row.id} className="hover:bg-slate-800/30 transition-colors">
+                    {/* Index */}
+                    <td className="py-3 px-3 text-center font-mono text-slate-400 font-bold text-xs align-top pt-4">
+                      {idx + 1}
+                    </td>
 
-                        {/* Project Name */}
-                        <td className="py-3 px-3.5 align-top">
-                          <input
-                            type="text"
-                            value={row.projectName}
-                            onChange={(e) => handleUpdateRow(row.id, 'projectName', e.target.value)}
-                            placeholder="e.g. MapleBot, LXD..."
-                            className="w-full px-3 py-2 bg-slate-900 border border-slate-700/80 rounded-lg text-white placeholder-slate-500 focus:outline-none focus:border-maple-500 text-xs font-medium"
-                            required
-                          />
-                        </td>
+                    {/* Project Name */}
+                    <td className="py-3 px-3.5 min-w-[180px] w-[200px] align-top">
+                      <input
+                        type="text"
+                        value={row.projectName}
+                        onChange={(e) => handleUpdateRow(row.id, 'projectName', e.target.value)}
+                        placeholder="e.g. MapleBot, LXD..."
+                        className="w-full px-3 py-2 bg-slate-900 border border-slate-700/80 rounded-lg text-white placeholder-slate-500 focus:outline-none focus:border-maple-500 text-xs font-medium"
+                        required
+                      />
+                    </td>
 
-                        {/* Task Deliverable */}
-                        <td className="py-3 px-3.5 align-top">
-                          {row.isCarriedForward && (
-                            <span className="inline-flex items-center gap-1 text-[10px] font-bold px-2 py-0.5 rounded-full bg-amber-500/20 text-amber-300 border border-amber-500/30 mb-1.5">
-                              <RefreshCw className="w-3 h-3" /> Carried Forward from {row.carriedFromDate || 'prev'}
-                            </span>
-                          )}
-                          <textarea
-                            rows={2}
-                            value={row.task}
-                            onChange={(e) => handleUpdateRow(row.id, 'task', e.target.value)}
-                            placeholder="Task description..."
-                            className="w-full px-3 py-2 bg-slate-900 border border-slate-700/80 rounded-lg text-white placeholder-slate-500 focus:outline-none focus:border-maple-500 text-xs font-medium leading-relaxed resize-y min-h-[64px]"
-                            required
-                          />
-                        </td>
+                    {/* Task Description (Expanded & Spacious) */}
+                    <td className="py-3 px-3.5 min-w-[460px] w-[480px] align-top">
+                      <textarea
+                        rows={3}
+                        value={row.task}
+                        onChange={(e) => handleUpdateRow(row.id, 'task', e.target.value)}
+                        placeholder={`Task ${idx + 1}: Detailed description of what you completed...`}
+                        className="w-full min-w-[440px] px-3 py-2.5 bg-slate-900 border border-slate-700/80 rounded-lg text-white placeholder-slate-500 focus:outline-none focus:border-maple-500 text-xs font-medium leading-relaxed resize-y min-h-[76px]"
+                        required
+                      />
+                    </td>
 
-                        {/* Final Status Select: Completed vs WPI */}
-                        <td className="py-3 px-3 align-top">
-                          <select
-                            value={row.status}
-                            onChange={(e) => handleUpdateRow(row.id, 'status', e.target.value as ActionItemStatus)}
-                            className={`w-full px-3 py-2 rounded-lg font-bold text-xs focus:outline-none cursor-pointer border ${
-                              row.status === 'completed'
-                                ? 'bg-emerald-950/40 text-emerald-300 border-emerald-500/50'
-                                : 'bg-amber-950/40 text-amber-300 border-amber-500/50'
-                            }`}
-                          >
-                            <option value="completed">✅ Completed</option>
-                            <option value="wpi">⏳ Work in Progress (WPI)</option>
-                          </select>
-                        </td>
+                    {/* Assigned Date */}
+                    <td className="py-3 px-3 align-top">
+                      <input
+                        type="date"
+                        value={row.assignedDate}
+                        onChange={(e) => handleUpdateRow(row.id, 'assignedDate', e.target.value)}
+                        className="w-full px-2 py-2 bg-slate-900 border border-slate-700/80 rounded-lg text-slate-200 focus:outline-none focus:border-maple-500 text-xs cursor-pointer font-medium"
+                        required
+                      />
+                    </td>
 
-                        {/* Hours Invested */}
-                        <td className="py-3 px-3 text-left align-top">
-                          <div className="relative flex items-center">
-                            <input
-                              type="number"
-                              step="any"
-                              min="0"
-                              max="24"
-                              value={row.timeInvested === 0 ? '' : row.timeInvested}
-                              onChange={(e) => {
-                                const v = e.target.value === '' ? 0 : parseFloat(e.target.value);
-                                handleUpdateRow(row.id, 'timeInvested', isNaN(v) ? 0 : v);
-                              }}
-                              placeholder="e.g. 2.5"
-                              className="w-full pr-7 pl-2.5 py-2 bg-slate-900 border border-slate-700/80 rounded-lg text-sky-400 font-mono font-bold text-xs focus:outline-none focus:border-maple-500 [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
-                              required
-                            />
-                            <span className="absolute right-2 text-[10px] text-slate-400 font-medium pointer-events-none">hrs</span>
-                          </div>
-                        </td>
+                    {/* Hours Invested - Clean, Non-Squished with inner 'hrs' badge */}
+                    <td className="py-3 px-3 text-left align-top">
+                      <div className="relative flex items-center">
+                        <input
+                          type="number"
+                          step="any"
+                          min="0"
+                          max="24"
+                          value={row.timeInvested === 0 ? '' : row.timeInvested}
+                          onChange={(e) => {
+                            const v = e.target.value === '' ? 0 : parseFloat(e.target.value);
+                            handleUpdateRow(row.id, 'timeInvested', isNaN(v) ? 0 : v);
+                          }}
+                          placeholder="e.g. 2 or 1.5"
+                          className="w-full pr-7 pl-2.5 py-2 bg-slate-900 border border-slate-700/80 rounded-lg text-sky-400 font-mono font-bold text-xs focus:outline-none focus:border-maple-500 [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
+                          required
+                        />
+                        <span className="absolute right-2 text-[10px] text-slate-400 font-medium pointer-events-none">hrs</span>
+                      </div>
+                    </td>
 
-                        {/* Deliverables Count */}
-                        <td className="py-3 px-3 text-left align-top">
-                          <div className="relative flex items-center">
-                            <input
-                              type="number"
-                              min="1"
-                              max="999"
-                              value={row.unitCountCompleted === 0 ? '' : row.unitCountCompleted}
-                              onChange={(e) => {
-                                const v = e.target.value === '' ? 1 : parseInt(e.target.value);
-                                handleUpdateRow(row.id, 'unitCountCompleted', v);
-                              }}
-                              className="w-full pr-10 pl-2 py-2 bg-slate-900 border border-slate-700/80 rounded-lg text-purple-300 font-mono font-bold text-xs focus:outline-none focus:border-maple-500 [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
-                              required
-                            />
-                            <span className="absolute right-2 text-[10px] text-slate-400 font-medium pointer-events-none">items</span>
-                          </div>
-                        </td>
+                    {/* Deliverables Count - Clean with inner 'items' badge */}
+                    <td className="py-3 px-3 text-left align-top">
+                      <div className="relative flex items-center">
+                        <input
+                          type="number"
+                          min="1"
+                          max="999"
+                          value={row.unitCountCompleted === 0 ? '' : row.unitCountCompleted}
+                          onChange={(e) => {
+                            const v = e.target.value === '' ? 1 : parseInt(e.target.value);
+                            handleUpdateRow(row.id, 'unitCountCompleted', v);
+                          }}
+                          placeholder="1"
+                          className="w-full pr-10 pl-2 py-2 bg-slate-900 border border-slate-700/80 rounded-lg text-purple-300 font-mono font-bold text-xs focus:outline-none focus:border-maple-500 [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
+                          required
+                        />
+                        <span className="absolute right-2 text-[10px] text-slate-400 font-medium pointer-events-none">items</span>
+                      </div>
+                    </td>
 
-                        {/* Completion Note OR Mandatory WPI Reason */}
-                        <td className="py-3 px-3.5 align-top">
-                          {isWpi ? (
-                            <div className="space-y-1">
-                              <textarea
-                                rows={3}
-                                value={row.wpiReason || row.feedbackComments}
-                                onChange={(e) => {
-                                  handleUpdateRow(row.id, 'wpiReason', e.target.value);
-                                  handleUpdateRow(row.id, 'feedbackComments', e.target.value);
-                                }}
-                                placeholder="Required: Why is this task still in progress & what is tomorrow's continuation plan? (Mandatory)"
-                                className="w-full px-3 py-2 bg-amber-950/20 border-2 border-amber-500/70 rounded-lg text-amber-200 placeholder-amber-400/50 focus:outline-none focus:border-amber-400 text-xs font-medium leading-relaxed resize-y min-h-[68px]"
-                                required
-                              />
-                              <span className="text-[10px] text-amber-400 font-medium flex items-center gap-1">
-                                <AlertCircle className="w-3 h-3" /> Mandatory for WPI: will auto carry forward to next working day.
-                              </span>
-                            </div>
-                          ) : (
-                            <textarea
-                              rows={2}
-                              value={row.feedbackComments}
-                              onChange={(e) => handleUpdateRow(row.id, 'feedbackComments', e.target.value)}
-                              placeholder="Optional completion note / feedback..."
-                              className="w-full px-3 py-2 bg-slate-900 border border-slate-700/80 rounded-lg text-slate-200 placeholder-slate-500 focus:outline-none focus:border-maple-500 text-xs font-medium leading-relaxed resize-y min-h-[56px]"
-                            />
-                          )}
-                        </td>
+                    {/* Completed Date (Member Single Source of Truth) */}
+                    <td className="py-3 px-3 align-top">
+                      <input
+                        type="date"
+                        value={row.completedDate}
+                        onChange={(e) => handleUpdateRow(row.id, 'completedDate', e.target.value)}
+                        className="w-full px-2 py-2 bg-slate-900 border border-slate-700/80 rounded-lg text-sky-300 font-medium focus:outline-none focus:border-sky-500 text-xs cursor-pointer"
+                        required
+                      />
+                    </td>
 
-                        {/* Blocker */}
-                        <td className="py-3 px-3.5 align-top">
-                          <input
-                            type="text"
-                            value={row.blocker}
-                            onChange={(e) => handleUpdateRow(row.id, 'blocker', e.target.value)}
-                            placeholder="Any impediment..."
-                            className="w-full px-3 py-2 bg-slate-900 border border-slate-700/80 rounded-lg text-rose-300 placeholder-slate-500 focus:outline-none focus:border-rose-500 text-xs font-medium"
-                          />
-                        </td>
+                    {/* Individual Task Feedback / Comments */}
+                    <td className="py-3 px-3.5 min-w-[260px] w-[280px] align-top">
+                      <textarea
+                        rows={3}
+                        value={row.feedbackComments}
+                        onChange={(e) => handleUpdateRow(row.id, 'feedbackComments', e.target.value)}
+                        placeholder="Task feedback / comments..."
+                        className="w-full min-w-[240px] px-3 py-2.5 bg-slate-900 border border-slate-700/80 rounded-lg text-slate-200 placeholder-slate-500 focus:outline-none focus:border-maple-500 text-xs font-medium leading-relaxed resize-y min-h-[76px]"
+                      />
+                    </td>
 
-                        {/* Delete */}
-                        <td className="py-3 px-2 text-center align-top pt-3.5">
-                          <button
-                            type="button"
-                            onClick={() => handleRemoveRow(row.id)}
-                            disabled={taskRows.length <= 1}
-                            className="p-1.5 rounded-lg text-slate-500 hover:text-rose-400 hover:bg-rose-500/10 transition-colors disabled:opacity-30 disabled:cursor-not-allowed"
-                            title="Remove row"
-                          >
-                            <Trash2 className="w-4 h-4" />
-                          </button>
-                        </td>
-                      </tr>
-                    );
-                  })}
-                </tbody>
-              </table>
-            </div>
+                    {/* Blockers / Impediments - Clean & uncluttered */}
+                    <td className="py-3 px-3.5 min-w-[190px] w-[220px] align-top">
+                      <input
+                        type="text"
+                        value={row.blocker}
+                        onChange={(e) => handleUpdateRow(row.id, 'blocker', e.target.value)}
+                        placeholder="Any impediment..."
+                        className="w-full px-3 py-2 bg-slate-900 border border-slate-700/80 rounded-lg text-rose-300 placeholder-slate-500 focus:outline-none focus:border-rose-500 text-xs font-medium"
+                      />
+                    </td>
 
-            {/* Evening Footer Controls */}
-            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 p-4 rounded-xl bg-slate-900/90 border border-slate-800">
-              <div className="flex flex-wrap items-center gap-3">
-                <Button
-                  type="button"
-                  variant="secondary"
-                  size="sm"
-                  onClick={handleAddRow}
-                  leftIcon={<Plus className="w-4 h-4 text-maple-400" />}
-                >
-                  Add Another Task Row
-                </Button>
+                    {/* Delete Action */}
+                    <td className="py-3 px-2 text-center align-top pt-3.5">
+                      <button
+                        type="button"
+                        onClick={() => handleRemoveRow(row.id)}
+                        disabled={taskRows.length <= 1}
+                        className="p-1.5 rounded-lg text-slate-500 hover:text-rose-400 hover:bg-rose-500/10 transition-colors disabled:opacity-30 disabled:cursor-not-allowed"
+                        title="Remove row"
+                      >
+                        <Trash2 className="w-4 h-4" />
+                      </button>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
 
-                <div className="hidden md:flex items-center gap-4 pl-3 border-l border-slate-800 text-xs">
-                  <div>
-                    <span className="text-slate-400">Total Tasks: </span>
-                    <span className="font-bold text-white font-mono">{taskRows.length}</span>
-                  </div>
-                  <div>
-                    <span className="text-slate-400">Completed: </span>
-                    <span className="font-bold text-emerald-400 font-mono">
-                      {taskRows.filter((r) => r.status === 'completed').length}
-                    </span>
-                  </div>
-                  <div>
-                    <span className="text-slate-400">WPI: </span>
-                    <span className="font-bold text-amber-400 font-mono">
-                      {taskRows.filter((r) => r.status === 'wpi').length}
-                    </span>
-                  </div>
-                  <div>
-                    <span className="text-slate-400">Total Hours: </span>
-                    <span className="font-bold text-sky-400 font-mono">{totalHours} hrs</span>
-                  </div>
+          {/* Table Footer: Add Row + Live Metrics + Submit All */}
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 p-4 rounded-xl bg-slate-900/90 border border-slate-800">
+            <div className="flex flex-wrap items-center gap-3">
+              <Button
+                type="button"
+                variant="secondary"
+                size="sm"
+                onClick={handleAddRow}
+                leftIcon={<Plus className="w-4 h-4 text-maple-400" />}
+              >
+                Add Another Task Row
+              </Button>
+
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                onClick={() => setIsPasteModalOpen(true)}
+                leftIcon={<ClipboardList className="w-4 h-4 text-sky-400" />}
+              >
+                Paste from Google Chat / Notes
+              </Button>
+
+              <div className="hidden md:flex items-center gap-4 pl-3 border-l border-slate-800 text-xs">
+                <div>
+                  <span className="text-slate-400">Total Tasks: </span>
+                  <span className="font-bold text-white font-mono">{taskRows.length}</span>
+                </div>
+                <div>
+                  <span className="text-slate-400">Total Hours: </span>
+                  <span className="font-bold text-sky-400 font-mono">{totalHours} hrs</span>
+                </div>
+                <div>
+                  <span className="text-slate-400">Total Deliverables: </span>
+                  <span className="font-bold text-purple-300 font-mono">{totalDeliverables} items</span>
                 </div>
               </div>
-
-              <GradientButton
-                type="submit"
-                size="sm"
-                disabled={isSubmitting}
-                leftIcon={<Moon className="w-4 h-4" />}
-              >
-                {isSubmitting
-                  ? 'Verifying & Saving...'
-                  : isCheckedOut
-                  ? 'Update End-of-Day Deliverables'
-                  : `🏁 Submit Deliverables & Check Out (${dailySession?.checkout_time || liveIstTime})`}
-              </GradientButton>
             </div>
-          </form>
-        )}
+
+            <GradientButton
+              type="submit"
+              size="sm"
+              disabled={isSubmitting}
+              leftIcon={<Send className="w-4 h-4" />}
+            >
+              {isSubmitting ? 'Submitting Tasks...' : `Submit All Tasks (${taskRows.length} Tasks • ${totalHours} hrs)`}
+            </GradientButton>
+          </div>
+        </form>
       </div>
 
       {/* 2. SUBMITTED WORK HISTORY & TEAM REVIEW LEDGER */}
@@ -1448,21 +1030,13 @@ export const MemberWorkTab: React.FC = () => {
                         </td>
                       )}
 
-                      {/* Date, Check-in & Check-out Time */}
+                      {/* Date & Check-in Time */}
                       <td className="py-3 px-3.5 whitespace-nowrap align-top">
                         <span className="font-mono text-xs text-white block font-bold">{row.checkin_date || row.date}</span>
-                        <div className="flex flex-col gap-1 mt-1">
-                          <span className="inline-flex items-center gap-1 text-[11px] text-emerald-400 font-mono font-semibold bg-emerald-500/10 px-2 py-0.5 rounded border border-emerald-500/20">
-                            <Clock className="w-3 h-3 text-emerald-400" />
-                            In: {row.checkin_time || row.submission_time || '10:00 AM'}
-                          </span>
-                          {row.checkout_time && (
-                            <span className="inline-flex items-center gap-1 text-[11px] text-sky-400 font-mono font-semibold bg-sky-500/10 px-2 py-0.5 rounded border border-sky-500/20">
-                              <Moon className="w-3 h-3 text-sky-400" />
-                              Out: {row.checkout_time}
-                            </span>
-                          )}
-                        </div>
+                        <span className="inline-flex items-center gap-1 text-[11px] text-emerald-400 font-mono font-semibold bg-emerald-500/10 px-2 py-0.5 rounded border border-emerald-500/20 mt-1">
+                          <Clock className="w-3 h-3 text-emerald-400" />
+                          {row.submission_time || row.checkin_time || '10:00 AM'}
+                        </span>
                         {row.work_date && row.work_date !== (row.checkin_date || row.date) && (
                           <span className="text-[10px] text-slate-400 block font-mono mt-0.5" title="Work Performance Date">
                             Work: {row.work_date}
@@ -1475,31 +1049,13 @@ export const MemberWorkTab: React.FC = () => {
                         <span className="text-xs font-semibold text-slate-200 block">
                           {row.project_name || row.project || 'General'}
                         </span>
-                        <span className="text-[10px] text-slate-400 block">{row.category || 'Development'}</span>
                       </td>
 
-                      {/* Task Deliverable */}
+                      {/* Task */}
                       <td className="py-3 px-3.5 align-top min-w-[380px]">
-                        {row.is_carried_forward && (
-                          <span className="inline-flex items-center gap-1 text-[10px] font-bold px-2 py-0.5 rounded-full bg-amber-500/20 text-amber-300 border border-amber-500/30 mb-1">
-                            <RefreshCw className="w-3 h-3" /> Carried Forward from {row.carried_from_date || 'previous day'}
-                          </span>
-                        )}
                         <span className="font-medium text-slate-100 block text-xs leading-relaxed break-words">
                           {row.task || row.task_title}
                         </span>
-                        {/* Delivery Status Badge */}
-                        <div className="mt-1.5 flex items-center gap-2">
-                          {row.status === 'completed' || row.delivery_status?.startsWith('completed') ? (
-                            <span className="inline-flex items-center gap-1 text-[10px] font-bold text-emerald-300 bg-emerald-950/40 px-2 py-0.5 rounded border border-emerald-800/60">
-                              ✅ Completed
-                            </span>
-                          ) : (
-                            <span className="inline-flex items-center gap-1 text-[10px] font-bold text-amber-300 bg-amber-950/40 px-2 py-0.5 rounded border border-amber-800/60">
-                              ⏳ Work in Progress (WPI)
-                            </span>
-                          )}
-                        </div>
                       </td>
 
                       {/* Hours */}
@@ -1517,16 +1073,9 @@ export const MemberWorkTab: React.FC = () => {
                         {row.completed_date || row.review_assigned_date || row.date}
                       </td>
 
-                      {/* Member Feedback & WPI Reason */}
+                      {/* Member Feedback */}
                       <td className="py-3 px-3.5 text-slate-300 text-xs align-top">
-                        {row.wpi_reason || (row.status === 'in_progress' && (row.feedback_comments || row.comments)) ? (
-                          <div className="bg-amber-950/25 p-2 rounded-lg border border-amber-800/50 text-amber-200 text-[11px] leading-relaxed">
-                            <span className="font-bold text-amber-400 block mb-0.5 text-[10px] uppercase">
-                              📌 WPI Explanation:
-                            </span>
-                            {row.wpi_reason || row.feedback_comments || row.comments}
-                          </div>
-                        ) : row.feedback_comments ? (
+                        {row.feedback_comments ? (
                           <div className="bg-slate-900/80 p-2 rounded-lg border border-slate-800 text-slate-300 text-[11px] leading-relaxed">
                             {row.feedback_comments}
                           </div>

@@ -192,12 +192,7 @@ export const performanceExportService = {
     const rows = logs.map((l) => ({
       'Check-in Date': l.checkin_date || l.date,
       'Work Date': l.work_date || l.completed_date || l.assigned_date || l.date,
-      'Check-in Time (Login)': l.submission_time || l.checkin_time || '10:00 AM',
-      'Check-out Time (Logout)': l.checkout_time || '',
-      'Task Status': l.status === 'wpi' ? 'Work in Progress (WPI)' : 'Completed',
-      'Carried Forward': l.is_carried_forward ? 'Yes' : 'No',
-      'Carried From Date': l.carried_from_date || '',
-      'WPI Reason / Continuation Plan': l.wpi_reason || l.carried_from_reason || '',
+      'Check-in Time (Update Given Time)': l.submission_time || l.checkin_time || '10:00 AM',
       'Employee Name': l.employee_name,
       'Department / Pod': l.department || l.pod_name || 'Web & Sales',
       'Project Name': l.project_name || l.project,
@@ -226,12 +221,7 @@ export const performanceExportService = {
     ws['!cols'] = [
       { wch: 14 }, // Check-in Date
       { wch: 14 }, // Work Date
-      { wch: 24 }, // Check-in Time (Login)
-      { wch: 24 }, // Check-out Time (Logout)
-      { wch: 24 }, // Task Status
-      { wch: 16 }, // Carried Forward
-      { wch: 18 }, // Carried From Date
-      { wch: 35 }, // WPI Reason / Plan
+      { wch: 28 }, // Check-in Time (Update Given Time)
       { wch: 22 }, // Employee Name
       { wch: 20 }, // Department / Pod
       { wch: 22 }, // Project Name
@@ -250,6 +240,7 @@ export const performanceExportService = {
       { wch: 16 }, // TAT
       { wch: 14 }, // Efficiency
       { wch: 32 }, // Reviewer Comments
+      { wch: 18 }, // Delivery Status
       { wch: 18 }, // Workflow Status
     ];
 

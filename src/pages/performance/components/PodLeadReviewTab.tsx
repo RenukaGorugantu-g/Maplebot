@@ -27,9 +27,6 @@ import {
   Edit2,
   Send,
   Download,
-  LogIn,
-  LogOut,
-  RefreshCw,
 } from 'lucide-react';
 
 export const PodLeadReviewTab: React.FC = () => {
@@ -377,18 +374,10 @@ export const PodLeadReviewTab: React.FC = () => {
                         </td>
                         <td className="py-3 px-3 whitespace-nowrap align-top">
                           <span className="font-mono text-[11px] text-white block font-bold">{row.checkin_date || row.date}</span>
-                          <div className="flex flex-col gap-1 mt-1">
-                            <span className="inline-flex items-center gap-1 text-[10px] text-emerald-400 font-mono font-semibold bg-emerald-500/10 px-1.5 py-0.5 rounded border border-emerald-500/20" title="Morning Check-in / Login">
-                              <LogIn className="w-2.5 h-2.5 text-emerald-400" />
-                              In: {row.checkin_time || row.submission_time || '10:00 AM'}
-                            </span>
-                            {row.checkout_time ? (
-                              <span className="inline-flex items-center gap-1 text-[10px] text-indigo-400 font-mono font-semibold bg-indigo-500/10 px-1.5 py-0.5 rounded border border-indigo-500/20" title="Evening Check-out / Logout">
-                                <LogOut className="w-2.5 h-2.5 text-indigo-400" />
-                                Out: {row.checkout_time}
-                              </span>
-                            ) : null}
-                          </div>
+                          <span className="inline-flex items-center gap-1 text-[10px] text-emerald-400 font-mono font-semibold bg-emerald-500/10 px-1.5 py-0.5 rounded border border-emerald-500/20 mt-1">
+                            <Clock className="w-3 h-3 text-emerald-400" />
+                            {row.submission_time || row.checkin_time || '10:00 AM'}
+                          </span>
                           {row.work_date && row.work_date !== (row.checkin_date || row.date) && (
                             <span className="text-[10px] text-slate-400 block font-mono mt-0.5" title="Work Performance Date">
                               Work: {row.work_date}
@@ -398,35 +387,8 @@ export const PodLeadReviewTab: React.FC = () => {
                         <td className="py-3 px-3 font-medium text-slate-300 whitespace-nowrap align-top">
                           {row.project_name || row.project}
                         </td>
-                        <td className="py-3 px-3 align-top min-w-[280px]">
-                          <div className="space-y-1.5">
-                            <div className="flex flex-wrap items-center gap-1">
-                              {row.is_carried_forward && (
-                                <span className="inline-flex items-center gap-1 text-[9px] font-bold px-1.5 py-0.5 rounded bg-blue-500/15 text-blue-300 border border-blue-500/30">
-                                  <RefreshCw className="w-2.5 h-2.5" />
-                                  Carried Forward {row.carried_from_date ? `from ${row.carried_from_date}` : ''}
-                                </span>
-                              )}
-                              {row.status === 'wpi' ? (
-                                <span className="inline-flex items-center gap-1 text-[9px] font-bold px-1.5 py-0.5 rounded bg-amber-500/20 text-amber-300 border border-amber-500/30">
-                                  <Clock className="w-2.5 h-2.5 text-amber-400" />
-                                  Work In Progress (WPI)
-                                </span>
-                              ) : (
-                                <span className="inline-flex items-center gap-1 text-[9px] font-semibold px-1.5 py-0.5 rounded bg-emerald-500/15 text-emerald-300 border border-emerald-500/25">
-                                  <CheckCircle2 className="w-2.5 h-2.5" />
-                                  Completed
-                                </span>
-                              )}
-                            </div>
-                            <span className="font-medium text-slate-100 block">{row.task || row.task_title}</span>
-                            {(row.wpi_reason || row.carried_from_reason) && (
-                              <div className="p-2 rounded-lg bg-amber-950/30 border border-amber-500/30 text-[11px] text-amber-200">
-                                <span className="font-bold uppercase text-[9px] text-amber-400 block">WPI Reason:</span>
-                                {row.wpi_reason || row.carried_from_reason}
-                              </div>
-                            )}
-                          </div>
+                        <td className="py-3 px-3 align-top">
+                          <span className="font-medium text-slate-100 block">{row.task || row.task_title}</span>
                         </td>
                         <td className="py-3 px-3 font-mono text-[11px] text-slate-400 whitespace-nowrap align-top">
                           {row.assigned_date || row.date}
@@ -439,14 +401,7 @@ export const PodLeadReviewTab: React.FC = () => {
                           )}
                         </td>
                         <td className="py-3 px-3 text-[11px] text-slate-300 align-top max-w-[200px]">
-                          <div className="space-y-1">
-                            {row.feedback_comments || row.comments || <span className="text-slate-600 italic">—</span>}
-                            {row.wpi_reason && !row.feedback_comments?.includes(row.wpi_reason) && (
-                              <div className="text-[10px] text-amber-400/90 italic mt-0.5 font-mono">
-                                WPI: {row.wpi_reason}
-                              </div>
-                            )}
-                          </div>
+                          {row.feedback_comments || row.comments || <span className="text-slate-600 italic">—</span>}
                         </td>
                         <td className="py-3 px-3 text-left font-mono text-sky-400 font-bold whitespace-nowrap align-top">
                           {row.time_invested || row.duration_hours}h
