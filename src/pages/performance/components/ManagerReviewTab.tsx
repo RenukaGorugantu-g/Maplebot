@@ -599,10 +599,10 @@ export const ManagerReviewTab: React.FC<ManagerReviewTabProps> = ({
                   <th onClick={() => handleSort('project_name')} className="py-3.5 px-3.5 cursor-pointer hover:text-white whitespace-nowrap">
                     Project
                   </th>
-                  <th className="py-3.5 px-3.5 min-w-[220px]">Task Deliverable</th>
+                  <th className="py-3.5 px-3.5 min-w-[360px]">Task Deliverable</th>
                   <th className="py-3.5 px-3.5 whitespace-nowrap">Assigned Date</th>
                   <th className="py-3.5 px-3.5 whitespace-nowrap text-emerald-300">Completed Date</th>
-                  <th className="py-3.5 px-3.5 min-w-[160px] text-slate-300">Member Feedback</th>
+                  <th className="py-3.5 px-3.5 min-w-[220px] text-slate-300">Member Feedback</th>
                   <th className="py-3.5 px-3.5 text-left whitespace-nowrap">Hours</th>
                   <th className="py-3.5 px-3.5 text-left whitespace-nowrap border-r border-slate-800">Deliverables</th>
 
@@ -651,8 +651,8 @@ export const ManagerReviewTab: React.FC<ManagerReviewTabProps> = ({
                     <td className="py-3.5 px-3.5 font-bold text-slate-200 whitespace-nowrap align-top text-sm">
                       {row.project_name || row.project}
                     </td>
-                    <td className="py-3.5 px-3.5 align-top">
-                      <span className="font-medium text-slate-100 block text-sm leading-relaxed">{row.task || row.task_title}</span>
+                    <td className="py-3.5 px-3.5 align-top min-w-[360px]">
+                      <span className="font-medium text-slate-100 block text-sm leading-relaxed break-words">{row.task || row.task_title}</span>
                     </td>
                     <td className="py-3.5 px-3.5 font-mono text-xs text-slate-300 whitespace-nowrap align-top">
                       {row.assigned_date}

@@ -365,7 +365,7 @@ class MapleDataStore {
           .order('date', { ascending: false });
 
         if (!logError && dbWorkLogs) {
-          this.performanceWorkLogs = dbWorkLogs.map((l: any) => {
+          const mappedDbLogs = dbWorkLogs.map((l: any) => {
             let checkinDate = l.checkin_date || l.date;
             if (l.submitted_at) {
               const subDate = new Date(new Date(l.submitted_at).getTime() + (5.5 * 60 * 60 * 1000)).toISOString().split('T')[0];
@@ -398,6 +398,25 @@ class MapleDataStore {
               work_date: l.work_date || l.completed_date || l.assigned_date || l.date,
             };
           }).filter((l: any) => !this.isSeedItem(l));
+
+          // Merge locally stored logs that have not yet reached Supabase
+          const dbIds = new Set(mappedDbLogs.map((l: any) => l.id));
+          const unsyncedLocalLogs = this.performanceWorkLogs.filter((l) => !dbIds.has(l.id) && !this.isSeedItem(l));
+
+          this.performanceWorkLogs = [...unsyncedLocalLogs, ...mappedDbLogs];
+
+          // Auto-push unsynced local logs to Supabase
+          if (unsyncedLocalLogs.length > 0) {
+            const payloads = unsyncedLocalLogs.map((l) => this.sanitizeWorkLogForDb(l));
+            supabase
+              .from('performance_work_logs')
+              .upsert(payloads)
+              .then(({ error }) => {
+                if (error) console.warn('Syncing local work logs to Supabase error:', error);
+                else console.log(`Auto-synced ${unsyncedLocalLogs.length} local logs to Supabase.`);
+              });
+          }
+
           try {
             localStorage.setItem('maplebot_performance_work_logs', JSON.stringify(this.performanceWorkLogs));
           } catch {}
@@ -821,7 +840,7 @@ class MapleDataStore {
           .order('date', { ascending: false });
 
         if (!logError && dbWorkLogs) {
-          this.performanceWorkLogs = dbWorkLogs.map((l: any) => {
+          const mappedDbLogs = dbWorkLogs.map((l: any) => {
             let checkinDate = l.checkin_date || l.date;
             if (l.submitted_at) {
               const subDate = new Date(new Date(l.submitted_at).getTime() + (5.5 * 60 * 60 * 1000)).toISOString().split('T')[0];
@@ -854,6 +873,25 @@ class MapleDataStore {
               work_date: l.work_date || l.completed_date || l.assigned_date || l.date,
             };
           }).filter((l: any) => !this.isSeedItem(l));
+
+          // Merge locally stored logs that have not yet reached Supabase
+          const dbIds = new Set(mappedDbLogs.map((l: any) => l.id));
+          const unsyncedLocalLogs = this.performanceWorkLogs.filter((l) => !dbIds.has(l.id) && !this.isSeedItem(l));
+
+          this.performanceWorkLogs = [...unsyncedLocalLogs, ...mappedDbLogs];
+
+          // Auto-push unsynced local logs to Supabase
+          if (unsyncedLocalLogs.length > 0) {
+            const payloads = unsyncedLocalLogs.map((l) => this.sanitizeWorkLogForDb(l));
+            supabase
+              .from('performance_work_logs')
+              .upsert(payloads)
+              .then(({ error }) => {
+                if (error) console.warn('Syncing local work logs to Supabase error:', error);
+                else console.log(`Auto-synced ${unsyncedLocalLogs.length} local logs to Supabase.`);
+              });
+          }
+
           try {
             localStorage.setItem('maplebot_performance_work_logs', JSON.stringify(this.performanceWorkLogs));
           } catch {}

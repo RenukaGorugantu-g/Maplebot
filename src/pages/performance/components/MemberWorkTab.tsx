@@ -33,6 +33,7 @@ import {
   MessageSquare,
   Edit2,
   Save,
+  ClipboardList,
 } from 'lucide-react';
 
 interface TaskDraftRow {
@@ -87,10 +88,13 @@ export const MemberWorkTab: React.FC = () => {
     return `${hours.toString().padStart(2, '0')}:${minutes} ${ampm}`;
   };
 
-  // Reporting Work Date (Previous working day by default) & Today's Check-in Date / Time
-  const [workDate] = useState<string>(prevWorkingDay);
+  // Reporting Work Date & Today's Check-in Date / Time
+  const [workDate, setWorkDate] = useState<string>(prevWorkingDay);
   const [checkinDate] = useState<string>(todayStr);
   const [checkinTime, setCheckinTime] = useState<string>(getFormattedTime());
+  const [selectedEmployeeId, setSelectedEmployeeId] = useState<string>('');
+  const [isPasteModalOpen, setIsPasteModalOpen] = useState<boolean>(false);
+  const [pastedChatText, setPastedChatText] = useState<string>('');
 
   // Keep live time updated
   React.useEffect(() => {
@@ -231,6 +235,11 @@ export const MemberWorkTab: React.FC = () => {
     setIsSubmitting(true);
     setErrorMsg('');
 
+    const targetProfile = (isPrivileged && selectedEmployeeId)
+      ? dataStore.getProfileById(selectedEmployeeId) || profile
+      : profile;
+    const targetPod = targetProfile?.pod_id ? dataStore.getPodById(targetProfile.pod_id) : userPod;
+
     try {
       for (const r of validRows) {
         const combinedComments = [
@@ -242,10 +251,10 @@ export const MemberWorkTab: React.FC = () => {
           .join(' | ');
 
         await dataStore.submitMemberWork({
-          employee_id: profile?.id || '',
-          employee_name: profile?.full_name || 'Team Member',
-          pod_id: userPod?.id || profile?.pod_id,
-          department_id: userPod?.id || profile?.pod_id,
+          employee_id: targetProfile?.id || profile?.id || '',
+          employee_name: targetProfile?.full_name || profile?.full_name || 'Team Member',
+          pod_id: targetPod?.id || targetProfile?.pod_id || userPod?.id || 'pod-web-sales',
+          department_id: targetPod?.id || targetProfile?.pod_id || userPod?.id || 'pod-web-sales',
           date: todayStr,
           checkin_date: todayStr,
           work_date: workDate,
@@ -269,9 +278,9 @@ export const MemberWorkTab: React.FC = () => {
       }
 
       // Dispatch high-level summary overview to Google Chat (with highlighted red blockers)
-      const memberPod = profile?.pod_id ? dataStore.getPodById(profile.pod_id) : userPod;
-      const podName = memberPod?.name || userPod?.name || 'eLearning';
-      const memberName = profile?.full_name || 'Team Member';
+      const memberPod = targetProfile?.pod_id ? dataStore.getPodById(targetProfile.pod_id) : targetPod;
+      const podName = memberPod?.name || targetPod?.name || 'Web & Sales';
+      const memberName = targetProfile?.full_name || 'Team Member';
 
       googleChatService.sendWorkDeliverablesSummaryCard({
         memberName,
@@ -289,7 +298,7 @@ export const MemberWorkTab: React.FC = () => {
         })),
       }).catch((err) => console.warn('GChat summary notice:', err));
 
-      setSuccessNotice(`🎉 Fantastic work! Successfully submitted ${validRows.length} task deliverable(s) for work date ${workDate} (Checked in: ${todayStr} at ${checkinTime})! High-level overview dispatched to Google Chat.`);
+      setSuccessNotice(`🎉 Fantastic work! Successfully submitted ${validRows.length} task deliverable(s) for ${memberName} (work date ${workDate}, checked in: ${todayStr} at ${checkinTime})! High-level overview dispatched to Google Chat.`);
       setTimeout(() => setSuccessNotice(''), 7000);
 
       // Reset empty rows with hours set to 0
@@ -313,6 +322,69 @@ export const MemberWorkTab: React.FC = () => {
       setErrorMsg(err.message || 'Failed to submit work updates.');
     } finally {
       setIsSubmitting(false);
+    }
+  };
+
+  // Helper to parse pasted task lines (from Google Chat or notes) into deliverable rows
+  const handleParseAndApplyPaste = () => {
+    if (!pastedChatText.trim()) return;
+    const lines = pastedChatText.split('\n').map((l) => l.trim()).filter(Boolean);
+    const parsedRows: TaskDraftRow[] = [];
+
+    for (let i = 0; i < lines.length; i++) {
+      const rawLine = lines[i];
+      if (
+        rawLine.startsWith('📋') ||
+        rawLine.toLowerCase().includes('daily work deliverables') ||
+        rawLine.toLowerCase().startsWith('maplebot') ||
+        rawLine.toLowerCase().includes('checked in today')
+      ) {
+        continue;
+      }
+
+      let cleanLine = rawLine.replace(/^(\d+[\.\)]|\-|\*|•)\s*/, '').trim();
+      if (!cleanLine) continue;
+
+      let hours = 1;
+      const hourMatch = cleanLine.match(/(?:—|-|\(|\/|\|)?\s*(\d+(?:\.\d+)?)\s*(?:hrs?|hours?|h)\b/i);
+      const minsMatch = cleanLine.match(/(?:—|-|\(|\/|\|)?\s*(\d+)\s*(?:mins?|minutes?|m)\b/i);
+
+      if (hourMatch) {
+        hours = parseFloat(hourMatch[1]) || 1;
+        cleanLine = cleanLine.replace(/(?:—|-|\(|\/|\|)?\s*(\d+(?:\.\d+)?)\s*(?:hrs?|hours?|h)\s*\)?$/i, '').trim();
+      } else if (minsMatch) {
+        hours = Math.round((parseInt(minsMatch[1], 10) / 60) * 10) / 10;
+        cleanLine = cleanLine.replace(/(?:—|-|\(|\/|\|)?\s*(\d+)\s*(?:mins?|minutes?|m)\s*\)?$/i, '').trim();
+      }
+
+      let projectName = 'General';
+      let taskText = cleanLine;
+      const colonIdx = cleanLine.indexOf(':');
+      if (colonIdx > 0 && colonIdx < 45) {
+        projectName = cleanLine.substring(0, colonIdx).trim();
+        taskText = cleanLine.substring(colonIdx + 1).trim();
+      }
+
+      parsedRows.push({
+        id: `row-${Date.now()}-${i + 1}`,
+        category: 'Development',
+        projectName: projectName || 'General',
+        task: taskText || cleanLine,
+        assignedDate: workDate,
+        completedDate: workDate,
+        timeInvested: hours,
+        unitCountCompleted: 1,
+        reviewAssignedDate: workDate,
+        feedbackComments: '',
+        comments: '',
+        blocker: '',
+      });
+    }
+
+    if (parsedRows.length > 0) {
+      setTaskRows(parsedRows);
+      setIsPasteModalOpen(false);
+      setPastedChatText('');
     }
   };
 
@@ -489,27 +561,64 @@ export const MemberWorkTab: React.FC = () => {
             </p>
           </div>
 
-          {/* Date, Check-in Time & Member Badge (Read-Only to prevent tampering) */}
+          {/* Date, Check-in Time & Member Badge / Selector */}
           <div className="flex flex-wrap items-center gap-3">
-            {/* Reporting Work Date Badge */}
-            <div className="flex items-center gap-2 bg-slate-900/90 border border-slate-800 px-3.5 py-2 rounded-xl text-sm shadow-sm select-none" title="Date of the previous working day being reported">
-              <Calendar className="w-4 h-4 text-sky-400" />
-              <span className="text-slate-400 font-medium">Work Date:</span>
-              <span className="text-white font-mono font-bold">{workDate}</span>
+            {/* Reporting Work Date Picker */}
+            <div className="flex items-center gap-2 bg-slate-900/90 border border-slate-800 px-3 py-1.5 rounded-xl text-xs shadow-sm" title="Date of the working day being reported">
+              <Calendar className="w-4 h-4 text-sky-400 flex-shrink-0" />
+              <span className="text-slate-400 font-medium whitespace-nowrap">Work Date:</span>
+              <input
+                type="date"
+                value={workDate}
+                onChange={(e) => {
+                  const newDate = e.target.value;
+                  setWorkDate(newDate);
+                  setTaskRows((prev) =>
+                    prev.map((r) => ({
+                      ...r,
+                      assignedDate: newDate,
+                      completedDate: newDate,
+                      reviewAssignedDate: newDate,
+                    }))
+                  );
+                }}
+                className="bg-slate-800 border border-slate-700 text-white font-mono font-bold rounded-lg px-2 py-1 text-xs focus:outline-none focus:border-sky-500 cursor-pointer"
+              />
             </div>
 
-            {/* Check-in / Submission Date & Time (Non-Editable) */}
-            <div className="flex items-center gap-2 bg-slate-900/90 border border-slate-800 px-3.5 py-2 rounded-xl text-sm shadow-sm select-none" title="Today's submission check-in date and time">
-              <Clock className="w-4 h-4 text-emerald-400" />
-              <span className="text-slate-400 font-medium">Check-in:</span>
+            {/* Check-in / Submission Date & Time (Live) */}
+            <div className="flex items-center gap-2 bg-slate-900/90 border border-slate-800 px-3 py-1.5 rounded-xl text-xs shadow-sm select-none" title="Today's submission check-in date and time">
+              <Clock className="w-4 h-4 text-emerald-400 flex-shrink-0" />
+              <span className="text-slate-400 font-medium whitespace-nowrap">Check-in:</span>
               <span className="text-emerald-300 font-mono font-bold">{checkinDate} • {checkinTime}</span>
             </div>
 
-            {/* Member Name Badge */}
-            <div className="flex items-center gap-2 bg-slate-900/90 border border-slate-800 px-3.5 py-2 rounded-xl text-sm shadow-sm select-none">
-              <User className="w-4 h-4 text-purple-400" />
-              <span className="text-slate-200 font-bold">{profile?.full_name || 'Team Member'}</span>
-            </div>
+            {/* Member Selector or Badge */}
+            {isPrivileged ? (
+              <div className="flex items-center gap-2 bg-slate-900/90 border border-slate-800 px-3 py-1.5 rounded-xl text-xs shadow-sm">
+                <User className="w-4 h-4 text-purple-400 flex-shrink-0" />
+                <span className="text-slate-400 font-medium whitespace-nowrap">Reporting For:</span>
+                <select
+                  value={selectedEmployeeId}
+                  onChange={(e) => setSelectedEmployeeId(e.target.value)}
+                  className="bg-slate-800 border border-slate-700 text-white font-bold rounded-lg px-2.5 py-1 text-xs focus:outline-none focus:border-maple-500 cursor-pointer"
+                >
+                  <option value="">Myself ({profile?.full_name})</option>
+                  {availableTeamProfiles
+                    .filter((p) => p.id !== profile?.id)
+                    .map((p) => (
+                      <option key={p.id} value={p.id}>
+                        {p.full_name} ({dataStore.getPodById(p.pod_id)?.name || p.role || 'Member'})
+                      </option>
+                    ))}
+                </select>
+              </div>
+            ) : (
+              <div className="flex items-center gap-2 bg-slate-900/90 border border-slate-800 px-3.5 py-2 rounded-xl text-sm shadow-sm select-none">
+                <User className="w-4 h-4 text-purple-400" />
+                <span className="text-slate-200 font-bold">{profile?.full_name || 'Team Member'}</span>
+              </div>
+            )}
           </div>
         </div>
 
@@ -531,12 +640,12 @@ export const MemberWorkTab: React.FC = () => {
         {/* THE EDITABLE MULTI-TASK TABLE GRID (Spacious, Clear & Clean) */}
         <form onSubmit={handleSubmitAll} className="space-y-4">
           <div className="rounded-xl border border-slate-800 bg-[#060E1A] shadow-xl overflow-x-auto">
-            <table className="w-full text-left text-xs border-collapse min-w-[1280px]">
+            <table className="w-full text-left text-xs border-collapse min-w-[1600px]">
               <thead>
                 <tr className="bg-[#0B1728] border-b border-slate-800 text-[11px] font-semibold uppercase tracking-wider text-slate-300">
                   <th className="py-3 px-3 w-10 text-center text-slate-500">#</th>
-                  <th className="py-3 px-3 w-[160px]">Project Name</th>
-                  <th className="py-3 px-3 min-w-[260px]">Task Deliverable (Specific activity)</th>
+                  <th className="py-3 px-3.5 min-w-[180px] w-[200px]">Project Name</th>
+                  <th className="py-3 px-3.5 min-w-[460px] w-[480px]">Task Deliverable (Specific activity)</th>
                   <th className="py-3 px-3 w-[135px]">Assigned Date</th>
                   <th className="py-3 px-3 w-[115px] text-left">Hours</th>
                   <th className="py-3 px-3 w-[100px] text-left">
@@ -551,8 +660,8 @@ export const MemberWorkTab: React.FC = () => {
                     </div>
                   </th>
                   <th className="py-3 px-3 w-[135px] text-sky-300">Completed Date</th>
-                  <th className="py-3 px-3 min-w-[220px] text-maple-300">Feedback / Comments</th>
-                  <th className="py-3 px-3 min-w-[170px]">
+                  <th className="py-3 px-3.5 min-w-[260px] w-[280px] text-maple-300">Feedback / Comments</th>
+                  <th className="py-3 px-3.5 min-w-[190px] w-[220px]">
                     <div className="flex items-center gap-1.5 text-rose-400 font-semibold">
                       <span>Blockers</span>
                       <span className="text-[10px] text-slate-400 font-normal">(Optional)</span>
@@ -565,47 +674,47 @@ export const MemberWorkTab: React.FC = () => {
                 {taskRows.map((row, idx) => (
                   <tr key={row.id} className="hover:bg-slate-800/30 transition-colors">
                     {/* Index */}
-                    <td className="py-2.5 px-3 text-center font-mono text-slate-400 font-bold text-xs">
+                    <td className="py-3 px-3 text-center font-mono text-slate-400 font-bold text-xs align-top pt-4">
                       {idx + 1}
                     </td>
 
                     {/* Project Name */}
-                    <td className="py-2.5 px-3">
+                    <td className="py-3 px-3.5 min-w-[180px] w-[200px] align-top">
                       <input
                         type="text"
                         value={row.projectName}
                         onChange={(e) => handleUpdateRow(row.id, 'projectName', e.target.value)}
                         placeholder="e.g. MapleBot, LXD..."
-                        className="w-full px-2.5 py-1.5 bg-slate-900 border border-slate-700/80 rounded-lg text-white placeholder-slate-500 focus:outline-none focus:border-maple-500 text-xs font-medium"
+                        className="w-full px-3 py-2 bg-slate-900 border border-slate-700/80 rounded-lg text-white placeholder-slate-500 focus:outline-none focus:border-maple-500 text-xs font-medium"
                         required
                       />
                     </td>
 
-                    {/* Task Description */}
-                    <td className="py-2.5 px-3">
+                    {/* Task Description (Expanded & Spacious) */}
+                    <td className="py-3 px-3.5 min-w-[460px] w-[480px] align-top">
                       <textarea
-                        rows={2}
+                        rows={3}
                         value={row.task}
                         onChange={(e) => handleUpdateRow(row.id, 'task', e.target.value)}
                         placeholder={`Task ${idx + 1}: Detailed description of what you completed...`}
-                        className="w-full px-2.5 py-1.5 bg-slate-900 border border-slate-700/80 rounded-lg text-white placeholder-slate-500 focus:outline-none focus:border-maple-500 text-xs resize-none font-medium leading-relaxed"
+                        className="w-full min-w-[440px] px-3 py-2.5 bg-slate-900 border border-slate-700/80 rounded-lg text-white placeholder-slate-500 focus:outline-none focus:border-maple-500 text-xs font-medium leading-relaxed resize-y min-h-[76px]"
                         required
                       />
                     </td>
 
                     {/* Assigned Date */}
-                    <td className="py-2.5 px-3">
+                    <td className="py-3 px-3 align-top">
                       <input
                         type="date"
                         value={row.assignedDate}
                         onChange={(e) => handleUpdateRow(row.id, 'assignedDate', e.target.value)}
-                        className="w-full px-2 py-1.5 bg-slate-900 border border-slate-700/80 rounded-lg text-slate-200 focus:outline-none focus:border-maple-500 text-xs cursor-pointer font-medium"
+                        className="w-full px-2 py-2 bg-slate-900 border border-slate-700/80 rounded-lg text-slate-200 focus:outline-none focus:border-maple-500 text-xs cursor-pointer font-medium"
                         required
                       />
                     </td>
 
                     {/* Hours Invested - Clean, Non-Squished with inner 'hrs' badge */}
-                    <td className="py-2.5 px-3 text-left">
+                    <td className="py-3 px-3 text-left align-top">
                       <div className="relative flex items-center">
                         <input
                           type="number"
@@ -618,7 +727,7 @@ export const MemberWorkTab: React.FC = () => {
                             handleUpdateRow(row.id, 'timeInvested', isNaN(v) ? 0 : v);
                           }}
                           placeholder="e.g. 2 or 1.5"
-                          className="w-full pr-7 pl-2.5 py-1.5 bg-slate-900 border border-slate-700/80 rounded-lg text-sky-400 font-mono font-bold text-xs focus:outline-none focus:border-maple-500 [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
+                          className="w-full pr-7 pl-2.5 py-2 bg-slate-900 border border-slate-700/80 rounded-lg text-sky-400 font-mono font-bold text-xs focus:outline-none focus:border-maple-500 [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
                           required
                         />
                         <span className="absolute right-2 text-[10px] text-slate-400 font-medium pointer-events-none">hrs</span>
@@ -626,7 +735,7 @@ export const MemberWorkTab: React.FC = () => {
                     </td>
 
                     {/* Deliverables Count - Clean with inner 'items' badge */}
-                    <td className="py-2.5 px-3 text-left">
+                    <td className="py-3 px-3 text-left align-top">
                       <div className="relative flex items-center">
                         <input
                           type="number"
@@ -638,7 +747,7 @@ export const MemberWorkTab: React.FC = () => {
                             handleUpdateRow(row.id, 'unitCountCompleted', v);
                           }}
                           placeholder="1"
-                          className="w-full pr-10 pl-2 py-1.5 bg-slate-900 border border-slate-700/80 rounded-lg text-purple-300 font-mono font-bold text-xs focus:outline-none focus:border-maple-500 [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
+                          className="w-full pr-10 pl-2 py-2 bg-slate-900 border border-slate-700/80 rounded-lg text-purple-300 font-mono font-bold text-xs focus:outline-none focus:border-maple-500 [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
                           required
                         />
                         <span className="absolute right-2 text-[10px] text-slate-400 font-medium pointer-events-none">items</span>
@@ -646,49 +755,46 @@ export const MemberWorkTab: React.FC = () => {
                     </td>
 
                     {/* Completed Date (Member Single Source of Truth) */}
-                    <td className="py-2.5 px-3">
+                    <td className="py-3 px-3 align-top">
                       <input
                         type="date"
                         value={row.completedDate}
                         onChange={(e) => handleUpdateRow(row.id, 'completedDate', e.target.value)}
-                        className="w-full px-2 py-1.5 bg-slate-900 border border-slate-700/80 rounded-lg text-sky-300 font-medium focus:outline-none focus:border-sky-500 text-xs cursor-pointer"
+                        className="w-full px-2 py-2 bg-slate-900 border border-slate-700/80 rounded-lg text-sky-300 font-medium focus:outline-none focus:border-sky-500 text-xs cursor-pointer"
                         required
                       />
                     </td>
 
                     {/* Individual Task Feedback / Comments */}
-                    <td className="py-2.5 px-3">
+                    <td className="py-3 px-3.5 min-w-[260px] w-[280px] align-top">
                       <textarea
-                        rows={2}
+                        rows={3}
                         value={row.feedbackComments}
                         onChange={(e) => handleUpdateRow(row.id, 'feedbackComments', e.target.value)}
                         placeholder="Task feedback / comments..."
-                        className="w-full px-2.5 py-1.5 bg-slate-900 border border-slate-700/80 rounded-lg text-slate-200 placeholder-slate-500 focus:outline-none focus:border-maple-500 text-xs resize-none font-medium leading-relaxed"
+                        className="w-full min-w-[240px] px-3 py-2.5 bg-slate-900 border border-slate-700/80 rounded-lg text-slate-200 placeholder-slate-500 focus:outline-none focus:border-maple-500 text-xs font-medium leading-relaxed resize-y min-h-[76px]"
                       />
                     </td>
 
                     {/* Blockers / Impediments - Clean & uncluttered */}
-                    <td className="py-2.5 px-3">
+                    <td className="py-3 px-3.5 min-w-[190px] w-[220px] align-top">
                       <input
                         type="text"
                         value={row.blocker}
                         onChange={(e) => handleUpdateRow(row.id, 'blocker', e.target.value)}
-                        placeholder="Blocker or issue (if any)..."
-                        className={`w-full px-2.5 py-1.5 bg-slate-900 border ${
-                          row.blocker.trim()
-                            ? 'border-rose-500/80 bg-rose-950/20 text-rose-200 font-semibold'
-                            : 'border-slate-700/80 text-slate-300'
-                        } rounded-lg placeholder-slate-500 focus:outline-none focus:border-rose-500 text-xs`}
+                        placeholder="Any impediment..."
+                        className="w-full px-3 py-2 bg-slate-900 border border-slate-700/80 rounded-lg text-rose-300 placeholder-slate-500 focus:outline-none focus:border-rose-500 text-xs font-medium"
                       />
                     </td>
 
-                    {/* Action */}
-                    <td className="py-2.5 px-2 text-center">
+                    {/* Delete Action */}
+                    <td className="py-3 px-2 text-center align-top pt-3.5">
                       <button
                         type="button"
                         onClick={() => handleRemoveRow(row.id)}
-                        className="p-1.5 rounded-lg text-slate-500 hover:text-rose-400 hover:bg-rose-500/10 transition-colors cursor-pointer"
-                        title="Delete task row"
+                        disabled={taskRows.length <= 1}
+                        className="p-1.5 rounded-lg text-slate-500 hover:text-rose-400 hover:bg-rose-500/10 transition-colors disabled:opacity-30 disabled:cursor-not-allowed"
+                        title="Remove row"
                       >
                         <Trash2 className="w-4 h-4" />
                       </button>
@@ -701,7 +807,7 @@ export const MemberWorkTab: React.FC = () => {
 
           {/* Table Footer: Add Row + Live Metrics + Submit All */}
           <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 p-4 rounded-xl bg-slate-900/90 border border-slate-800">
-            <div className="flex items-center gap-3">
+            <div className="flex flex-wrap items-center gap-3">
               <Button
                 type="button"
                 variant="secondary"
@@ -710,6 +816,16 @@ export const MemberWorkTab: React.FC = () => {
                 leftIcon={<Plus className="w-4 h-4 text-maple-400" />}
               >
                 Add Another Task Row
+              </Button>
+
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                onClick={() => setIsPasteModalOpen(true)}
+                leftIcon={<ClipboardList className="w-4 h-4 text-sky-400" />}
+              >
+                Paste from Google Chat / Notes
               </Button>
 
               <div className="hidden md:flex items-center gap-4 pl-3 border-l border-slate-800 text-xs">
@@ -874,20 +990,20 @@ export const MemberWorkTab: React.FC = () => {
             </div>
           ) : (
             <div className="overflow-x-auto">
-              <table className="w-full text-left text-xs border-collapse min-w-[1300px]">
+              <table className="w-full text-left text-xs border-collapse min-w-[1550px]">
                 <thead className="bg-[#0B1728] border-b border-slate-800 text-[11px] font-bold uppercase tracking-wider text-slate-300">
                   <tr>
                     {ledgerMode === 'team' && isPrivileged && (
                       <th className="py-3 px-3.5 whitespace-nowrap min-w-[160px]">Team Member</th>
                     )}
                     <th className="py-3 px-3.5 whitespace-nowrap">Date & Check-in Time</th>
-                    <th className="py-3 px-3.5 whitespace-nowrap min-w-[140px]">Project</th>
-                    <th className="py-3 px-3.5 min-w-[240px]">Task Deliverable</th>
+                    <th className="py-3 px-3.5 whitespace-nowrap min-w-[160px]">Project</th>
+                    <th className="py-3 px-3.5 min-w-[380px]">Task Deliverable</th>
                     <th className="py-3 px-3.5 text-left whitespace-nowrap">Hours</th>
                     <th className="py-3 px-3.5 text-left whitespace-nowrap">Deliverables</th>
                     <th className="py-3 px-3.5 whitespace-nowrap text-sky-300">Completed Date</th>
-                    <th className="py-3 px-3.5 min-w-[200px] text-maple-300">Member Feedback</th>
-                    <th className="py-3 px-3.5 min-w-[200px] text-emerald-300">Reviewer Comments</th>
+                    <th className="py-3 px-3.5 min-w-[240px] text-maple-300">Member Feedback</th>
+                    <th className="py-3 px-3.5 min-w-[240px] text-emerald-300">Reviewer Comments</th>
                     <th className="py-3 px-3.5 text-center whitespace-nowrap">Workflow Status</th>
                     {isPrivileged && (
                       <th className="py-3 px-3.5 text-center whitespace-nowrap">Action</th>
@@ -929,15 +1045,15 @@ export const MemberWorkTab: React.FC = () => {
                       </td>
 
                       {/* Project */}
-                      <td className="py-3 px-3.5 whitespace-nowrap align-top">
+                      <td className="py-3 px-3.5 whitespace-nowrap align-top min-w-[160px]">
                         <span className="text-xs font-semibold text-slate-200 block">
                           {row.project_name || row.project || 'General'}
                         </span>
                       </td>
 
                       {/* Task */}
-                      <td className="py-3 px-3.5 align-top">
-                        <span className="font-medium text-slate-100 block text-xs leading-relaxed">
+                      <td className="py-3 px-3.5 align-top min-w-[380px]">
+                        <span className="font-medium text-slate-100 block text-xs leading-relaxed break-words">
                           {row.task || row.task_title}
                         </span>
                       </td>
@@ -1217,6 +1333,52 @@ export const MemberWorkTab: React.FC = () => {
           </form>
         </Modal>
       )}
+      {/* Quick Paste from Google Chat / Notes Modal */}
+      <Modal
+        isOpen={isPasteModalOpen}
+        onClose={() => setIsPasteModalOpen(false)}
+        title="Paste Tasks from Google Chat or Notes"
+        subtitle="Paste lines of tasks or Google Chat messages. They will automatically be parsed into deliverable rows."
+        maxWidth="lg"
+      >
+        <div className="space-y-4">
+          <div>
+            <label className="text-xs font-semibold text-slate-300 block mb-1.5">
+              Paste Raw Task Lines (e.g. from Google Chat)
+            </label>
+            <textarea
+              rows={8}
+              value={pastedChatText}
+              onChange={(e) => setPastedChatText(e.target.value)}
+              placeholder="e.g.&#10;1. Custom eLearning Page: Continue redesigning the page — 2 hrs&#10;2. Article Publishing: Publish article on Medium — 1 hr&#10;3. SEO Updates: Added meta titles to pages — 2.5 hrs"
+              className="w-full px-3 py-2.5 bg-slate-900 border border-slate-700 rounded-xl text-white placeholder-slate-500 text-xs font-mono focus:outline-none focus:border-sky-500 resize-none leading-relaxed"
+            />
+            <p className="text-[11px] text-slate-400 mt-1.5">
+              Supports formats with project names, bullet points, numbers, and duration (e.g. "— 2 hrs", "(1.5h)").
+            </p>
+          </div>
+
+          <div className="flex justify-end gap-3 pt-3 border-t border-slate-800">
+            <Button
+              type="button"
+              variant="secondary"
+              size="sm"
+              onClick={() => setIsPasteModalOpen(false)}
+            >
+              Cancel
+            </Button>
+            <GradientButton
+              type="button"
+              size="sm"
+              onClick={handleParseAndApplyPaste}
+              disabled={!pastedChatText.trim()}
+              leftIcon={<Sparkles className="w-4 h-4" />}
+            >
+              Parse & Populate Table
+            </GradientButton>
+          </div>
+        </div>
+      </Modal>
     </div>
   );
 };
