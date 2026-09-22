@@ -16,7 +16,7 @@ export type WorkCategory =
   | 'Client Support'
   | 'Other';
 
-export type WorkStatus = 'completed' | 'in_progress' | 'pending' | 'blocked';
+export type WorkStatus = 'completed' | 'in_progress' | 'pending' | 'blocked' | 'wpi';
 export type WorkPriority = 'low' | 'medium' | 'high' | 'critical';
 
 export type WorkflowStatus =
@@ -96,6 +96,12 @@ export interface PerformanceWorkLog {
   deliverable?: string;
   outcome?: string;
   impact?: string;
+  checkout_time?: string; // Formatted check-out display time e.g. "06:30 PM"
+  checkout_at?: string; // ISO 8601 server check-out timestamp
+  is_carried_forward?: boolean; // True if carried forward from previous day's WPI
+  carried_from_date?: string; // Original work date if carried forward
+  carried_from_reason?: string; // Reason from previous day
+  wpi_reason?: string; // Mandatory explanation when task is still in progress at checkout
 
   // 2. POD LEAD REVIEW (Verification Fields)
   expected_completion_date?: string; // 6. Expected Completion Date (YYYY-MM-DD)

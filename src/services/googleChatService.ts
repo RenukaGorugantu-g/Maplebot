@@ -944,6 +944,205 @@ export const googleChatService = {
 
     return await this.dispatchToSpace(payload);
   },
+
+  // --- MORNING ACTION ITEMS & CHECK-IN CARD ---
+  async sendMorningActionItemsCard(params: {
+    memberName: string;
+    podName: string;
+    workDate: string;
+    checkinTime: string;
+    items: Array<{
+      projectName: string;
+      task: string;
+      isCarriedForward?: boolean;
+      carriedFromDate?: string;
+      carriedReason?: string;
+    }>;
+    portalUrl?: string;
+  }): Promise<boolean> {
+    const host = typeof window !== 'undefined' ? window.location.origin : 'http://localhost:5173';
+    const redirectUrl = params.portalUrl || `${host}/updates/my-update`;
+
+    const memberProfile = dataStore.getProfiles().find((p) => p.full_name === params.memberName);
+    const memberTag = memberProfile?.email ? `<users/${memberProfile.email}>` : `@${params.memberName}`;
+
+    const itemsText = params.items
+      .map((item, idx) => {
+        let line = `<b>${idx + 1}. [${item.projectName}]</b> ${item.task}`;
+        if (item.isCarriedForward) {
+          line += `<br/>&nbsp;&nbsp;&nbsp;&nbsp;🔄 <i>Carried Forward from ${item.carriedFromDate || 'previous day'}</i>`;
+          if (item.carriedReason) {
+            line += ` — <i>"${item.carriedReason}"</i>`;
+          }
+        }
+        return line;
+      })
+      .join('<br/><br/>');
+
+    const notificationText = `🌅 *Morning Check-in* — ${memberTag} (${params.podName}) checked in today at *${params.checkinTime} IST* with ${params.items.length} planned action item(s) for work date ${params.workDate}.`;
+
+    const payload = {
+      text: notificationText,
+      cardsV2: [
+        {
+          cardId: `morning-checkin-${Date.now()}`,
+          card: {
+            header: {
+              title: `Morning Check-in — ${params.memberName}`,
+              subtitle: `Login / Check-in: ${params.checkinTime} IST • Work Date: ${params.workDate} • ${params.podName}`,
+              imageUrl: 'https://cdn-icons-png.flaticon.com/512/869/869869.png',
+              imageType: 'CIRCLE',
+            },
+            sections: [
+              {
+                header: `🎯 Today's Planned Action Items (${params.items.length} items)`,
+                widgets: [
+                  {
+                    textParagraph: {
+                      text: itemsText || 'No action items specified.',
+                    },
+                  },
+                  {
+                    buttonList: {
+                      buttons: [
+                        {
+                          text: '🚀 View in MapleBot',
+                          onClick: {
+                            openLink: {
+                              url: redirectUrl,
+                            },
+                          },
+                        },
+                      ],
+                    },
+                  },
+                ],
+              },
+            ],
+          },
+        },
+      ],
+    };
+
+    return await this.dispatchToSpace(payload);
+  },
+
+  // --- END OF DAY CHECK-OUT & DELIVERABLES CARD ---
+  async sendEndOfDayCheckoutCard(params: {
+    memberName: string;
+    podName: string;
+    workDate: string;
+    checkinTime: string;
+    checkoutTime: string;
+    totalHours: number;
+    items: Array<{
+      projectName: string;
+      task: string;
+      timeInvested: number;
+      unitCountCompleted: number;
+      status: 'completed' | 'wpi';
+      wpiReason?: string;
+      comments?: string;
+      isCarriedForward?: boolean;
+    }>;
+    portalUrl?: string;
+  }): Promise<boolean> {
+    const host = typeof window !== 'undefined' ? window.location.origin : 'http://localhost:5173';
+    const redirectUrl = params.portalUrl || `${host}/updates/team`;
+
+    const memberProfile = dataStore.getProfiles().find((p) => p.full_name === params.memberName);
+    const memberTag = memberProfile?.email ? `<users/${memberProfile.email}>` : `@${params.memberName}`;
+
+    const completedItems = params.items.filter((i) => i.status === 'completed');
+    const wpiItems = params.items.filter((i) => i.status === 'wpi');
+
+    const completedText = completedItems.length > 0
+      ? completedItems
+          .map((item, idx) => {
+            let line = `✅ <b>${idx + 1}. [${item.projectName}]</b> ${item.task} (<b>${item.timeInvested}h</b> • ${item.unitCountCompleted} unit(s))`;
+            if (item.comments && item.comments.trim()) {
+              line += `<br/>&nbsp;&nbsp;&nbsp;&nbsp;💬 <i>"${item.comments.trim()}"</i>`;
+            }
+            return line;
+          })
+          .join('<br/><br/>')
+      : '<i>No tasks marked as fully completed today.</i>';
+
+    const wpiText = wpiItems.length > 0
+      ? wpiItems
+          .map((item, idx) => {
+            let line = `🟠 <b>${idx + 1}. [${item.projectName}]</b> ${item.task} (<b>${item.timeInvested}h</b>)`;
+            if (item.wpiReason && item.wpiReason.trim()) {
+              line += `<br/>&nbsp;&nbsp;&nbsp;&nbsp;📌 <b>WPI Reason & Next Step:</b> <font color="#D97706"><i>"${item.wpiReason.trim()}"</i></font>`;
+            }
+            return line;
+          })
+          .join('<br/><br/>')
+      : '🟢 <i>All planned tasks completed today! Zero WPI carry-forward.</i>';
+
+    const notificationText = `🌆 *End-of-Day Check-out* — ${memberTag} (${params.podName}) logged out at *${params.checkoutTime} IST* (Login: ${params.checkinTime}, Logout: ${params.checkoutTime} • ${params.totalHours}h • ${completedItems.length} Completed • ${wpiItems.length} WPI).`;
+
+    const sections: any[] = [
+      {
+        header: `✅ Completed Deliverables (${completedItems.length})`,
+        widgets: [
+          {
+            textParagraph: {
+              text: completedText,
+            },
+          },
+        ],
+      },
+      {
+        header: `⏳ Work in Progress (WPI) Items (${wpiItems.length}) — Will Carry Forward`,
+        widgets: [
+          {
+            textParagraph: {
+              text: wpiText,
+            },
+          },
+        ],
+      },
+      {
+        widgets: [
+          {
+            buttonList: {
+              buttons: [
+                {
+                  text: '📊 View in Team Workspace',
+                  onClick: {
+                    openLink: {
+                      url: redirectUrl,
+                    },
+                  },
+                },
+              ],
+            },
+          },
+        ],
+      },
+    ];
+
+    const payload = {
+      text: notificationText,
+      cardsV2: [
+        {
+          cardId: `eod-checkout-${Date.now()}`,
+          card: {
+            header: {
+              title: `End-of-Day Check-out — ${params.memberName}`,
+              subtitle: `Login: ${params.checkinTime} • Logout: ${params.checkoutTime} • ${params.totalHours}h Total • ${params.podName}`,
+              imageUrl: 'https://cdn-icons-png.flaticon.com/512/3233/3233508.png',
+              imageType: 'CIRCLE',
+            },
+            sections,
+          },
+        },
+      ],
+    };
+
+    return await this.dispatchToSpace(payload);
+  },
 };
 
 export const auditService = {
