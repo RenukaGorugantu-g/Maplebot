@@ -955,7 +955,7 @@ class MapleDataStore {
   }
 
   public getUpdates(): Update[] {
-    return this.updates.map((u) => {
+    const directUpdates = this.updates.map((u) => {
       let profile = this.getProfileById(u.profile_id);
       
       if (!profile) {
@@ -986,6 +986,64 @@ class MapleDataStore {
       const pod = this.getPodById(podId || '');
       return { ...u, profile, pod };
     });
+
+    // Synthesize updates from live performance work logs
+    const workLogGroups: Record<string, PerformanceWorkLog[]> = {};
+    for (const log of this.performanceWorkLogs) {
+      const empId = log.employee_id;
+      const date = log.date || log.checkin_date || (log.created_at ? log.created_at.slice(0, 10) : '');
+      if (!empId || !date) continue;
+      const key = `${empId}__${date}`;
+      if (!workLogGroups[key]) workLogGroups[key] = [];
+      workLogGroups[key].push(log);
+    }
+
+    const synthesizedUpdates: Update[] = [];
+    for (const [key, group] of Object.entries(workLogGroups)) {
+      const [empId, date] = key.split('__');
+      // If a direct manual update already exists for this member and date, don't duplicate
+      if (directUpdates.some((du) => (du.profile_id === empId || du.profile?.id === empId) && du.update_date === date)) {
+        continue;
+      }
+
+      const firstLog = group[0];
+      const authorProfile = this.getProfileById(empId);
+      const podId = firstLog.pod_id || firstLog.department_id || authorProfile?.pod_id;
+      const pod = podId ? this.getPodById(podId) : undefined;
+
+      const tasksText = group
+        .map((l, idx) => `${idx + 1}. [${l.project_name || l.project || 'General'}] ${l.task || l.task_title} (${l.time_invested || l.duration_hours || 0}h • ${l.unit_count_completed || 1} item(s))`)
+        .join('\n');
+
+      const blockers = group
+        .map((l) => l.comments)
+        .filter((c) => c && c.toUpperCase().includes('BLOCKER'))
+        .join(' | ');
+      const hasBlocker = Boolean(blockers) || group.some((l) => l.priority === 'high');
+
+      synthesizedUpdates.push({
+        id: `synth-${empId}-${date}`,
+        organization_id: firstLog.organization_id || 'org-maple-01',
+        checkin_id: 'chk-maple-daily',
+        profile_id: empId,
+        pod_id: podId,
+        update_date: date,
+        yesterday: tasksText || 'Work deliverables completed.',
+        today: group.map((l) => l.feedback_comments || l.comments).filter(Boolean).join(' | ') || 'Continuing scheduled deliverables.',
+        has_blocker: hasBlocker,
+        blocker: blockers || undefined,
+        status: hasBlocker ? 'blocked' : 'on_track',
+        priority: hasBlocker ? 'high' : 'medium',
+        progress_percent: 100,
+        submitted_at: firstLog.submitted_at || firstLog.created_at || `${date}T09:00:00.000Z`,
+        created_at: firstLog.created_at || `${date}T09:00:00.000Z`,
+        updated_at: firstLog.updated_at || `${date}T09:00:00.000Z`,
+        profile: authorProfile,
+        pod,
+      });
+    }
+
+    return [...directUpdates, ...synthesizedUpdates].sort((a, b) => (b.update_date || '').localeCompare(a.update_date || ''));
   }
 
   public submitUpdate(data: Omit<Update, 'id' | 'submitted_at' | 'updated_at' | 'created_at'>): Update {
@@ -1081,6 +1139,28 @@ class MapleDataStore {
       .then(({ error }) => {
         if (error) console.warn('Supabase updates upsert note:', error);
       });
+
+    // Synchronize into performance_work_logs table
+    const existingWorkLog = this.performanceWorkLogs.find(
+      (l) => l.employee_id === data.profile_id && (l.date === today || l.work_date === today)
+    );
+    if (!existingWorkLog) {
+      this.submitMemberWork({
+        employee_id: data.profile_id,
+        employee_name: authorProfile?.full_name || 'Team Member',
+        pod_id: effectivePodId || authorProfile?.pod_id || 'pod-web-sales',
+        department_id: effectivePodId || authorProfile?.pod_id || 'pod-web-sales',
+        date: today,
+        checkin_date: today,
+        work_date: today,
+        project_name: 'Work Deliverables',
+        task: data.yesterday ? (data.yesterday.length > 200 ? data.yesterday.slice(0, 197) + '...' : data.yesterday) : 'Daily Standup Update',
+        time_invested: 7.5,
+        unit_count_completed: 1,
+        feedback_comments: data.today || '',
+        comments: data.has_blocker && data.blocker ? `🚨 BLOCKER: ${data.blocker}` : (data.today || ''),
+      }).catch((e) => console.warn('Sync to performanceWorkLogs error:', e));
+    }
 
     this.notify();
     return resultUpdate;

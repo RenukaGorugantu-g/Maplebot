@@ -80,7 +80,7 @@ export const ManagerReviewTab: React.FC<ManagerReviewTabProps> = ({
 
   // Pagination & Sorting
   const [currentPage, setCurrentPage] = useState<number>(1);
-  const [pageSize, setPageSize] = useState<number>(10);
+  const [pageSize, setPageSize] = useState<number>(50);
   const [sortKey, setSortKey] = useState<keyof PerformanceWorkLog>('date');
   const [sortOrder, setSortOrder] = useState<'asc' | 'desc'>('desc');
 
@@ -526,6 +526,26 @@ export const ManagerReviewTab: React.FC<ManagerReviewTabProps> = ({
               }}
               className="w-full px-2.5 py-1.5 bg-slate-900 border border-slate-800 rounded-xl text-white text-xs cursor-pointer"
             />
+          </div>
+
+          <div>
+            <label className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block mb-1">
+              Rows Per Page
+            </label>
+            <select
+              value={pageSize}
+              onChange={(e) => {
+                setPageSize(Number(e.target.value));
+                setCurrentPage(1);
+              }}
+              className="w-full px-2.5 py-1.5 bg-slate-900 border border-slate-800 rounded-xl text-white text-xs cursor-pointer"
+            >
+              <option value={10}>10 rows</option>
+              <option value={25}>25 rows</option>
+              <option value={50}>50 rows (Default)</option>
+              <option value={100}>100 rows</option>
+              <option value={1000}>All records</option>
+            </select>
           </div>
         </div>
       </div>
