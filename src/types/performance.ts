@@ -102,6 +102,8 @@ export interface PerformanceWorkLog {
   carried_from_date?: string; // Original work date if carried forward
   carried_from_reason?: string; // Reason from previous day
   wpi_reason?: string; // Mandatory explanation when task is still in progress at checkout
+  blockers?: string; // Member-entered impediment / blocker
+  blocker?: string; // Compatibility alias
 
   // 2. POD LEAD REVIEW (Verification Fields)
   expected_completion_date?: string; // 6. Expected Completion Date (YYYY-MM-DD)

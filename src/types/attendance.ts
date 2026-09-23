@@ -46,6 +46,11 @@ export interface DailyActionItem {
   wpi_reason?: string; // Mandatory when status is 'wpi' at end of day
   next_action?: string; // Continuation plan
   completion_comment?: string; // Optional comment when completed
+  assigned_date?: string;
+  completed_date?: string;
+  category?: string;
+  feedback_comments?: string;
+  blocker?: string;
   time_invested: number; // Hours invested today
   unit_count: number; // Deliverables count (default 1)
   sort_order: number;

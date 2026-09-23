@@ -87,7 +87,6 @@ export const MemberWorkTab: React.FC = () => {
   const [checkinDate] = useState<string>(todayStr);
   const [liveIstTime, setLiveIstTime] = useState<string>(getTimeIST());
   const [selectedEmployeeId, setSelectedEmployeeId] = useState<string>('');
-  const [workflowMode, setWorkflowMode] = useState<'morning_action_items' | 'evening_checkout'>('morning_action_items');
   const [carriedNotice, setCarriedNotice] = useState<string>('');
   const [isPasteModalOpen, setIsPasteModalOpen] = useState<boolean>(false);
   const [pastedChatText, setPastedChatText] = useState<string>('');
@@ -168,17 +167,17 @@ export const MemberWorkTab: React.FC = () => {
       setTaskRows(
         existingItems.map((item) => ({
           id: item.id,
-          category: 'Development',
+          category: (item.category as WorkCategory) || 'Development',
           projectName: item.project_name,
           task: item.task_title,
-          assignedDate: workDate,
-          completedDate: workDate,
+          assignedDate: item.assigned_date || workDate,
+          completedDate: item.completed_date || workDate,
           timeInvested: item.time_invested || 0,
           unitCountCompleted: item.unit_count || 1,
-          reviewAssignedDate: workDate,
-          feedbackComments: item.wpi_reason || item.completion_comment || '',
+          reviewAssignedDate: item.completed_date || workDate,
+          feedbackComments: item.feedback_comments || item.wpi_reason || item.completion_comment || '',
           comments: item.completion_comment || '',
-          blocker: '',
+          blocker: item.blocker || '',
           status: item.status,
           isCarriedForward: item.is_carried_forward,
           carriedFromDate: item.carried_from_date,
@@ -187,11 +186,6 @@ export const MemberWorkTab: React.FC = () => {
         }))
       );
       setCarriedNotice('');
-      if (dailySession?.checkout_time || dailySession?.status === 'checked_out') {
-        setWorkflowMode('evening_checkout');
-      } else if (dailySession?.checkin_time) {
-        setWorkflowMode('evening_checkout');
-      }
       return;
     }
 
@@ -202,11 +196,11 @@ export const MemberWorkTab: React.FC = () => {
       setTaskRows(
         wpiCarried.map((item) => ({
           id: item.id,
-          category: 'Development',
+          category: (item.category as WorkCategory) || 'Development',
           projectName: item.project_name,
           task: item.task_title,
-          assignedDate: workDate,
-          completedDate: workDate,
+          assignedDate: item.assigned_date || workDate,
+          completedDate: item.completed_date || workDate,
           timeInvested: 0,
           unitCountCompleted: item.unit_count || 1,
           reviewAssignedDate: workDate,
@@ -223,7 +217,6 @@ export const MemberWorkTab: React.FC = () => {
       setCarriedNotice(
         `🔄 Pre-populated ${wpiCarried.length} Work in Progress (WPI) task(s) carried forward from previous working day (${formatDateFriendlyIST(prevDate)}). Review them and add today's action items below!`
       );
-      setWorkflowMode(isCheckedIn ? 'evening_checkout' : 'morning_action_items');
     } else {
       setTaskRows([
         {
@@ -245,7 +238,6 @@ export const MemberWorkTab: React.FC = () => {
         },
       ]);
       setCarriedNotice('');
-      setWorkflowMode(isCheckedIn ? 'evening_checkout' : 'morning_action_items');
     }
   }, [targetEmployeeId, workDate, tick]);
 
@@ -301,18 +293,18 @@ export const MemberWorkTab: React.FC = () => {
   }, [taskRows]);
 
   // 1. SUBMIT MORNING ACTION ITEMS & CHECK IN (Locks Login Time)
-  const handleMorningCheckin = async (e: React.FormEvent) => {
-    e.preventDefault();
+  const handleMorningCheckin = async (e?: React.FormEvent) => {
+    if (e) e.preventDefault();
     setErrorMsg('');
 
     for (let i = 0; i < taskRows.length; i++) {
       const r = taskRows[i];
       if (!r.projectName.trim()) {
-        setErrorMsg(`Action Item #${i + 1}: Project Name is required.`);
+        setErrorMsg(`Task #${i + 1}: Project Name is required.`);
         return;
       }
       if (!r.task.trim()) {
-        setErrorMsg(`Action Item #${i + 1}: Task deliverable description is required.`);
+        setErrorMsg(`Task #${i + 1}: Task deliverable description is required.`);
         return;
       }
     }
@@ -336,6 +328,10 @@ export const MemberWorkTab: React.FC = () => {
         action_items: taskRows.map((r) => ({
           projectName: r.projectName.trim(),
           task: r.task.trim(),
+          assignedDate: r.assignedDate || workDate,
+          completedDate: r.completedDate || workDate,
+          timeInvested: Number(r.timeInvested) || 0,
+          feedbackComments: r.feedbackComments?.trim() || '',
           category: r.category || 'Development',
           isCarriedForward: r.isCarriedForward,
           carriedFromDate: r.carriedFromDate,
@@ -359,9 +355,8 @@ export const MemberWorkTab: React.FC = () => {
         })),
       }).catch((err) => console.warn('GChat morning checkin notice:', err));
 
-      setSuccessNotice(`🌅 Morning check-in confirmed at ${result.session.checkin_time} IST! Action items saved and Google Chat notified. Time to execute!`);
+      setSuccessNotice(`🌅 Morning check-in confirmed at ${result.session.checkin_time} IST! Action items saved and Google Chat notified.`);
       setTimeout(() => setSuccessNotice(''), 7000);
-      setWorkflowMode('evening_checkout');
     } catch (err: any) {
       setErrorMsg(err.message || 'Failed to submit morning check-in. Please try again.');
     } finally {
@@ -369,9 +364,9 @@ export const MemberWorkTab: React.FC = () => {
     }
   };
 
-  // 2. SUBMIT END-OF-DAY DELIVERABLES & CHECK OUT (Locks Logout Time)
-  const handleEveningCheckout = async (e: React.FormEvent) => {
-    e.preventDefault();
+  // 2. SAVE WORK PROGRESS DRAFT (Preserves tasks, dates & hours without locking checkout)
+  const handleSaveProgress = async (e?: React.FormEvent) => {
+    if (e) e.preventDefault();
     setErrorMsg('');
 
     for (let i = 0; i < taskRows.length; i++) {
@@ -382,6 +377,68 @@ export const MemberWorkTab: React.FC = () => {
       }
       if (!r.task.trim()) {
         setErrorMsg(`Task #${i + 1}: Task Deliverable description is required.`);
+        return;
+      }
+    }
+
+    setIsSubmitting(true);
+    const targetProfile = (isPrivileged && selectedEmployeeId)
+      ? dataStore.getProfileById(selectedEmployeeId) || profile
+      : profile;
+
+    try {
+      await dataStore.saveWorkProgress({
+        employee_id: targetProfile?.id || profile?.id || '',
+        work_date: workDate,
+        items: taskRows.map((r) => ({
+          id: r.id.startsWith('row-') ? undefined : r.id,
+          projectName: r.projectName.trim(),
+          task: r.task.trim(),
+          assignedDate: r.assignedDate || workDate,
+          completedDate: r.completedDate || workDate,
+          timeInvested: Number(r.timeInvested) || 0,
+          unitCountCompleted: Number(r.unitCountCompleted) || 1,
+          feedbackComments: r.feedbackComments?.trim() || '',
+          status: r.status,
+          wpiReason: r.wpiReason?.trim() || r.feedbackComments?.trim(),
+          comments: r.status === 'completed' ? (r.feedbackComments?.trim() || r.comments?.trim()) : undefined,
+          blocker: r.blocker?.trim(),
+          category: r.category || 'Development',
+          isCarriedForward: r.isCarriedForward,
+          carriedFromDate: r.carriedFromDate,
+        })),
+      });
+
+      setSuccessNotice('💾 Work progress draft saved successfully! You can continue updating tasks throughout the day.');
+      setTimeout(() => setSuccessNotice(''), 5000);
+    } catch (err: any) {
+      setErrorMsg(err.message || 'Failed to save work progress draft.');
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
+
+  // 3. SUBMIT END-OF-DAY DELIVERABLES & CHECK OUT (Locks Logout Time)
+  const handleEveningCheckout = async (e?: React.FormEvent) => {
+    if (e) e.preventDefault();
+    setErrorMsg('');
+
+    for (let i = 0; i < taskRows.length; i++) {
+      const r = taskRows[i];
+      if (!r.projectName.trim()) {
+        setErrorMsg(`Task #${i + 1}: Project Name is required.`);
+        return;
+      }
+      if (!r.task.trim()) {
+        setErrorMsg(`Task #${i + 1}: Task Deliverable description is required.`);
+        return;
+      }
+      if (!r.assignedDate) {
+        setErrorMsg(`Task #${i + 1}: Assigned Date is required.`);
+        return;
+      }
+      if (!r.completedDate) {
+        setErrorMsg(`Task #${i + 1}: Completed Date is required.`);
         return;
       }
       if (!r.timeInvested || Number(r.timeInvested) <= 0) {
@@ -413,8 +470,11 @@ export const MemberWorkTab: React.FC = () => {
         items: taskRows.map((r) => ({
           projectName: r.projectName.trim(),
           task: r.task.trim(),
+          assignedDate: r.assignedDate || workDate,
+          completedDate: r.completedDate || workDate,
           timeInvested: Number(r.timeInvested) || 0,
           unitCountCompleted: Number(r.unitCountCompleted) || 1,
+          feedbackComments: r.feedbackComments?.trim() || '',
           status: r.status,
           wpiReason: r.wpiReason?.trim() || r.feedbackComments?.trim(),
           comments: r.status === 'completed' ? (r.feedbackComments?.trim() || r.comments?.trim() || 'Completed on schedule') : undefined,
@@ -438,6 +498,8 @@ export const MemberWorkTab: React.FC = () => {
         items: taskRows.map((r) => ({
           projectName: r.projectName.trim(),
           task: r.task.trim(),
+          assignedDate: r.assignedDate || workDate,
+          completedDate: r.completedDate || workDate,
           timeInvested: Number(r.timeInvested) || 0,
           unitCountCompleted: Number(r.unitCountCompleted) || 1,
           status: r.status,
@@ -688,22 +750,11 @@ export const MemberWorkTab: React.FC = () => {
               </span>
             </div>
             <h2 className="text-xl font-semibold text-white tracking-normal mt-1 flex items-center gap-2">
-              {workflowMode === 'morning_action_items' ? (
-                <>
-                  <Sun className="w-5 h-5 text-amber-400" />
-                  <span>Morning: Planned Action Items & Check-in</span>
-                </>
-              ) : (
-                <>
-                  <Moon className="w-5 h-5 text-sky-400" />
-                  <span>Evening: Deliverables Review & Check-out</span>
-                </>
-              )}
+              <Sun className="w-5 h-5 text-amber-400" />
+              <span>Daily Work Deliverables & Attendance</span>
             </h2>
             <p className="text-xs text-slate-300 mt-1 max-w-3xl leading-relaxed">
-              {workflowMode === 'morning_action_items'
-                ? "Record today's planned action items. Any incomplete tasks (WPI) from the previous working day are automatically carried forward below. Submitting will lock your official Check-in time."
-                : "Review your day's tasks, log hours invested, and set final delivery status (Completed vs Work in Progress). If a task is still WPI, a continuation explanation is required before checking out."}
+              Log your daily deliverables, assign project tasks, track hours invested, and record completion notes. Check in during the morning to lock your login time, save drafts anytime, and check out in the evening to lock your logout time. Any incomplete tasks (WPI) automatically carry forward to the next working day.
             </p>
           </div>
 
@@ -753,7 +804,7 @@ export const MemberWorkTab: React.FC = () => {
           </div>
         </div>
 
-        {/* Daily Attendance Status Bar & Stepper Tabs */}
+        {/* Daily Attendance Status Bar */}
         <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 p-4 rounded-2xl bg-slate-950/70 border border-slate-800 shadow-inner">
           {/* Left: Check-in & Check-out Live Badges */}
           <div className="flex flex-wrap items-center gap-3 text-xs">
@@ -808,35 +859,29 @@ export const MemberWorkTab: React.FC = () => {
             </div>
           </div>
 
-          {/* Right: Step Switcher Tabs */}
-          <div className="flex items-center gap-1 p-1 rounded-xl bg-slate-900 border border-slate-800 self-start md:self-auto">
-            <button
-              type="button"
-              onClick={() => setWorkflowMode('morning_action_items')}
-              className={`flex items-center gap-2 px-3 py-1.5 rounded-lg text-xs font-bold transition-all ${
-                workflowMode === 'morning_action_items'
-                  ? 'bg-amber-500 text-slate-950 shadow-md'
-                  : 'text-slate-400 hover:text-white hover:bg-slate-800/60'
+          {/* Right: Quick Workflow Step Badges */}
+          <div className="flex items-center gap-2 text-xs">
+            <span
+              className={`px-2.5 py-1 rounded-lg flex items-center gap-1.5 font-semibold border ${
+                isCheckedIn
+                  ? 'bg-emerald-500/10 border-emerald-500/30 text-emerald-300'
+                  : 'bg-slate-900 border-slate-800 text-slate-400'
               }`}
             >
-              <Sun className="w-3.5 h-3.5" />
-              <span>Step 1: Morning Action Items</span>
-              {isCheckedIn && <CheckCircle2 className="w-3 h-3 text-emerald-700 ml-0.5" />}
-            </button>
-
-            <button
-              type="button"
-              onClick={() => setWorkflowMode('evening_checkout')}
-              className={`flex items-center gap-2 px-3 py-1.5 rounded-lg text-xs font-bold transition-all ${
-                workflowMode === 'evening_checkout'
-                  ? 'bg-sky-500 text-white shadow-md'
-                  : 'text-slate-400 hover:text-white hover:bg-slate-800/60'
+              <Sun className="w-3.5 h-3.5 text-amber-400" />
+              <span>Step 1: Check-in {isCheckedIn ? '✓' : ''}</span>
+            </span>
+            <span className="text-slate-600">→</span>
+            <span
+              className={`px-2.5 py-1 rounded-lg flex items-center gap-1.5 font-semibold border ${
+                isCheckedOut
+                  ? 'bg-emerald-500/10 border-emerald-500/30 text-emerald-300'
+                  : 'bg-slate-900 border-slate-800 text-slate-400'
               }`}
             >
-              <Moon className="w-3.5 h-3.5" />
-              <span>Step 2: Evening Check-out</span>
-              {isCheckedOut && <CheckCircle2 className="w-3 h-3 text-emerald-300 ml-0.5" />}
-            </button>
+              <Moon className="w-3.5 h-3.5 text-sky-400" />
+              <span>Step 2: Check-out {isCheckedOut ? '✓' : ''}</span>
+            </span>
           </div>
         </div>
 
@@ -868,36 +913,50 @@ export const MemberWorkTab: React.FC = () => {
           </div>
         )}
 
-        {/* ==================================================================== */}
-        {/* WORKFLOW MODE 1: MORNING ACTION ITEMS & CHECK-IN FORM */}
-        {/* ==================================================================== */}
-        {workflowMode === 'morning_action_items' ? (
-          <form onSubmit={handleMorningCheckin} className="space-y-4">
-            <div className="rounded-xl border border-slate-800 bg-[#060E1A] shadow-xl overflow-x-auto">
-              <table className="w-full text-left text-xs border-collapse min-w-[1200px]">
-                <thead>
-                  <tr className="bg-[#0B1728] border-b border-slate-800 text-[11px] font-semibold uppercase tracking-wider text-slate-300">
-                    <th className="py-3 px-3 w-10 text-center text-slate-500">#</th>
-                    <th className="py-3 px-3.5 min-w-[200px] w-[240px]">Project Name</th>
-                    <th className="py-3 px-3.5 min-w-[500px]">Today's Planned Action Item / Task Deliverable</th>
-                    <th className="py-3 px-3 w-[160px]">Category</th>
-                    <th className="py-3 px-3 w-[120px] text-left">
-                      <div className="flex items-center gap-1">
-                        <span>Target Units</span>
-                        <span title="Expected number of items" className="cursor-help text-maple-400">
-                          <HelpCircle className="w-3.5 h-3.5" />
-                        </span>
-                      </div>
-                    </th>
-                    <th className="py-3 px-2 w-10 text-center">Del</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-slate-800/80 text-slate-200">
-                  {taskRows.map((row, idx) => (
+        {/* THE UNIFIED EDITABLE MULTI-TASK TABLE GRID */}
+        <div className="space-y-4">
+          <div className="rounded-xl border border-slate-800 bg-[#060E1A] shadow-xl overflow-x-auto">
+            <table className="w-full text-left text-xs border-collapse min-w-[1720px]">
+              <thead>
+                <tr className="bg-[#0B1728] border-b border-slate-800 text-[11px] font-semibold uppercase tracking-wider text-slate-300">
+                  <th className="py-3 px-3 w-10 text-center text-slate-500">#</th>
+                  <th className="py-3 px-3.5 min-w-[180px] w-[200px]">Project Name</th>
+                  <th className="py-3 px-3.5 min-w-[440px] w-[460px]">Task Deliverable (Specific activity)</th>
+                  <th className="py-3 px-3 w-[135px]">Assigned Date</th>
+                  <th className="py-3 px-3 w-[110px] text-left">Hours</th>
+                  <th className="py-3 px-3 w-[100px] text-left">
+                    <div className="flex items-center gap-1">
+                      <span>Units</span>
+                      <span
+                        title="Quantity of finished items: e.g. 1 feature, 3 pages, 5 leads"
+                        className="cursor-help text-maple-400"
+                      >
+                        <HelpCircle className="w-3.5 h-3.5" />
+                      </span>
+                    </div>
+                  </th>
+                  <th className="py-3 px-3 w-[135px] text-sky-300">Completed Date</th>
+                  <th className="py-3 px-3 w-[170px] text-center">Status</th>
+                  <th className="py-3 px-3.5 min-w-[280px] w-[310px] text-maple-300">
+                    Feedback / Comments & <span className="text-amber-400 font-bold">WPI Reason</span>
+                  </th>
+                  <th className="py-3 px-3.5 min-w-[170px] w-[190px]">
+                    <div className="flex items-center gap-1.5 text-rose-400 font-semibold">
+                      <span>Blockers</span>
+                      <span className="text-[10px] text-slate-400 font-normal">(Optional)</span>
+                    </div>
+                  </th>
+                  <th className="py-3 px-2 w-10 text-center">Del</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-slate-800/80 text-slate-200">
+                {taskRows.map((row, idx) => {
+                  const isWpi = row.status === 'wpi';
+                  return (
                     <tr
                       key={row.id}
                       className={`hover:bg-slate-800/30 transition-colors ${
-                        row.isCarriedForward ? 'bg-amber-950/10 border-l-2 border-amber-500' : ''
+                        isWpi ? 'bg-amber-950/15' : ''
                       }`}
                     >
                       {/* Index */}
@@ -918,7 +977,7 @@ export const MemberWorkTab: React.FC = () => {
                       </td>
 
                       {/* Task Deliverable Description */}
-                      <td className="py-3 px-3.5 align-top">
+                      <td className="py-3 px-3.5 min-w-[440px] w-[460px] align-top">
                         {row.isCarriedForward && (
                           <div className="mb-2 flex flex-wrap items-center gap-2">
                             <span className="inline-flex items-center gap-1 text-[10px] font-bold px-2 py-0.5 rounded-full bg-amber-500/20 text-amber-300 border border-amber-500/30">
@@ -926,59 +985,138 @@ export const MemberWorkTab: React.FC = () => {
                             </span>
                             {row.carriedFromReason && (
                               <span className="text-[11px] text-slate-400 italic">
-                                Previous WPI Note: "{row.carriedFromReason}"
+                                Previous Note: "{row.carriedFromReason}"
                               </span>
                             )}
                           </div>
                         )}
                         <textarea
-                          rows={2}
+                          rows={3}
                           value={row.task}
                           onChange={(e) => handleUpdateRow(row.id, 'task', e.target.value)}
-                          placeholder={`Action Item ${idx + 1}: Specific deliverable planned for today...`}
-                          className="w-full px-3 py-2 bg-slate-900 border border-slate-700/80 rounded-lg text-white placeholder-slate-500 focus:outline-none focus:border-maple-500 text-xs font-medium leading-relaxed resize-y min-h-[56px]"
+                          placeholder={`Task ${idx + 1}: Detailed description of deliverable...`}
+                          className="w-full min-w-[420px] px-3 py-2.5 bg-slate-900 border border-slate-700/80 rounded-lg text-white placeholder-slate-500 focus:outline-none focus:border-maple-500 text-xs font-medium leading-relaxed resize-y min-h-[76px]"
                           required
                         />
                       </td>
 
-                      {/* Category */}
+                      {/* Assigned Date */}
                       <td className="py-3 px-3 align-top">
-                        <select
-                          value={row.category}
-                          onChange={(e) => handleUpdateRow(row.id, 'category', e.target.value as WorkCategory)}
-                          className="w-full px-2.5 py-2 bg-slate-900 border border-slate-700/80 rounded-lg text-slate-200 focus:outline-none focus:border-maple-500 text-xs cursor-pointer font-medium"
-                        >
-                          <option value="Development">Development</option>
-                          <option value="SEO">SEO</option>
-                          <option value="Sales">Sales</option>
-                          <option value="LMS">LMS Delivery</option>
-                          <option value="Marketing">Marketing</option>
-                          <option value="Design">Design</option>
-                          <option value="Coordination">Coordination</option>
-                          <option value="Operations">Operations</option>
-                          <option value="Quality Assurance">Quality Assurance</option>
-                          <option value="Client Support">Client Support</option>
-                          <option value="Other">Other</option>
-                        </select>
+                        <input
+                          type="date"
+                          value={row.assignedDate}
+                          onChange={(e) => handleUpdateRow(row.id, 'assignedDate', e.target.value)}
+                          className="w-full px-2 py-2 bg-slate-900 border border-slate-700/80 rounded-lg text-slate-200 focus:outline-none focus:border-maple-500 text-xs cursor-pointer font-medium"
+                          required
+                        />
                       </td>
 
-                      {/* Target Units */}
+                      {/* Hours Invested */}
+                      <td className="py-3 px-3 text-left align-top">
+                        <div className="relative flex items-center">
+                          <input
+                            type="number"
+                            step="any"
+                            min="0"
+                            max="24"
+                            value={row.timeInvested === 0 ? '' : row.timeInvested}
+                            onChange={(e) => {
+                              const v = e.target.value === '' ? 0 : parseFloat(e.target.value);
+                              handleUpdateRow(row.id, 'timeInvested', isNaN(v) ? 0 : v);
+                            }}
+                            placeholder="e.g. 2.5"
+                            className="w-full pr-7 pl-2.5 py-2 bg-slate-900 border border-slate-700/80 rounded-lg text-sky-400 font-mono font-bold text-xs focus:outline-none focus:border-maple-500 [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
+                          />
+                          <span className="absolute right-2 text-[10px] text-slate-400 font-medium pointer-events-none">hrs</span>
+                        </div>
+                      </td>
+
+                      {/* Units */}
                       <td className="py-3 px-3 text-left align-top">
                         <div className="relative flex items-center">
                           <input
                             type="number"
                             min="1"
                             max="999"
-                            value={row.unitCountCompleted || 1}
+                            value={row.unitCountCompleted === 0 ? '' : row.unitCountCompleted}
                             onChange={(e) => {
                               const v = e.target.value === '' ? 1 : parseInt(e.target.value);
                               handleUpdateRow(row.id, 'unitCountCompleted', v);
                             }}
-                            className="w-full pr-10 pl-2.5 py-2 bg-slate-900 border border-slate-700/80 rounded-lg text-purple-300 font-mono font-bold text-xs focus:outline-none focus:border-maple-500"
+                            placeholder="1"
+                            className="w-full pr-10 pl-2 py-2 bg-slate-900 border border-slate-700/80 rounded-lg text-purple-300 font-mono font-bold text-xs focus:outline-none focus:border-maple-500 [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
                             required
                           />
-                          <span className="absolute right-2 text-[10px] text-slate-400 font-medium pointer-events-none">units</span>
+                          <span className="absolute right-2 text-[10px] text-slate-400 font-medium pointer-events-none">items</span>
                         </div>
+                      </td>
+
+                      {/* Completed Date */}
+                      <td className="py-3 px-3 align-top">
+                        <input
+                          type="date"
+                          value={row.completedDate}
+                          onChange={(e) => handleUpdateRow(row.id, 'completedDate', e.target.value)}
+                          className="w-full px-2 py-2 bg-slate-900 border border-slate-700/80 rounded-lg text-sky-300 font-medium focus:outline-none focus:border-sky-500 text-xs cursor-pointer"
+                          required
+                        />
+                      </td>
+
+                      {/* Status Dropdown: Completed vs WPI */}
+                      <td className="py-3 px-3 align-top">
+                        <select
+                          value={row.status}
+                          onChange={(e) => handleUpdateRow(row.id, 'status', e.target.value as ActionItemStatus)}
+                          className={`w-full px-2.5 py-2 rounded-lg font-bold text-xs focus:outline-none cursor-pointer border ${
+                            row.status === 'completed'
+                              ? 'bg-emerald-950/40 text-emerald-300 border-emerald-500/50'
+                              : 'bg-amber-950/40 text-amber-300 border-amber-500/50'
+                          }`}
+                        >
+                          <option value="completed">✅ Completed</option>
+                          <option value="wpi">⏳ Work in Progress (WPI)</option>
+                        </select>
+                      </td>
+
+                      {/* Feedback / Comments & WPI Reason */}
+                      <td className="py-3 px-3.5 min-w-[280px] w-[310px] align-top">
+                        {isWpi ? (
+                          <div className="space-y-1">
+                            <textarea
+                              rows={3}
+                              value={row.wpiReason || row.feedbackComments}
+                              onChange={(e) => {
+                                handleUpdateRow(row.id, 'wpiReason', e.target.value);
+                                handleUpdateRow(row.id, 'feedbackComments', e.target.value);
+                              }}
+                              placeholder="Required: Why still in progress & tomorrow's continuation plan? (Mandatory for WPI)"
+                              className="w-full min-w-[260px] px-3 py-2 bg-amber-950/20 border-2 border-amber-500/70 rounded-lg text-amber-200 placeholder-amber-400/50 focus:outline-none focus:border-amber-400 text-xs font-medium leading-relaxed resize-y min-h-[76px]"
+                              required
+                            />
+                            <span className="text-[10px] text-amber-400 font-medium flex items-center gap-1">
+                              <AlertCircle className="w-3 h-3" /> Mandatory for WPI (carries forward)
+                            </span>
+                          </div>
+                        ) : (
+                          <textarea
+                            rows={3}
+                            value={row.feedbackComments}
+                            onChange={(e) => handleUpdateRow(row.id, 'feedbackComments', e.target.value)}
+                            placeholder="Task feedback / comments..."
+                            className="w-full min-w-[260px] px-3 py-2.5 bg-slate-900 border border-slate-700/80 rounded-lg text-slate-200 placeholder-slate-500 focus:outline-none focus:border-maple-500 text-xs font-medium leading-relaxed resize-y min-h-[76px]"
+                          />
+                        )}
+                      </td>
+
+                      {/* Blockers (Optional) */}
+                      <td className="py-3 px-3.5 min-w-[170px] w-[190px] align-top">
+                        <input
+                          type="text"
+                          value={row.blocker}
+                          onChange={(e) => handleUpdateRow(row.id, 'blocker', e.target.value)}
+                          placeholder="Any impediment..."
+                          className="w-full px-3 py-2 bg-slate-900 border border-slate-700/80 rounded-lg text-rose-300 placeholder-slate-500 focus:outline-none focus:border-rose-500 text-xs font-medium"
+                        />
                       </td>
 
                       {/* Delete */}
@@ -988,290 +1126,119 @@ export const MemberWorkTab: React.FC = () => {
                           onClick={() => handleRemoveRow(row.id)}
                           disabled={taskRows.length <= 1}
                           className="p-1.5 rounded-lg text-slate-500 hover:text-rose-400 hover:bg-rose-500/10 transition-colors disabled:opacity-30 disabled:cursor-not-allowed"
-                          title="Remove item"
+                          title="Remove row"
                         >
                           <Trash2 className="w-4 h-4" />
                         </button>
                       </td>
                     </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
 
-            {/* Morning Footer Controls */}
-            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 p-4 rounded-xl bg-slate-900/90 border border-slate-800">
-              <div className="flex flex-wrap items-center gap-3">
-                <Button
-                  type="button"
-                  variant="secondary"
-                  size="sm"
-                  onClick={handleAddRow}
-                  leftIcon={<Plus className="w-4 h-4 text-maple-400" />}
-                >
-                  Add Action Item
-                </Button>
-
-                <Button
-                  type="button"
-                  variant="outline"
-                  size="sm"
-                  onClick={() => setIsPasteModalOpen(true)}
-                  leftIcon={<ClipboardList className="w-4 h-4 text-sky-400" />}
-                >
-                  Paste from Chat
-                </Button>
-
-                <div className="hidden md:flex items-center gap-3 pl-3 border-l border-slate-800 text-xs">
-                  <span className="text-slate-400">Total Action Items:</span>
-                  <span className="font-bold text-white font-mono">{taskRows.length} items</span>
-                </div>
-              </div>
-
-              <GradientButton
-                type="submit"
+          {/* TABLE FOOTER CONTROLS & WORKFLOW ACTIONS */}
+          <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4 p-4 rounded-xl bg-slate-900/90 border border-slate-800">
+            {/* Left: Row controls & live totals */}
+            <div className="flex flex-wrap items-center gap-3">
+              <Button
+                type="button"
+                variant="secondary"
                 size="sm"
-                disabled={isSubmitting}
-                leftIcon={<Sun className="w-4 h-4" />}
+                onClick={handleAddRow}
+                leftIcon={<Plus className="w-4 h-4 text-maple-400" />}
               >
-                {isSubmitting ? 'Saving Action Items...' : isCheckedIn ? 'Update Action Items & Confirm Check-in' : `🚀 Submit Action Items & Check In (${dailySession?.checkin_time || liveIstTime})`}
-              </GradientButton>
-            </div>
-          </form>
-        ) : (
-          /* ==================================================================== */
-          /* WORKFLOW MODE 2: EVENING DELIVERABLES REVIEW & CHECK-OUT FORM */
-          /* ==================================================================== */
-          <form onSubmit={handleEveningCheckout} className="space-y-4">
-            <div className="rounded-xl border border-slate-800 bg-[#060E1A] shadow-xl overflow-x-auto">
-              <table className="w-full text-left text-xs border-collapse min-w-[1680px]">
-                <thead>
-                  <tr className="bg-[#0B1728] border-b border-slate-800 text-[11px] font-semibold uppercase tracking-wider text-slate-300">
-                    <th className="py-3 px-3 w-10 text-center text-slate-500">#</th>
-                    <th className="py-3 px-3.5 min-w-[180px] w-[200px]">Project Name</th>
-                    <th className="py-3 px-3.5 min-w-[420px]">Task Deliverable</th>
-                    <th className="py-3 px-3 w-[170px] text-center">Status</th>
-                    <th className="py-3 px-3 w-[115px] text-left">Hours</th>
-                    <th className="py-3 px-3 w-[100px] text-left">Units</th>
-                    <th className="py-3 px-3.5 min-w-[340px] text-maple-300">
-                      Completion Note / <span className="text-amber-400 font-bold">*Mandatory WPI Reason</span>
-                    </th>
-                    <th className="py-3 px-3.5 min-w-[170px] w-[190px] text-rose-400">Blockers</th>
-                    <th className="py-3 px-2 w-10 text-center">Del</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-slate-800/80 text-slate-200">
-                  {taskRows.map((row, idx) => {
-                    const isWpi = row.status === 'wpi';
-                    return (
-                      <tr
-                        key={row.id}
-                        className={`hover:bg-slate-800/30 transition-colors ${
-                          isWpi ? 'bg-amber-950/15' : ''
-                        }`}
-                      >
-                        {/* Index */}
-                        <td className="py-3 px-3 text-center font-mono text-slate-400 font-bold text-xs align-top pt-4">
-                          {idx + 1}
-                        </td>
+                Add Task Row
+              </Button>
 
-                        {/* Project Name */}
-                        <td className="py-3 px-3.5 align-top">
-                          <input
-                            type="text"
-                            value={row.projectName}
-                            onChange={(e) => handleUpdateRow(row.id, 'projectName', e.target.value)}
-                            placeholder="e.g. MapleBot, LXD..."
-                            className="w-full px-3 py-2 bg-slate-900 border border-slate-700/80 rounded-lg text-white placeholder-slate-500 focus:outline-none focus:border-maple-500 text-xs font-medium"
-                            required
-                          />
-                        </td>
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                onClick={() => setIsPasteModalOpen(true)}
+                leftIcon={<ClipboardList className="w-4 h-4 text-sky-400" />}
+              >
+                Paste from Chat
+              </Button>
 
-                        {/* Task Deliverable */}
-                        <td className="py-3 px-3.5 align-top">
-                          {row.isCarriedForward && (
-                            <span className="inline-flex items-center gap-1 text-[10px] font-bold px-2 py-0.5 rounded-full bg-amber-500/20 text-amber-300 border border-amber-500/30 mb-1.5">
-                              <RefreshCw className="w-3 h-3" /> Carried Forward from {row.carriedFromDate || 'prev'}
-                            </span>
-                          )}
-                          <textarea
-                            rows={2}
-                            value={row.task}
-                            onChange={(e) => handleUpdateRow(row.id, 'task', e.target.value)}
-                            placeholder="Task description..."
-                            className="w-full px-3 py-2 bg-slate-900 border border-slate-700/80 rounded-lg text-white placeholder-slate-500 focus:outline-none focus:border-maple-500 text-xs font-medium leading-relaxed resize-y min-h-[64px]"
-                            required
-                          />
-                        </td>
-
-                        {/* Final Status Select: Completed vs WPI */}
-                        <td className="py-3 px-3 align-top">
-                          <select
-                            value={row.status}
-                            onChange={(e) => handleUpdateRow(row.id, 'status', e.target.value as ActionItemStatus)}
-                            className={`w-full px-3 py-2 rounded-lg font-bold text-xs focus:outline-none cursor-pointer border ${
-                              row.status === 'completed'
-                                ? 'bg-emerald-950/40 text-emerald-300 border-emerald-500/50'
-                                : 'bg-amber-950/40 text-amber-300 border-amber-500/50'
-                            }`}
-                          >
-                            <option value="completed">✅ Completed</option>
-                            <option value="wpi">⏳ Work in Progress (WPI)</option>
-                          </select>
-                        </td>
-
-                        {/* Hours Invested */}
-                        <td className="py-3 px-3 text-left align-top">
-                          <div className="relative flex items-center">
-                            <input
-                              type="number"
-                              step="any"
-                              min="0"
-                              max="24"
-                              value={row.timeInvested === 0 ? '' : row.timeInvested}
-                              onChange={(e) => {
-                                const v = e.target.value === '' ? 0 : parseFloat(e.target.value);
-                                handleUpdateRow(row.id, 'timeInvested', isNaN(v) ? 0 : v);
-                              }}
-                              placeholder="e.g. 2.5"
-                              className="w-full pr-7 pl-2.5 py-2 bg-slate-900 border border-slate-700/80 rounded-lg text-sky-400 font-mono font-bold text-xs focus:outline-none focus:border-maple-500 [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
-                              required
-                            />
-                            <span className="absolute right-2 text-[10px] text-slate-400 font-medium pointer-events-none">hrs</span>
-                          </div>
-                        </td>
-
-                        {/* Deliverables Count */}
-                        <td className="py-3 px-3 text-left align-top">
-                          <div className="relative flex items-center">
-                            <input
-                              type="number"
-                              min="1"
-                              max="999"
-                              value={row.unitCountCompleted === 0 ? '' : row.unitCountCompleted}
-                              onChange={(e) => {
-                                const v = e.target.value === '' ? 1 : parseInt(e.target.value);
-                                handleUpdateRow(row.id, 'unitCountCompleted', v);
-                              }}
-                              className="w-full pr-10 pl-2 py-2 bg-slate-900 border border-slate-700/80 rounded-lg text-purple-300 font-mono font-bold text-xs focus:outline-none focus:border-maple-500 [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
-                              required
-                            />
-                            <span className="absolute right-2 text-[10px] text-slate-400 font-medium pointer-events-none">items</span>
-                          </div>
-                        </td>
-
-                        {/* Completion Note OR Mandatory WPI Reason */}
-                        <td className="py-3 px-3.5 align-top">
-                          {isWpi ? (
-                            <div className="space-y-1">
-                              <textarea
-                                rows={3}
-                                value={row.wpiReason || row.feedbackComments}
-                                onChange={(e) => {
-                                  handleUpdateRow(row.id, 'wpiReason', e.target.value);
-                                  handleUpdateRow(row.id, 'feedbackComments', e.target.value);
-                                }}
-                                placeholder="Required: Why is this task still in progress & what is tomorrow's continuation plan? (Mandatory)"
-                                className="w-full px-3 py-2 bg-amber-950/20 border-2 border-amber-500/70 rounded-lg text-amber-200 placeholder-amber-400/50 focus:outline-none focus:border-amber-400 text-xs font-medium leading-relaxed resize-y min-h-[68px]"
-                                required
-                              />
-                              <span className="text-[10px] text-amber-400 font-medium flex items-center gap-1">
-                                <AlertCircle className="w-3 h-3" /> Mandatory for WPI: will auto carry forward to next working day.
-                              </span>
-                            </div>
-                          ) : (
-                            <textarea
-                              rows={2}
-                              value={row.feedbackComments}
-                              onChange={(e) => handleUpdateRow(row.id, 'feedbackComments', e.target.value)}
-                              placeholder="Optional completion note / feedback..."
-                              className="w-full px-3 py-2 bg-slate-900 border border-slate-700/80 rounded-lg text-slate-200 placeholder-slate-500 focus:outline-none focus:border-maple-500 text-xs font-medium leading-relaxed resize-y min-h-[56px]"
-                            />
-                          )}
-                        </td>
-
-                        {/* Blocker */}
-                        <td className="py-3 px-3.5 align-top">
-                          <input
-                            type="text"
-                            value={row.blocker}
-                            onChange={(e) => handleUpdateRow(row.id, 'blocker', e.target.value)}
-                            placeholder="Any impediment..."
-                            className="w-full px-3 py-2 bg-slate-900 border border-slate-700/80 rounded-lg text-rose-300 placeholder-slate-500 focus:outline-none focus:border-rose-500 text-xs font-medium"
-                          />
-                        </td>
-
-                        {/* Delete */}
-                        <td className="py-3 px-2 text-center align-top pt-3.5">
-                          <button
-                            type="button"
-                            onClick={() => handleRemoveRow(row.id)}
-                            disabled={taskRows.length <= 1}
-                            className="p-1.5 rounded-lg text-slate-500 hover:text-rose-400 hover:bg-rose-500/10 transition-colors disabled:opacity-30 disabled:cursor-not-allowed"
-                            title="Remove row"
-                          >
-                            <Trash2 className="w-4 h-4" />
-                          </button>
-                        </td>
-                      </tr>
-                    );
-                  })}
-                </tbody>
-              </table>
-            </div>
-
-            {/* Evening Footer Controls */}
-            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 p-4 rounded-xl bg-slate-900/90 border border-slate-800">
-              <div className="flex flex-wrap items-center gap-3">
-                <Button
-                  type="button"
-                  variant="secondary"
-                  size="sm"
-                  onClick={handleAddRow}
-                  leftIcon={<Plus className="w-4 h-4 text-maple-400" />}
-                >
-                  Add Another Task Row
-                </Button>
-
-                <div className="hidden md:flex items-center gap-4 pl-3 border-l border-slate-800 text-xs">
-                  <div>
-                    <span className="text-slate-400">Total Tasks: </span>
-                    <span className="font-bold text-white font-mono">{taskRows.length}</span>
-                  </div>
-                  <div>
-                    <span className="text-slate-400">Completed: </span>
-                    <span className="font-bold text-emerald-400 font-mono">
-                      {taskRows.filter((r) => r.status === 'completed').length}
-                    </span>
-                  </div>
-                  <div>
-                    <span className="text-slate-400">WPI: </span>
-                    <span className="font-bold text-amber-400 font-mono">
-                      {taskRows.filter((r) => r.status === 'wpi').length}
-                    </span>
-                  </div>
-                  <div>
-                    <span className="text-slate-400">Total Hours: </span>
-                    <span className="font-bold text-sky-400 font-mono">{totalHours} hrs</span>
-                  </div>
+              <div className="hidden sm:flex items-center gap-3 pl-3 border-l border-slate-800 text-xs">
+                <div>
+                  <span className="text-slate-400">Total: </span>
+                  <span className="font-bold text-white font-mono">{taskRows.length} tasks</span>
+                </div>
+                <div>
+                  <span className="text-slate-400">Hours: </span>
+                  <span className="font-bold text-sky-400 font-mono">{totalHours} hrs</span>
+                </div>
+                <div>
+                  <span className="text-slate-400">Completed: </span>
+                  <span className="font-bold text-emerald-400 font-mono">
+                    {taskRows.filter((r) => r.status === 'completed').length}
+                  </span>
+                </div>
+                <div>
+                  <span className="text-slate-400">WPI: </span>
+                  <span className="font-bold text-amber-400 font-mono">
+                    {taskRows.filter((r) => r.status === 'wpi').length}
+                  </span>
                 </div>
               </div>
+            </div>
 
-              <GradientButton
-                type="submit"
+            {/* Right: The 3 Workflow Actions */}
+            <div className="flex flex-wrap items-center gap-2.5">
+              {/* 1. Morning Check-in / Login Button */}
+              <Button
+                type="button"
+                variant={isCheckedIn ? 'secondary' : 'outline'}
                 size="sm"
+                onClick={handleMorningCheckin}
+                disabled={isSubmitting}
+                className={
+                  isCheckedIn
+                    ? 'border-emerald-500/40 text-emerald-300'
+                    : 'border-amber-500/60 text-amber-300 hover:bg-amber-500/10 shadow-sm'
+                }
+                leftIcon={<Sun className="w-4 h-4 text-amber-400" />}
+              >
+                {isCheckedIn ? (
+                  <span className="flex items-center gap-1.5">
+                    <CheckCircle2 className="w-3.5 h-3.5 text-emerald-400" />
+                    Check-in ({dailySession?.checkin_time || 'Done'})
+                  </span>
+                ) : (
+                  `🌅 Morning Check-in (${dailySession?.checkin_time || liveIstTime})`
+                )}
+              </Button>
+
+              {/* 2. Save Progress Draft Button */}
+              <Button
+                type="button"
+                variant="secondary"
+                size="sm"
+                onClick={handleSaveProgress}
+                disabled={isSubmitting}
+                leftIcon={<Save className="w-4 h-4 text-purple-400" />}
+              >
+                💾 Save Draft
+              </Button>
+
+              {/* 3. Evening Check-out / Logout Button */}
+              <GradientButton
+                type="button"
+                size="sm"
+                onClick={handleEveningCheckout}
                 disabled={isSubmitting}
                 leftIcon={<Moon className="w-4 h-4" />}
               >
-                {isSubmitting
-                  ? 'Verifying & Saving...'
-                  : isCheckedOut
-                  ? 'Update End-of-Day Deliverables'
-                  : `🏁 Submit Deliverables & Check Out (${dailySession?.checkout_time || liveIstTime})`}
+                {isCheckedOut
+                  ? `✅ Checked Out (${dailySession?.checkout_time})`
+                  : `🚀 Evening Check-out (${dailySession?.checkout_time || liveIstTime})`}
               </GradientButton>
             </div>
-          </form>
-        )}
+          </div>
+        </div>
       </div>
 
       {/* 2. SUBMITTED WORK HISTORY & TEAM REVIEW LEDGER */}

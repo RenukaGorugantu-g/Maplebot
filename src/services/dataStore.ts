@@ -2016,6 +2016,11 @@ class MapleDataStore {
           project_name: l.project_name || l.project || 'General',
           task_title: l.task || l.task_title || '',
           task_description: l.task_description,
+          assigned_date: l.assigned_date || workDate,
+          completed_date: l.completed_date || (isCompleted ? workDate : undefined),
+          category: l.category || 'Development',
+          feedback_comments: l.feedback_comments || l.comments || '',
+          blocker: l.blockers || l.blocker || '',
           status: (isCompleted ? 'completed' : 'wpi') as 'completed' | 'wpi',
           is_carried_forward: isCarried,
           carried_from_date: l.carried_from_date,
@@ -2104,6 +2109,10 @@ class MapleDataStore {
     action_items: Array<{
       projectName: string;
       task: string;
+      assignedDate?: string;
+      completedDate?: string;
+      timeInvested?: number;
+      feedbackComments?: string;
       category?: string;
       isCarriedForward?: boolean;
       carriedFromDate?: string;
@@ -2185,12 +2194,14 @@ class MapleDataStore {
       work_date: workDate,
       project_name: it.projectName.trim(),
       task_title: it.task.trim(),
+      assigned_date: it.assignedDate || workDate,
+      completed_date: it.completedDate || workDate,
       status: 'wpi',
       is_carried_forward: Boolean(it.isCarriedForward),
       carried_from_date: it.carriedFromDate,
       carried_from_reason: it.carriedFromReason,
       wpi_reason: it.carriedFromReason || '',
-      time_invested: 0,
+      time_invested: Number(it.timeInvested) || 0,
       unit_count: Number(it.estimatedUnits) || 1,
       sort_order: idx + 1,
       created_at: nowIso,
@@ -2203,7 +2214,8 @@ class MapleDataStore {
     this.dailyActionItems.push(...newItems);
 
     // 3. Mirror each action item into performance_work_logs for backward compatibility
-    const logsToUpsert: PerformanceWorkLog[] = newItems.map((item) => {
+    const logsToUpsert: PerformanceWorkLog[] = newItems.map((item, idx) => {
+      const it = params.action_items[idx];
       const existingLog = this.performanceWorkLogs.find(
         (l) => l.employee_id === empId && l.work_date === workDate && (l.task === item.task_title || l.task_title === item.task_title)
       );
@@ -2228,14 +2240,14 @@ class MapleDataStore {
         project: item.project_name,
         task: item.task_title,
         task_title: item.task_title,
-        assigned_date: workDate,
-        completed_date: workDate,
-        review_assigned_date: workDate,
-        time_invested: 0,
-        duration_hours: 0,
+        assigned_date: it?.assignedDate || workDate,
+        completed_date: it?.completedDate || workDate,
+        review_assigned_date: it?.completedDate || workDate,
+        time_invested: it?.timeInvested || 0,
+        duration_hours: it?.timeInvested || 0,
         unit_count_completed: item.unit_count,
-        feedback_comments: item.carried_from_reason || '',
-        comments: carriedTag ? `${carriedTag} ${item.carried_from_reason || ''}`.trim() : '',
+        feedback_comments: it?.feedbackComments || item.carried_from_reason || '',
+        comments: carriedTag ? `${carriedTag} ${item.carried_from_reason || ''}`.trim() : (it?.feedbackComments || ''),
         category: 'Development',
         priority: 'medium',
         deliverable: carriedTag || undefined,
@@ -2297,8 +2309,11 @@ class MapleDataStore {
       id?: string;
       projectName: string;
       task: string;
+      assignedDate?: string;
+      completedDate?: string;
       timeInvested: number;
       unitCountCompleted: number;
+      feedbackComments?: string;
       status: 'completed' | 'wpi';
       wpiReason?: string;
       comments?: string;
@@ -2396,7 +2411,8 @@ class MapleDataStore {
     this.dailyActionItems.push(...actionItems);
 
     // Mirror to performance_work_logs
-    const logsToUpsert: PerformanceWorkLog[] = actionItems.map((item) => {
+    const logsToUpsert: PerformanceWorkLog[] = actionItems.map((item, idx) => {
+      const it = params.items[idx];
       const existingLog = this.performanceWorkLogs.find(
         (l) => l.employee_id === empId && l.work_date === workDate && (l.task === item.task_title || l.task_title === item.task_title)
       );
@@ -2436,13 +2452,13 @@ class MapleDataStore {
         project: item.project_name,
         task: item.task_title,
         task_title: item.task_title,
-        assigned_date: workDate,
-        completed_date: isCompleted ? workDate : undefined,
-        review_assigned_date: workDate,
+        assigned_date: it?.assignedDate || workDate,
+        completed_date: it?.completedDate || (isCompleted ? workDate : undefined),
+        review_assigned_date: it?.completedDate || workDate,
         time_invested: item.time_invested,
         duration_hours: item.time_invested,
         unit_count_completed: item.unit_count,
-        feedback_comments: isCompleted ? (item.completion_comment || '') : (item.wpi_reason || ''),
+        feedback_comments: it?.feedbackComments || (isCompleted ? (item.completion_comment || '') : (item.wpi_reason || '')),
         comments: commentsText,
         category: 'Development',
         priority: 'medium',
@@ -2495,6 +2511,180 @@ class MapleDataStore {
       completed_count: completedCount,
       wpi_count: wpiCount,
     });
+    this.notify();
+
+    return { session, items: actionItems };
+  }
+
+  // --- SAVE WORK PROGRESS DRAFT (Saves items without locking checkout) ---
+  public async saveWorkProgress(params: {
+    employee_id: string;
+    work_date: string;
+    items: Array<{
+      id?: string;
+      projectName: string;
+      task: string;
+      assignedDate?: string;
+      completedDate?: string;
+      timeInvested: number;
+      unitCountCompleted: number;
+      feedbackComments?: string;
+      status: 'completed' | 'wpi';
+      wpiReason?: string;
+      comments?: string;
+      blocker?: string;
+      category?: string;
+      isCarriedForward?: boolean;
+      carriedFromDate?: string;
+    }>;
+  }): Promise<{ session?: DailyWorkSession; items: DailyActionItem[] }> {
+    if (!params.items || params.items.length === 0) {
+      throw new Error('At least 1 task deliverable is required to save progress.');
+    }
+
+    const localToday = getTodayIST();
+    const workDate = params.work_date || localToday;
+    const empId = params.employee_id;
+    const profile = this.getProfileById(empId);
+    const pod = (profile?.pod_id ? this.getPodById(profile.pod_id) : undefined) || this.getPodById('pod-web-sales');
+
+    let session = this.getDailySession(empId, workDate);
+    const nowIso = new Date().toISOString();
+    const totalHours = Math.round(params.items.reduce((acc, it) => acc + (Number(it.timeInvested) || 0), 0) * 10) / 10;
+    const completedCount = params.items.filter((it) => it.status === 'completed').length;
+    const wpiCount = params.items.filter((it) => it.status === 'wpi').length;
+
+    if (session) {
+      session = {
+        ...session,
+        total_tasks_count: params.items.length,
+        completed_tasks_count: completedCount,
+        wpi_tasks_count: wpiCount,
+        total_hours_invested: totalHours,
+        updated_at: nowIso,
+      };
+      const sIdx = this.dailyWorkSessions.findIndex((s) => s.id === session!.id);
+      if (sIdx !== -1) {
+        this.dailyWorkSessions[sIdx] = session;
+      }
+    }
+
+    const actionItems: DailyActionItem[] = params.items.map((it, idx) => ({
+      id: it.id || `act-${Date.now()}-${idx}-${Math.random().toString(36).substr(2, 4)}`,
+      session_id: session?.id,
+      organization_id: profile?.organization_id || 'org-maple-01',
+      employee_id: empId,
+      work_date: workDate,
+      project_name: it.projectName.trim() || 'General',
+      task_title: it.task.trim(),
+      assigned_date: it.assignedDate || workDate,
+      completed_date: it.completedDate || (it.status === 'completed' ? workDate : undefined),
+      category: it.category || 'Development',
+      feedback_comments: it.feedbackComments || '',
+      blocker: it.blocker || '',
+      status: it.status,
+      is_carried_forward: Boolean(it.isCarriedForward),
+      carried_from_date: it.carriedFromDate,
+      wpi_reason: it.status === 'wpi' ? (it.wpiReason || it.comments || it.feedbackComments || '').trim() : undefined,
+      completion_comment: it.status === 'completed' ? (it.comments || it.feedbackComments || '').trim() : undefined,
+      time_invested: Number(it.timeInvested) || 0,
+      unit_count: Number(it.unitCountCompleted) || 1,
+      sort_order: idx + 1,
+      created_at: nowIso,
+      updated_at: nowIso,
+    }));
+
+    this.dailyActionItems = this.dailyActionItems.filter(
+      (ai) => !(ai.employee_id === empId && ai.work_date === workDate)
+    );
+    this.dailyActionItems.push(...actionItems);
+
+    // Mirror to performance_work_logs
+    const logsToUpsert: PerformanceWorkLog[] = actionItems.map((item, idx) => {
+      const it = params.items[idx];
+      const existingLog = this.performanceWorkLogs.find(
+        (l) => l.employee_id === empId && l.work_date === workDate && (l.task === item.task_title || l.task_title === item.task_title)
+      );
+      const logId = existingLog?.id || `pwl-${Date.now()}-${Math.random().toString(36).substr(2, 6)}`;
+      const isCompleted = item.status === 'completed';
+
+      const commentsText = isCompleted
+        ? (item.completion_comment || 'In progress / draft')
+        : `[WPI Reason]: ${item.wpi_reason || 'In Progress'}`;
+
+      return {
+        id: logId,
+        organization_id: profile?.organization_id || 'org-maple-01',
+        employee_id: empId,
+        employee_name: profile?.full_name || 'Team Member',
+        department_id: pod?.id || 'pod-web-sales',
+        department: pod?.name || 'Web & Sales',
+        pod_id: pod?.id || 'pod-web-sales',
+        pod_name: pod?.name || 'Web & Sales',
+        date: localToday,
+        checkin_date: localToday,
+        work_date: workDate,
+        submission_time: session?.checkin_time || existingLog?.submission_time,
+        checkin_time: session?.checkin_time || existingLog?.checkin_time,
+        checkout_time: session?.checkout_time || existingLog?.checkout_time,
+        checkout_at: session?.checkout_at || existingLog?.checkout_at,
+        project_name: item.project_name,
+        project: item.project_name,
+        task: item.task_title,
+        task_title: item.task_title,
+        assigned_date: it?.assignedDate || workDate,
+        completed_date: it?.completedDate || (isCompleted ? workDate : undefined),
+        review_assigned_date: it?.completedDate || workDate,
+        time_invested: item.time_invested,
+        duration_hours: item.time_invested,
+        unit_count_completed: item.unit_count,
+        feedback_comments: it?.feedbackComments || (isCompleted ? (item.completion_comment || '') : (item.wpi_reason || '')),
+        comments: commentsText,
+        category: (it?.category as any) || 'Development',
+        priority: 'medium',
+        deliverable: item.is_carried_forward ? `[Carried Forward from ${item.carried_from_date || 'prev'}]` : undefined,
+        status: isCompleted ? 'completed' : 'in_progress',
+        workflow_status: existingLog?.workflow_status || 'submitted',
+        delivery_status: isCompleted ? 'completed_on_time' : 'pending',
+        submitted_by: empId,
+        submitted_at: existingLog?.submitted_at || nowIso,
+        audit_trail: existingLog?.audit_trail || [],
+        created_at: existingLog?.created_at || nowIso,
+        updated_at: nowIso,
+        is_carried_forward: item.is_carried_forward,
+        carried_from_date: item.carried_from_date,
+        wpi_reason: item.wpi_reason,
+      };
+    });
+
+    for (const log of logsToUpsert) {
+      const idx = this.performanceWorkLogs.findIndex((l) => l.id === log.id);
+      if (idx !== -1) {
+        this.performanceWorkLogs[idx] = log;
+      } else {
+        this.performanceWorkLogs.unshift(log);
+      }
+    }
+
+    // Persist to Supabase performance_work_logs
+    const sanitizedLogs = logsToUpsert.map((l) => this.sanitizeWorkLogForDb(l));
+    const { error: dbError } = await supabase
+      .from('performance_work_logs')
+      .upsert(sanitizedLogs);
+
+    if (dbError) {
+      console.error('Supabase save progress upsert error:', dbError);
+      throw new Error(`Database save failed: ${dbError.message}`);
+    }
+
+    try {
+      if (session) {
+        await supabase.from('daily_work_sessions').upsert(session);
+      }
+      await supabase.from('daily_action_items').upsert(actionItems);
+    } catch {}
+
+    this.persistAttendanceLocally();
     this.notify();
 
     return { session, items: actionItems };
