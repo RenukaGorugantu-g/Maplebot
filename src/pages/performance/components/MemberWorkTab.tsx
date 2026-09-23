@@ -923,7 +923,7 @@ export const MemberWorkTab: React.FC = () => {
                   <th className="py-3 px-3.5 min-w-[180px] w-[200px]">Project Name</th>
                   <th className="py-3 px-3.5 min-w-[440px] w-[460px]">Task Deliverable (Specific activity)</th>
                   <th className="py-3 px-3 w-[135px]">Assigned Date</th>
-                  <th className="py-3 px-3 w-[110px] text-left">Hours</th>
+                  <th className="py-3 px-3 min-w-[135px] w-[145px] text-left">Hours</th>
                   <th className="py-3 px-3 w-[100px] text-left">
                     <div className="flex items-center gap-1">
                       <span>Units</span>
@@ -1011,8 +1011,8 @@ export const MemberWorkTab: React.FC = () => {
                         />
                       </td>
 
-                      {/* Hours Invested */}
-                      <td className="py-3 px-3 text-left align-top">
+                      {/* Hours Invested - Enlarged Width */}
+                      <td className="py-3 px-3 min-w-[135px] w-[145px] text-left align-top">
                         <div className="relative flex items-center">
                           <input
                             type="number"
@@ -1025,9 +1025,9 @@ export const MemberWorkTab: React.FC = () => {
                               handleUpdateRow(row.id, 'timeInvested', isNaN(v) ? 0 : v);
                             }}
                             placeholder="e.g. 2.5"
-                            className="w-full pr-7 pl-2.5 py-2 bg-slate-900 border border-slate-700/80 rounded-lg text-sky-400 font-mono font-bold text-xs focus:outline-none focus:border-maple-500 [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
+                            className="w-full pr-8 pl-3 py-2 bg-slate-900 border border-slate-700/80 rounded-lg text-sky-400 font-mono font-bold text-xs focus:outline-none focus:border-maple-500 [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
                           />
-                          <span className="absolute right-2 text-[10px] text-slate-400 font-medium pointer-events-none">hrs</span>
+                          <span className="absolute right-2.5 text-[10px] text-slate-400 font-medium pointer-events-none">hrs</span>
                         </div>
                       </td>
 
