@@ -33,9 +33,7 @@ export const TeamUpdatesPage: React.FC<{
   const { showToast } = useNotifications();
 
   const [searchQuery, setSearchQuery] = useState('');
-  const [selectedPod, setSelectedPod] = useState<string>(
-    initialPodId || (currentRole === 'manager' ? (profile?.pod_id || '') : '')
-  );
+  const [selectedPod, setSelectedPod] = useState<string>(initialPodId || '');
   const [statusFilter, setStatusFilter] = useState<string>('');
   const [dateFilter, setDateFilter] = useState<string>('');
   const [onlyBlockers, setOnlyBlockers] = useState<boolean>(false);

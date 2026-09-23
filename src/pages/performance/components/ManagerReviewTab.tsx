@@ -72,7 +72,7 @@ export const ManagerReviewTab: React.FC<ManagerReviewTabProps> = ({
   }, [allProfiles, isManager, defaultPodId]);
 
   // Multi-Filter States
-  const [selectedPodId, setSelectedPodId] = useState<string>(isManager ? defaultPodId : '');
+  const [selectedPodId, setSelectedPodId] = useState<string>('');
   const [selectedEmployeeId, setSelectedEmployeeId] = useState<string>('');
   const [selectedProject, setSelectedProject] = useState<string>('');
   const [selectedCompletionStatus, setSelectedCompletionStatus] = useState<string>('');
@@ -92,7 +92,7 @@ export const ManagerReviewTab: React.FC<ManagerReviewTabProps> = ({
 
   // Pagination & Sorting
   const [currentPage, setCurrentPage] = useState<number>(1);
-  const [pageSize, setPageSize] = useState<number>(50);
+  const [pageSize, setPageSize] = useState<number>(100);
   const [sortKey, setSortKey] = useState<keyof PerformanceWorkLog>('date');
   const [sortOrder, setSortOrder] = useState<'asc' | 'desc'>('desc');
 
@@ -121,11 +121,11 @@ export const ManagerReviewTab: React.FC<ManagerReviewTabProps> = ({
     };
   }, [attendanceItems]);
 
-  // Filter profiles based on selected pod
+  // Filter profiles based on selected pod (defaults to all profiles if no specific pod selected)
   const filteredProfiles = useMemo(() => {
-    if (!selectedPodId) return availableProfiles;
+    if (!selectedPodId) return allProfiles;
     return allProfiles.filter((p) => p.pod_id === selectedPodId || (p.pod_ids && p.pod_ids.includes(selectedPodId)));
-  }, [availableProfiles, allProfiles, selectedPodId]);
+  }, [allProfiles, selectedPodId]);
 
   // Retrieve enriched logs
   const allLogs = useMemo(() => {
@@ -681,7 +681,7 @@ export const ManagerReviewTab: React.FC<ManagerReviewTabProps> = ({
         </div>
 
         <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3 pt-3 border-t border-slate-800/80 text-xs">
-          {isAdmin && (
+          {(isAdmin || isManager) && (
             <div>
               <label className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block mb-1">
                 Department / Pod
@@ -1088,34 +1088,54 @@ export const ManagerReviewTab: React.FC<ManagerReviewTabProps> = ({
           </div>
         )}
 
-        {/* Pagination */}
-        {totalPages > 1 && (
-          <div className="flex items-center justify-between px-5 py-3 border-t border-slate-800 bg-[#0B1728]/50 text-xs text-slate-400">
+        {/* Pagination Bar */}
+        <div className="flex flex-col sm:flex-row items-center justify-between gap-3 px-5 py-3 border-t border-slate-800 bg-[#0B1728]/50 text-xs text-slate-400">
+          <div className="flex items-center gap-3">
             <span>
               Showing {(currentPage - 1) * pageSize + 1} to{' '}
               {Math.min(currentPage * pageSize, sortedLogs.length)} of {sortedLogs.length} records
             </span>
+            <div className="flex items-center gap-1.5 pl-3 border-l border-slate-700">
+              <span className="text-[11px] text-slate-500 font-medium">Rows:</span>
+              <select
+                value={pageSize}
+                onChange={(e) => {
+                  setPageSize(Number(e.target.value));
+                  setCurrentPage(1);
+                }}
+                className="bg-slate-900 border border-slate-700 rounded-lg px-2 py-1 text-slate-200 text-xs focus:outline-none focus:border-maple-500"
+              >
+                <option value={50}>50 per page</option>
+                <option value={100}>100 per page</option>
+                <option value={200}>200 per page</option>
+                <option value={500}>500 per page (All)</option>
+              </select>
+            </div>
+          </div>
+          {totalPages > 1 && (
             <div className="flex items-center gap-2">
               <button
                 disabled={currentPage === 1}
                 onClick={() => setCurrentPage((p) => Math.max(1, p - 1))}
-                className="p-1.5 rounded-lg border border-slate-700 disabled:opacity-30 hover:bg-slate-800 text-slate-300"
+                className="p-1.5 rounded-lg border border-slate-700 disabled:opacity-30 hover:bg-slate-800 text-slate-300 transition-colors"
+                title="Previous page"
               >
                 <ChevronLeft className="w-4 h-4" />
               </button>
-              <span className="font-medium text-slate-300">
+              <span className="font-medium text-slate-300 px-1">
                 Page {currentPage} of {totalPages}
               </span>
               <button
                 disabled={currentPage === totalPages}
                 onClick={() => setCurrentPage((p) => Math.min(totalPages, p + 1))}
-                className="p-1.5 rounded-lg border border-slate-700 disabled:opacity-30 hover:bg-slate-800 text-slate-300"
+                className="p-1.5 rounded-lg border border-slate-700 disabled:opacity-30 hover:bg-slate-800 text-slate-300 transition-colors"
+                title="Next page"
               >
                 <ChevronRight className="w-4 h-4" />
               </button>
             </div>
-          </div>
-        )}
+          )}
+        </div>
       </div>
 
       {/* 4. MANAGER EVALUATION MODAL: WIDE 2-COLUMN WORKSTATION (QUALITY, TAT, EFFICIENCY) */}
