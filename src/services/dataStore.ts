@@ -1634,11 +1634,35 @@ class MapleDataStore {
 
   // --- 1. WORK LOGS ---
   private sanitizeWorkLogForDb(log: any): any {
-    const { checkin_date, work_date, ...sanitized } = log;
-    if (!sanitized.project && sanitized.project_name) sanitized.project = sanitized.project_name;
-    if (!sanitized.task_title && sanitized.task) sanitized.task_title = sanitized.task;
+    const allowedColumns = new Set([
+      'id', 'organization_id', 'employee_id', 'employee_name', 'department_id', 'department',
+      'pod_id', 'pod_name', 'date', 'submission_time', 'checkin_time', 'project_name', 'project',
+      'task', 'task_title', 'task_description', 'assigned_date', 'time_invested', 'duration_hours',
+      'unit_count_completed', 'review_assigned_date', 'comments', 'category', 'priority',
+      'deliverable', 'outcome', 'impact', 'expected_completion_date', 'completed_date',
+      'review_completed_date', 'reviewer', 'reviewer_name', 'reviewer_id', 'error_count',
+      'errors', 'quality', 'tat', 'tat_days', 'efficiency', 'workflow_status', 'delivery_status',
+      'delay_days', 'review_tat_days', 'status', 'submitted_by', 'submitted_at',
+      'pod_lead_reviewed_by', 'pod_lead_reviewed_at', 'manager_reviewed_by', 'manager_reviewed_at',
+      'source_update_id', 'audit_trail', 'created_at', 'updated_at', 'feedback_comments',
+      'reviewer_comments', 'checkout_time', 'checkout_at', 'is_carried_forward',
+      'carried_from_date', 'carried_from_reason', 'wpi_reason', 'blockers'
+    ]);
+
+    const sanitized: any = {};
+    for (const key of Object.keys(log)) {
+      if (allowedColumns.has(key) && log[key] !== undefined) {
+        sanitized[key] = log[key];
+      }
+    }
+
+    if (!sanitized.project && log.project_name) sanitized.project = log.project_name;
+    if (!sanitized.task_title && log.task) sanitized.task_title = log.task;
+    if (sanitized.delivery_status === 'on_time') sanitized.delivery_status = 'completed_on_time';
+
     return sanitized;
   }
+
 
   public getPerformanceWorkLogs(filters?: {
     employeeId?: string;
@@ -1843,7 +1867,7 @@ class MapleDataStore {
       outcome: log.outcome,
       impact: log.impact,
       workflow_status: 'submitted',
-      delivery_status: 'pending',
+      delivery_status: log.delivery_status || (log.completed_date ? 'completed_on_time' : 'pending'),
       submitted_by: empId,
       submitted_at: new Date().toISOString(),
       created_at: new Date().toISOString(),
@@ -1863,9 +1887,11 @@ class MapleDataStore {
         .upsert(this.sanitizeWorkLogForDb(newLog));
       if (error) {
         console.error('Supabase submitMemberWork upsert error:', error);
+        throw new Error(`Database error saving update: ${error.message || 'Unknown Supabase error'}`);
       }
-    } catch (dbErr) {
+    } catch (dbErr: any) {
       console.error('Supabase network error during submitMemberWork:', dbErr);
+      throw dbErr;
     }
     this.notify();
     return newLog;
