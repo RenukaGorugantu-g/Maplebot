@@ -1675,15 +1675,21 @@ class MapleDataStore {
       'status', 'submitted_by', 'submitted_at', 'pod_lead_reviewed_by',
       'pod_lead_reviewed_at', 'manager_reviewed_by', 'manager_reviewed_at',
       'source_update_id', 'audit_trail', 'created_at', 'updated_at',
-      'feedback_comments', 'reviewer_comments'
+      'feedback_comments', 'reviewer_comments', 'checkout_time', 'checkout_at',
+      'is_carried_forward', 'carried_from_date', 'carried_from_reason', 'wpi_reason', 'blockers'
     ]);
 
     const filtered: Record<string, any> = {};
     for (const key of Object.keys(sanitized)) {
-      if (allowedColumns.has(key)) {
+      if (allowedColumns.has(key) && sanitized[key] !== undefined) {
         filtered[key] = sanitized[key];
       }
     }
+
+    if (filtered.delivery_status === 'on_time') {
+      filtered.delivery_status = 'completed_on_time';
+    }
+
     return filtered;
   }
 
@@ -1990,13 +1996,24 @@ class MapleDataStore {
       return [...items].sort((a, b) => (a.sort_order ?? 0) - (b.sort_order ?? 0));
     }
 
-    // Synthesize from performance_work_logs
-    const memberLogs = this.performanceWorkLogs.filter(
-      (l) => l.employee_id === employeeId && (l.work_date === workDate || l.date === workDate || l.checkin_date === workDate)
-    );
+    const memberLogs = this.performanceWorkLogs
+      .filter((l) => l.employee_id === employeeId && (l.work_date === workDate || l.date === workDate || l.checkin_date === workDate))
+      .sort((a, b) => new Date(b.created_at || b.updated_at).getTime() - new Date(a.created_at || a.updated_at).getTime());
+
     if (memberLogs.length > 0) {
-      return memberLogs.map((l, idx) => {
-        const isCompleted = l.status === 'completed' || l.delivery_status?.startsWith('completed');
+      // Deduplicate by task description/title, keeping latest state
+      const seenTasks = new Set<string>();
+      const uniqueLogs: PerformanceWorkLog[] = [];
+      for (const l of memberLogs) {
+        const key = (l.task || l.task_title || '').trim().toLowerCase();
+        if (key && !seenTasks.has(key)) {
+          seenTasks.add(key);
+          uniqueLogs.push(l);
+        }
+      }
+
+      return uniqueLogs.map((l, idx) => {
+        const isCompleted = l.status === 'completed';
         const isCarried = Boolean(
           l.is_carried_forward ||
           l.deliverable?.includes('[Carried Forward') ||
@@ -2047,7 +2064,15 @@ class MapleDataStore {
     const wpiItems = prevActionItems.filter((i) => i.status === 'wpi');
 
     if (wpiItems.length > 0) {
-      return wpiItems.map((item, idx) => ({
+      const seen = new Set<string>();
+      const dedupedWpi = wpiItems.filter((item) => {
+        const key = item.task_title.toLowerCase().trim();
+        if (!key || seen.has(key)) return false;
+        seen.add(key);
+        return true;
+      });
+
+      return dedupedWpi.map((item, idx) => ({
         id: `carried-${Date.now()}-${idx}`,
         organization_id: item.organization_id,
         employee_id: employeeId,
@@ -2069,15 +2094,23 @@ class MapleDataStore {
       }));
     }
 
-    // 2. Check performance_work_logs for prevDate
-    const prevLogs = this.performanceWorkLogs.filter(
-      (l) => l.employee_id === employeeId && (l.work_date === prevDate || l.date === prevDate)
-    );
+    // 2. Check performance_work_logs for prevDate (NEVER include completed tasks!)
+    const prevLogs = this.performanceWorkLogs
+      .filter((l) => l.employee_id === employeeId && (l.work_date === prevDate || l.date === prevDate))
+      .sort((a, b) => new Date(b.created_at || b.updated_at).getTime() - new Date(a.created_at || a.updated_at).getTime());
     const prevWpiLogs = prevLogs.filter(
-      (l) => l.status === 'in_progress' || l.status === 'pending' || l.delivery_status === 'pending'
+      (l) => ((l.status as string) === 'in_progress' || (l.status as string) === 'wpi' || (l.status === 'pending' && l.delivery_status === 'pending')) &&
+             !l.delivery_status?.startsWith('completed')
     );
+    const seenLogs = new Set<string>();
+    const dedupedLogs = prevWpiLogs.filter((l) => {
+      const key = (l.task || l.task_title || '').toLowerCase().trim();
+      if (!key || seenLogs.has(key)) return false;
+      seenLogs.add(key);
+      return true;
+    });
 
-    return prevWpiLogs.map((l, idx) => ({
+    return dedupedLogs.map((l, idx) => ({
       id: `carried-${Date.now()}-${idx}`,
       organization_id: l.organization_id || 'org-maple-01',
       employee_id: employeeId,
@@ -2231,8 +2264,8 @@ class MapleDataStore {
         department: pod?.name || 'Web & Sales',
         pod_id: pod?.id || 'pod-web-sales',
         pod_name: pod?.name || 'Web & Sales',
-        date: localToday,
-        checkin_date: localToday,
+        date: workDate,
+        checkin_date: workDate,
         work_date: workDate,
         submission_time: session!.checkin_time,
         checkin_time: session!.checkin_time,
@@ -2349,7 +2382,7 @@ class MapleDataStore {
 
     let session = this.getDailySession(empId, workDate);
     const nowIso = new Date().toISOString();
-    const effectiveCheckoutTime = session?.checkout_time || params.checkout_time || getTimeIST();
+    const effectiveCheckoutTime = params.checkout_time || session?.checkout_time || getTimeIST();
     const effectiveCheckinTime = session?.checkin_time || getTimeIST();
 
     const totalHours = Math.round(params.items.reduce((acc, it) => acc + (Number(it.timeInvested) || 0), 0) * 10) / 10;
@@ -2441,8 +2474,8 @@ class MapleDataStore {
         department: pod?.name || 'Web & Sales',
         pod_id: pod?.id || 'pod-web-sales',
         pod_name: pod?.name || 'Web & Sales',
-        date: localToday,
-        checkin_date: localToday,
+        date: workDate,
+        checkin_date: workDate,
         work_date: workDate,
         submission_time: session!.checkin_time,
         checkin_time: session!.checkin_time,
@@ -2498,9 +2531,13 @@ class MapleDataStore {
     }
 
     try {
-      await supabase.from('daily_work_sessions').upsert(session);
-      await supabase.from('daily_action_items').upsert(actionItems);
-    } catch {}
+      const { error: sessErr } = await supabase.from('daily_work_sessions').upsert(session);
+      if (sessErr) console.warn('Supabase daily_work_sessions note:', sessErr.message);
+      const { error: actErr } = await supabase.from('daily_action_items').upsert(actionItems);
+      if (actErr) console.warn('Supabase daily_action_items note:', actErr.message);
+    } catch (e) {
+      console.warn('Supabase daily session upsert error:', e);
+    }
 
     this.persistAttendanceLocally();
     this.logAudit('END_OF_DAY_CHECKOUT_SUBMITTED', 'DailyWorkSession', session.id, {
@@ -2621,8 +2658,8 @@ class MapleDataStore {
         department: pod?.name || 'Web & Sales',
         pod_id: pod?.id || 'pod-web-sales',
         pod_name: pod?.name || 'Web & Sales',
-        date: localToday,
-        checkin_date: localToday,
+        date: workDate,
+        checkin_date: workDate,
         work_date: workDate,
         submission_time: session?.checkin_time || existingLog?.submission_time,
         checkin_time: session?.checkin_time || existingLog?.checkin_time,

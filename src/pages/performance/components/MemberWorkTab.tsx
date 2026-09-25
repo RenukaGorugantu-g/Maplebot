@@ -5,6 +5,7 @@
 
 import React, { useState, useMemo } from 'react';
 import { useAuth } from '../../../context/AuthContext';
+import { useNotifications } from '../../../context/NotificationContext';
 import { dataStore } from '../../../services/dataStore';
 import { googleChatService } from '../../../services/googleChatService';
 import { PerformanceWorkLog, WorkCategory, WorkPriority, QualityRating } from '../../../types/performance';
@@ -77,6 +78,7 @@ interface TaskDraftRow {
 
 export const MemberWorkTab: React.FC = () => {
   const { profile, userPod, isPodLead, isManager, isAdmin, currentRole } = useAuth();
+  const { showToast } = useNotifications();
   const isPrivileged = Boolean(isPodLead || isManager || isAdmin);
 
   const todayStr = getTodayIST();
@@ -300,11 +302,15 @@ export const MemberWorkTab: React.FC = () => {
     for (let i = 0; i < taskRows.length; i++) {
       const r = taskRows[i];
       if (!r.projectName.trim()) {
-        setErrorMsg(`Task #${i + 1}: Project Name is required.`);
+        const msg = `Task #${i + 1}: Project Name is required.`;
+        setErrorMsg(msg);
+        showToast('warning', 'Missing Project Name', msg);
         return;
       }
       if (!r.task.trim()) {
-        setErrorMsg(`Task #${i + 1}: Task deliverable description is required.`);
+        const msg = `Task #${i + 1}: Task deliverable description is required.`;
+        setErrorMsg(msg);
+        showToast('warning', 'Missing Task Description', msg);
         return;
       }
     }
@@ -356,9 +362,12 @@ export const MemberWorkTab: React.FC = () => {
       }).catch((err) => console.warn('GChat morning checkin notice:', err));
 
       setSuccessNotice(`🌅 Morning check-in confirmed at ${result.session.checkin_time} IST! Action items saved and Google Chat notified.`);
+      showToast('success', 'Morning Check-in Confirmed', `Logged in at ${result.session.checkin_time} IST with ${taskRows.length} action item(s).`);
       setTimeout(() => setSuccessNotice(''), 7000);
     } catch (err: any) {
-      setErrorMsg(err.message || 'Failed to submit morning check-in. Please try again.');
+      const msg = err.message || 'Failed to submit morning check-in. Please try again.';
+      setErrorMsg(msg);
+      showToast('error', 'Check-in Error', msg);
     } finally {
       setIsSubmitting(false);
     }
@@ -372,11 +381,15 @@ export const MemberWorkTab: React.FC = () => {
     for (let i = 0; i < taskRows.length; i++) {
       const r = taskRows[i];
       if (!r.projectName.trim()) {
-        setErrorMsg(`Task #${i + 1}: Project Name is required.`);
+        const msg = `Task #${i + 1}: Project Name is required.`;
+        setErrorMsg(msg);
+        showToast('warning', 'Missing Project Name', msg);
         return;
       }
       if (!r.task.trim()) {
-        setErrorMsg(`Task #${i + 1}: Task Deliverable description is required.`);
+        const msg = `Task #${i + 1}: Task deliverable description is required.`;
+        setErrorMsg(msg);
+        showToast('warning', 'Missing Task Description', msg);
         return;
       }
     }
@@ -410,9 +423,12 @@ export const MemberWorkTab: React.FC = () => {
       });
 
       setSuccessNotice('💾 Work progress draft saved successfully! You can continue updating tasks throughout the day.');
+      showToast('success', 'Progress Draft Saved', 'Your work items and hours draft have been saved.');
       setTimeout(() => setSuccessNotice(''), 5000);
     } catch (err: any) {
-      setErrorMsg(err.message || 'Failed to save work progress draft.');
+      const msg = err.message || 'Failed to save work progress draft.';
+      setErrorMsg(msg);
+      showToast('error', 'Save Draft Failed', msg);
     } finally {
       setIsSubmitting(false);
     }
@@ -421,34 +437,47 @@ export const MemberWorkTab: React.FC = () => {
   // 3. SUBMIT END-OF-DAY DELIVERABLES & CHECK OUT (Locks Logout Time)
   const handleEveningCheckout = async (e?: React.FormEvent) => {
     if (e) e.preventDefault();
-    setErrorMsg('');
+    if (!taskRows || taskRows.length === 0) {
+      const msg = 'Please add at least 1 task deliverable before checking out.';
+      setErrorMsg(msg);
+      showToast('warning', 'No Tasks Added', msg);
+      return;
+    }
 
     for (let i = 0; i < taskRows.length; i++) {
       const r = taskRows[i];
       if (!r.projectName.trim()) {
-        setErrorMsg(`Task #${i + 1}: Project Name is required.`);
+        const msg = `Task #${i + 1}: Project Name is required.`;
+        setErrorMsg(msg);
+        showToast('warning', 'Missing Project Name', msg);
         return;
       }
       if (!r.task.trim()) {
-        setErrorMsg(`Task #${i + 1}: Task Deliverable description is required.`);
+        const msg = `Task #${i + 1}: Task deliverable description is required.`;
+        setErrorMsg(msg);
+        showToast('warning', 'Missing Task Description', msg);
         return;
       }
+      // Auto-default assignedDate if empty
       if (!r.assignedDate) {
-        setErrorMsg(`Task #${i + 1}: Assigned Date is required.`);
-        return;
+        r.assignedDate = workDate;
       }
-      if (!r.completedDate) {
-        setErrorMsg(`Task #${i + 1}: Completed Date is required.`);
-        return;
+      // Auto-default completedDate if completed
+      if (r.status === 'completed' && !r.completedDate) {
+        r.completedDate = workDate;
       }
       if (!r.timeInvested || Number(r.timeInvested) <= 0) {
-        setErrorMsg(`Task #${i + 1}: Hours Invested must be greater than 0.`);
+        const msg = `Task #${i + 1} ("${r.projectName}"): Please enter the Hours Invested (e.g. 2, 4, 8) before checking out.`;
+        setErrorMsg(msg);
+        showToast('warning', 'Missing Hours Invested', msg);
         return;
       }
       if (r.status === 'wpi') {
         const reason = (r.wpiReason || r.feedbackComments || r.comments || '').trim();
         if (!reason || reason.length < 5) {
-          setErrorMsg(`Task #${i + 1} ("${r.task}") is marked as Work in Progress (WPI). A mandatory explanation (reason why still in progress & continuation plan) is required before check-out.`);
+          const msg = `Task #${i + 1} ("${r.task}") is marked as Work in Progress (WPI). A mandatory explanation (reason why still in progress & continuation plan) is required before check-out.`;
+          setErrorMsg(msg);
+          showToast('warning', 'Mandatory WPI Explanation', msg);
           return;
         }
       }
@@ -471,7 +500,7 @@ export const MemberWorkTab: React.FC = () => {
           projectName: r.projectName.trim(),
           task: r.task.trim(),
           assignedDate: r.assignedDate || workDate,
-          completedDate: r.completedDate || workDate,
+          completedDate: r.status === 'completed' ? (r.completedDate || workDate) : undefined,
           timeInvested: Number(r.timeInvested) || 0,
           unitCountCompleted: Number(r.unitCountCompleted) || 1,
           feedbackComments: r.feedbackComments?.trim() || '',
@@ -510,9 +539,12 @@ export const MemberWorkTab: React.FC = () => {
       }).catch((err) => console.warn('GChat checkout notice:', err));
 
       setSuccessNotice(`🎉 Outstanding work! Successfully checked out at ${result.session.checkout_time} IST (${result.session.total_hours_invested}h logged, ${completedCount} completed, ${wpiCount} WPI carried forward). Overview sent to Google Chat!`);
+      showToast('success', 'Evening Check-out Confirmed', `Logged out at ${result.session.checkout_time} IST (${result.session.total_hours_invested}h total). Deliverables saved!`);
       setTimeout(() => setSuccessNotice(''), 8000);
     } catch (err: any) {
-      setErrorMsg(err.message || 'Failed to submit end-of-day check-out. Please try again.');
+      const msg = err.message || 'Failed to submit end-of-day check-out. Please try again.';
+      setErrorMsg(msg);
+      showToast('error', 'Check-out Failed', msg);
     } finally {
       setIsSubmitting(false);
     }
@@ -923,7 +955,7 @@ export const MemberWorkTab: React.FC = () => {
                   <th className="py-3 px-3.5 min-w-[180px] w-[200px]">Project Name</th>
                   <th className="py-3 px-3.5 min-w-[440px] w-[460px]">Task Deliverable (Specific activity)</th>
                   <th className="py-3 px-3 w-[135px]">Assigned Date</th>
-                  <th className="py-3 px-3 min-w-[135px] w-[145px] text-left">Hours</th>
+                  <th className="py-3 px-2.5 w-[100px] min-w-[95px] text-left">Hours</th>
                   <th className="py-3 px-3 w-[100px] text-left">
                     <div className="flex items-center gap-1">
                       <span>Units</span>
@@ -936,7 +968,7 @@ export const MemberWorkTab: React.FC = () => {
                     </div>
                   </th>
                   <th className="py-3 px-3 w-[135px] text-sky-300">Completed Date</th>
-                  <th className="py-3 px-3 w-[170px] text-center">Status</th>
+                  <th className="py-3 px-3 w-[220px] min-w-[215px] text-left">Status</th>
                   <th className="py-3 px-3.5 min-w-[280px] w-[310px] text-maple-300">
                     Feedback / Comments & <span className="text-amber-400 font-bold">WPI Reason</span>
                   </th>
@@ -1011,8 +1043,8 @@ export const MemberWorkTab: React.FC = () => {
                         />
                       </td>
 
-                      {/* Hours Invested - Enlarged Width */}
-                      <td className="py-3 px-3 min-w-[135px] w-[145px] text-left align-top">
+                      {/* Hours Invested */}
+                      <td className="py-3 px-2.5 w-[100px] min-w-[95px] text-left align-top">
                         <div className="relative flex items-center">
                           <input
                             type="number"
@@ -1024,10 +1056,10 @@ export const MemberWorkTab: React.FC = () => {
                               const v = e.target.value === '' ? 0 : parseFloat(e.target.value);
                               handleUpdateRow(row.id, 'timeInvested', isNaN(v) ? 0 : v);
                             }}
-                            placeholder="e.g. 2.5"
-                            className="w-full pr-8 pl-3 py-2 bg-slate-900 border border-slate-700/80 rounded-lg text-sky-400 font-mono font-bold text-xs focus:outline-none focus:border-maple-500 [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
+                            placeholder="e.g. 2"
+                            className="w-full pr-7 pl-2.5 py-2 bg-slate-900 border border-slate-700/80 rounded-lg text-sky-400 font-mono font-bold text-xs focus:outline-none focus:border-maple-500 [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
                           />
-                          <span className="absolute right-2.5 text-[10px] text-slate-400 font-medium pointer-events-none">hrs</span>
+                          <span className="absolute right-2 text-[10px] text-slate-400 font-medium pointer-events-none">hrs</span>
                         </div>
                       </td>
 
@@ -1063,11 +1095,11 @@ export const MemberWorkTab: React.FC = () => {
                       </td>
 
                       {/* Status Dropdown: Completed vs WPI */}
-                      <td className="py-3 px-3 align-top">
+                      <td className="py-3 px-3 w-[220px] min-w-[215px] align-top">
                         <select
                           value={row.status}
                           onChange={(e) => handleUpdateRow(row.id, 'status', e.target.value as ActionItemStatus)}
-                          className={`w-full px-2.5 py-2 rounded-lg font-bold text-xs focus:outline-none cursor-pointer border ${
+                          className={`w-full px-3 py-2 rounded-lg font-bold text-xs focus:outline-none cursor-pointer border ${
                             row.status === 'completed'
                               ? 'bg-emerald-950/40 text-emerald-300 border-emerald-500/50'
                               : 'bg-amber-950/40 text-amber-300 border-amber-500/50'
@@ -1139,103 +1171,143 @@ export const MemberWorkTab: React.FC = () => {
           </div>
 
           {/* TABLE FOOTER CONTROLS & WORKFLOW ACTIONS */}
-          <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4 p-4 rounded-xl bg-slate-900/90 border border-slate-800">
-            {/* Left: Row controls & live totals */}
-            <div className="flex flex-wrap items-center gap-3">
-              <Button
-                type="button"
-                variant="secondary"
-                size="sm"
-                onClick={handleAddRow}
-                leftIcon={<Plus className="w-4 h-4 text-maple-400" />}
-              >
-                Add Task Row
-              </Button>
+          <div className="flex flex-col gap-3 p-4 rounded-xl bg-slate-900/90 border border-slate-800">
+            {/* Inline Footer Error or Success Notice */}
+            {errorMsg && (
+              <div className="p-3 rounded-lg bg-rose-500/15 border border-rose-500/30 text-rose-300 text-xs font-semibold flex items-center justify-between gap-3 animate-in fade-in">
+                <div className="flex items-center gap-2">
+                  <AlertTriangle className="w-4 h-4 flex-shrink-0 text-rose-400" />
+                  <span>{errorMsg}</span>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setErrorMsg('')}
+                  className="text-slate-400 hover:text-white text-xs px-2 py-0.5 rounded bg-slate-800"
+                >
+                  Dismiss
+                </button>
+              </div>
+            )}
 
-              <Button
-                type="button"
-                variant="outline"
-                size="sm"
-                onClick={() => setIsPasteModalOpen(true)}
-                leftIcon={<ClipboardList className="w-4 h-4 text-sky-400" />}
-              >
-                Paste from Chat
-              </Button>
+            {successNotice && (
+              <div className="p-3 rounded-lg bg-emerald-500/15 border border-emerald-500/30 text-emerald-300 text-xs font-bold flex items-center justify-between gap-3 shadow-lg animate-in fade-in">
+                <div className="flex items-center gap-2">
+                  <CheckCircle2 className="w-4 h-4 flex-shrink-0 text-emerald-400" />
+                  <span>{successNotice}</span>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setSuccessNotice('')}
+                  className="text-slate-400 hover:text-white text-xs px-2 py-0.5 rounded bg-slate-800"
+                >
+                  Dismiss
+                </button>
+              </div>
+            )}
 
-              <div className="hidden sm:flex items-center gap-3 pl-3 border-l border-slate-800 text-xs">
-                <div>
-                  <span className="text-slate-400">Total: </span>
-                  <span className="font-bold text-white font-mono">{taskRows.length} tasks</span>
-                </div>
-                <div>
-                  <span className="text-slate-400">Hours: </span>
-                  <span className="font-bold text-sky-400 font-mono">{totalHours} hrs</span>
-                </div>
-                <div>
-                  <span className="text-slate-400">Completed: </span>
-                  <span className="font-bold text-emerald-400 font-mono">
-                    {taskRows.filter((r) => r.status === 'completed').length}
-                  </span>
-                </div>
-                <div>
-                  <span className="text-slate-400">WPI: </span>
-                  <span className="font-bold text-amber-400 font-mono">
-                    {taskRows.filter((r) => r.status === 'wpi').length}
-                  </span>
+            <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4">
+              {/* Left: Row controls & live totals */}
+              <div className="flex flex-wrap items-center gap-3">
+                <Button
+                  type="button"
+                  variant="secondary"
+                  size="sm"
+                  onClick={handleAddRow}
+                  leftIcon={<Plus className="w-4 h-4 text-maple-400" />}
+                >
+                  Add Task Row
+                </Button>
+
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  onClick={() => setIsPasteModalOpen(true)}
+                  leftIcon={<ClipboardList className="w-4 h-4 text-sky-400" />}
+                >
+                  Paste from Chat
+                </Button>
+
+                <div className="hidden sm:flex items-center gap-3 pl-3 border-l border-slate-800 text-xs">
+                  <div>
+                    <span className="text-slate-400">Total: </span>
+                    <span className="font-bold text-white font-mono">{taskRows.length} tasks</span>
+                  </div>
+                  <div>
+                    <span className="text-slate-400">Hours: </span>
+                    <span className="font-bold text-sky-400 font-mono">{totalHours} hrs</span>
+                  </div>
+                  <div>
+                    <span className="text-slate-400">Completed: </span>
+                    <span className="font-bold text-emerald-400 font-mono">
+                      {taskRows.filter((r) => r.status === 'completed').length}
+                    </span>
+                  </div>
+                  <div>
+                    <span className="text-slate-400">WPI: </span>
+                    <span className="font-bold text-amber-400 font-mono">
+                      {taskRows.filter((r) => r.status === 'wpi').length}
+                    </span>
+                  </div>
                 </div>
               </div>
-            </div>
 
-            {/* Right: The 3 Workflow Actions */}
-            <div className="flex flex-wrap items-center gap-2.5">
-              {/* 1. Morning Check-in / Login Button */}
-              <Button
-                type="button"
-                variant={isCheckedIn ? 'secondary' : 'outline'}
-                size="sm"
-                onClick={handleMorningCheckin}
-                disabled={isSubmitting}
-                className={
-                  isCheckedIn
-                    ? 'border-emerald-500/40 text-emerald-300'
-                    : 'border-amber-500/60 text-amber-300 hover:bg-amber-500/10 shadow-sm'
-                }
-                leftIcon={<Sun className="w-4 h-4 text-amber-400" />}
-              >
-                {isCheckedIn ? (
-                  <span className="flex items-center gap-1.5">
-                    <CheckCircle2 className="w-3.5 h-3.5 text-emerald-400" />
-                    Check-in ({dailySession?.checkin_time || 'Done'})
+              {/* Right: The 3 Workflow Actions */}
+              <div className="flex flex-wrap items-center gap-2.5">
+                {/* 1. Morning Check-in / Login Button */}
+                <Button
+                  type="button"
+                  variant={isCheckedIn ? 'secondary' : 'outline'}
+                  size="sm"
+                  onClick={handleMorningCheckin}
+                  disabled={isSubmitting}
+                  className={
+                    isCheckedIn
+                      ? 'border-emerald-500/40 text-emerald-300'
+                      : 'border-amber-500/60 text-amber-300 hover:bg-amber-500/10 shadow-sm'
+                  }
+                  leftIcon={<Sun className="w-4 h-4 text-amber-400" />}
+                >
+                  {isCheckedIn ? (
+                    <span className="flex items-center gap-1.5">
+                      <CheckCircle2 className="w-3.5 h-3.5 text-emerald-400" />
+                      Check-in ({dailySession?.checkin_time || 'Done'})
+                    </span>
+                  ) : (
+                    `🌅 Morning Check-in (${dailySession?.checkin_time || liveIstTime})`
+                  )}
+                </Button>
+
+                {/* 2. Save Progress Draft Button */}
+                <Button
+                  type="button"
+                  variant="secondary"
+                  size="sm"
+                  onClick={handleSaveProgress}
+                  disabled={isSubmitting}
+                  leftIcon={<Save className="w-4 h-4 text-purple-400" />}
+                >
+                  💾 Save Draft
+                </Button>
+
+                {/* 3. Evening Check-out / Logout Button */}
+                {isCheckedOut ? (
+                  <span className="inline-flex items-center gap-1.5 px-3 py-2 rounded-lg bg-emerald-500/15 border border-emerald-500/30 text-emerald-300 text-xs font-bold shadow-sm">
+                    <CheckCircle2 className="w-4 h-4 text-emerald-400" />
+                    Checked Out ({dailySession?.checkout_time})
                   </span>
                 ) : (
-                  `🌅 Morning Check-in (${dailySession?.checkin_time || liveIstTime})`
+                  <GradientButton
+                    type="button"
+                    size="sm"
+                    onClick={handleEveningCheckout}
+                    disabled={isSubmitting}
+                    leftIcon={<Moon className="w-4 h-4" />}
+                  >
+                    {isSubmitting ? 'Checking out...' : `🚀 Evening Check-out (${dailySession?.checkout_time || liveIstTime})`}
+                  </GradientButton>
                 )}
-              </Button>
-
-              {/* 2. Save Progress Draft Button */}
-              <Button
-                type="button"
-                variant="secondary"
-                size="sm"
-                onClick={handleSaveProgress}
-                disabled={isSubmitting}
-                leftIcon={<Save className="w-4 h-4 text-purple-400" />}
-              >
-                💾 Save Draft
-              </Button>
-
-              {/* 3. Evening Check-out / Logout Button */}
-              <GradientButton
-                type="button"
-                size="sm"
-                onClick={handleEveningCheckout}
-                disabled={isSubmitting}
-                leftIcon={<Moon className="w-4 h-4" />}
-              >
-                {isCheckedOut
-                  ? `✅ Checked Out (${dailySession?.checkout_time})`
-                  : `🚀 Evening Check-out (${dailySession?.checkout_time || liveIstTime})`}
-              </GradientButton>
+              </div>
             </div>
           </div>
         </div>
