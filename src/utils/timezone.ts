@@ -74,3 +74,74 @@ export function formatDateFriendlyIST(dateStr: string): string {
     year: 'numeric',
   }).format(d);
 }
+
+/**
+ * Format minutes integer into friendly display e.g.:
+ * 90 -> "1h 30m"
+ * 120 -> "2h"
+ * 45 -> "45m"
+ * 0 -> "0m"
+ */
+export function formatMinutesToFriendly(minutes?: number | null): string {
+  if (minutes === undefined || minutes === null || isNaN(minutes) || minutes <= 0) {
+    return '0m';
+  }
+  const rounded = Math.round(minutes);
+  const hrs = Math.floor(rounded / 60);
+  const mins = rounded % 60;
+  if (hrs > 0 && mins > 0) return `${hrs}h ${mins}m`;
+  if (hrs > 0) return `${hrs}h`;
+  return `${mins}m`;
+}
+
+/**
+ * Format hours numeric into friendly minutes display e.g.:
+ * 1.5 -> "1h 30m"
+ * 2 -> "2h"
+ * 0.75 -> "45m"
+ */
+export function formatHoursToFriendly(hours?: number | null): string {
+  if (hours === undefined || hours === null || isNaN(hours) || hours <= 0) {
+    return '0m';
+  }
+  return formatMinutesToFriendly(Math.round(hours * 60));
+}
+
+/**
+ * Convert hours numeric to minutes integer
+ */
+export function hoursToMinutes(hours?: number | null): number {
+  if (!hours || isNaN(hours) || hours <= 0) return 0;
+  return Math.round(hours * 60);
+}
+
+/**
+ * Convert minutes integer to hours numeric rounded to 2 decimals
+ */
+export function minutesToHours(minutes?: number | null): number {
+  if (!minutes || isNaN(minutes) || minutes <= 0) return 0;
+  return Math.round((minutes / 60) * 100) / 100;
+}
+
+/**
+ * Check whether the current IST time is within the evening checkout period (>= 15:00 / 3:00 PM IST)
+ * or if reporting on a past date.
+ */
+export function isEveningCheckoutPeriodIST(workDate: string): boolean {
+  const todayStr = getTodayIST();
+  if (workDate < todayStr) return true; // Past dates can be checked out immediately
+
+  // Extract current hour in IST
+  try {
+    const formatter = new Intl.DateTimeFormat('en-US', {
+      timeZone: IST_TIMEZONE,
+      hour: 'numeric',
+      hour12: false,
+    });
+    const istHour = parseInt(formatter.format(new Date()), 10);
+    return istHour >= 15; // 3:00 PM IST onwards
+  } catch {
+    return true;
+  }
+}
+

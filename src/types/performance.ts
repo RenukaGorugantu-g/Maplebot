@@ -102,6 +102,10 @@ export interface PerformanceWorkLog {
   carried_from_date?: string; // Original work date if carried forward
   carried_from_reason?: string; // Reason from previous day
   wpi_reason?: string; // Mandatory explanation when task is still in progress at checkout
+  wip_comment?: string; // WIP explanation and continuation plan
+  estimated_time_minutes?: number; // Estimated duration in minutes
+  actual_time_minutes?: number; // Actual duration taken in minutes
+  status_updated_at?: string; // Timestamp when status was updated
   blockers?: string; // Member-entered impediment / blocker
   blocker?: string; // Compatibility alias
 

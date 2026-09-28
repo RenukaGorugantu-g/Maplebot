@@ -206,6 +206,8 @@ export const performanceExportService = {
       'Expected Completion Date': l.expected_completion_date || 'Pending',
       'Completed Date': l.completed_date || 'Pending',
       'Member Feedback / Comments': l.feedback_comments || l.comments || '',
+      'Estimated Time': l.estimated_time_minutes ? `${Math.round((l.estimated_time_minutes / 60) * 100) / 100}h (${l.estimated_time_minutes}m)` : '',
+      'Actual Time': l.actual_time_minutes ? `${Math.round((l.actual_time_minutes / 60) * 100) / 100}h (${l.actual_time_minutes}m)` : (l.time_invested ? `${l.time_invested}h` : ''),
       'Hours Invested': l.time_invested || l.duration_hours,
       'Deliverables Count (Units)': l.unit_count_completed || 0,
       'Review Assigned Date': l.review_assigned_date,
@@ -240,6 +242,8 @@ export const performanceExportService = {
       { wch: 18 }, // Expected Completion Date
       { wch: 16 }, // Completed Date
       { wch: 32 }, // Member Feedback / Comments
+      { wch: 18 }, // Estimated Time
+      { wch: 18 }, // Actual Time
       { wch: 15 }, // Hours Invested
       { wch: 18 }, // Deliverables Count
       { wch: 16 }, // Review Assigned Date

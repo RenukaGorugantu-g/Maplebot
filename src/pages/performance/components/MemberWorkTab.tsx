@@ -3,7 +3,7 @@
 // Direct Multi-Row Spreadsheet Table: Log 3-4 Tasks/day with Deliverables Count
 // ==============================================================================
 
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useRef } from 'react';
 import { useAuth } from '../../../context/AuthContext';
 import { useNotifications } from '../../../context/NotificationContext';
 import { dataStore } from '../../../services/dataStore';
@@ -49,6 +49,8 @@ import {
   getTimeIST,
   getPreviousWorkingDayIST,
   formatDateFriendlyIST,
+  formatMinutesToFriendly,
+  isEveningCheckoutPeriodIST,
 } from '../../../utils/timezone';
 import {
   DailyWorkSession,
@@ -63,7 +65,10 @@ interface TaskDraftRow {
   task: string;
   assignedDate: string;
   completedDate: string; // Member Completed Date (Single source of truth)
-  timeInvested: number;
+  timeInvested: number; // Actual hours (backward compatibility)
+  estimatedHours?: number; // Estimated hours entered by member
+  estimatedTimeMinutes?: number; // Estimated minutes
+  actualTimeMinutes?: number; // Actual minutes
   unitCountCompleted: number; // Deliverables count (e.g. 1 feature, 3 pages, 5 leads)
   reviewAssignedDate?: string;
   feedbackComments: string; // Individual task Feedback / Comments
@@ -102,6 +107,10 @@ export const MemberWorkTab: React.FC = () => {
   }, []);
 
   // Multi-task draft rows state
+  const isFormDirtyRef = useRef<boolean>(false);
+  const loadedScopeRef = useRef<string>('');
+  const getDraftStorageKey = (empId: string, date: string) => `maplebot_draft_tasks_${empId}_${date}`;
+
   const [taskRows, setTaskRows] = useState<TaskDraftRow[]>([
     {
       id: 'row-1',
@@ -111,6 +120,9 @@ export const MemberWorkTab: React.FC = () => {
       assignedDate: todayStr,
       completedDate: todayStr,
       timeInvested: 0,
+      estimatedHours: undefined,
+      estimatedTimeMinutes: undefined,
+      actualTimeMinutes: undefined,
       unitCountCompleted: 1,
       reviewAssignedDate: todayStr,
       feedbackComments: '',
@@ -158,35 +170,66 @@ export const MemberWorkTab: React.FC = () => {
 
   const isCheckedIn = Boolean(dailySession?.checkin_time || dailySession?.status === 'checked_in' || dailySession?.status === 'checked_out');
   const isCheckedOut = Boolean(dailySession?.checkout_time || dailySession?.status === 'checked_out');
+  const isEveningCheckoutAllowed = isEveningCheckoutPeriodIST(workDate);
 
-  // Automatic load & WPI Carry-Forward on date or employee change
+  // Automatic load & WPI Carry-Forward on date or employee change (NEVER resets while user is typing)
   React.useEffect(() => {
     if (!targetEmployeeId) return;
+
+    const currentScope = `${targetEmployeeId}::${workDate}`;
+    // If the scope has not changed and user has unsaved edits, do NOT overwrite
+    if (loadedScopeRef.current === currentScope && isFormDirtyRef.current) {
+      return;
+    }
+    loadedScopeRef.current = currentScope;
+
+    // 0. Check if there are unsaved draft edits in sessionStorage for this employee & date
+    try {
+      const savedDraftJson = sessionStorage.getItem(getDraftStorageKey(targetEmployeeId, workDate));
+      if (savedDraftJson) {
+        const parsed = JSON.parse(savedDraftJson);
+        if (Array.isArray(parsed) && parsed.length > 0) {
+          setTaskRows(parsed);
+          isFormDirtyRef.current = true;
+          return;
+        }
+      }
+    } catch (e) {
+      console.warn('Error reading saved task draft:', e);
+    }
 
     // 1. Check existing items for this employee & workDate
     const existingItems = dataStore.getDailyActionItems(targetEmployeeId, workDate);
     if (existingItems.length > 0) {
       setTaskRows(
-        existingItems.map((item) => ({
-          id: item.id,
-          category: (item.category as WorkCategory) || 'Development',
-          projectName: item.project_name,
-          task: item.task_title,
-          assignedDate: item.assigned_date || workDate,
-          completedDate: item.completed_date || workDate,
-          timeInvested: item.time_invested || 0,
-          unitCountCompleted: item.unit_count || 1,
-          reviewAssignedDate: item.completed_date || workDate,
-          feedbackComments: item.feedback_comments || item.wpi_reason || item.completion_comment || '',
-          comments: item.completion_comment || '',
-          blocker: item.blocker || '',
-          status: item.status,
-          isCarriedForward: item.is_carried_forward,
-          carriedFromDate: item.carried_from_date,
-          carriedFromReason: item.carried_from_reason,
-          wpiReason: item.wpi_reason || '',
-        }))
+        existingItems.map((item) => {
+          const actualMins = item.actual_time_minutes ?? (item.time_invested ? Math.round(item.time_invested * 60) : undefined);
+          const estMins = item.estimated_time_minutes;
+          return {
+            id: item.id,
+            category: (item.category as WorkCategory) || 'Development',
+            projectName: item.project_name,
+            task: item.task_title,
+            assignedDate: item.assigned_date || workDate,
+            completedDate: item.completed_date || workDate,
+            timeInvested: item.time_invested ?? (actualMins ? Math.round((actualMins / 60) * 100) / 100 : 0),
+            estimatedHours: estMins ? Math.round((estMins / 60) * 100) / 100 : undefined,
+            estimatedTimeMinutes: estMins,
+            actualTimeMinutes: actualMins,
+            unitCountCompleted: item.unit_count || 1,
+            reviewAssignedDate: item.completed_date || workDate,
+            feedbackComments: item.feedback_comments || item.wpi_reason || item.completion_comment || '',
+            comments: item.completion_comment || '',
+            blocker: item.blocker || '',
+            status: item.status || 'wpi',
+            isCarriedForward: item.is_carried_forward,
+            carriedFromDate: item.carried_from_date,
+            carriedFromReason: item.carried_from_reason,
+            wpiReason: item.wpi_reason || '',
+          };
+        })
       );
+      isFormDirtyRef.current = false;
       setCarriedNotice('');
       return;
     }
@@ -204,6 +247,9 @@ export const MemberWorkTab: React.FC = () => {
           assignedDate: item.assigned_date || workDate,
           completedDate: item.completed_date || workDate,
           timeInvested: 0,
+          estimatedHours: item.estimated_time_minutes ? Math.round((item.estimated_time_minutes / 60) * 100) / 100 : undefined,
+          estimatedTimeMinutes: item.estimated_time_minutes,
+          actualTimeMinutes: undefined,
           unitCountCompleted: item.unit_count || 1,
           reviewAssignedDate: workDate,
           feedbackComments: '',
@@ -216,6 +262,7 @@ export const MemberWorkTab: React.FC = () => {
           wpiReason: '',
         }))
       );
+      isFormDirtyRef.current = false;
       setCarriedNotice(
         `🔄 Pre-populated ${wpiCarried.length} Work in Progress (WPI) task(s) carried forward from previous working day (${formatDateFriendlyIST(prevDate)}). Review them and add today's action items below!`
       );
@@ -229,43 +276,55 @@ export const MemberWorkTab: React.FC = () => {
           assignedDate: workDate,
           completedDate: workDate,
           timeInvested: 0,
+          estimatedHours: undefined,
+          estimatedTimeMinutes: undefined,
+          actualTimeMinutes: undefined,
           unitCountCompleted: 1,
           reviewAssignedDate: workDate,
           feedbackComments: '',
           comments: '',
           blocker: '',
-          status: 'completed',
+          status: 'wpi',
           isCarriedForward: false,
           wpiReason: '',
         },
       ]);
+      isFormDirtyRef.current = false;
       setCarriedNotice('');
     }
-  }, [targetEmployeeId, workDate, tick]);
+  }, [targetEmployeeId, workDate]);
 
   // Add new task row
   const handleAddRow = () => {
     const newId = `row-${Date.now()}`;
-    setTaskRows((prev) => [
-      ...prev,
-      {
-        id: newId,
-        category: 'Development',
-        projectName: '',
-        task: '',
-        assignedDate: workDate,
-        completedDate: workDate,
-        timeInvested: 0,
-        unitCountCompleted: 1,
-        reviewAssignedDate: workDate,
-        feedbackComments: '',
-        comments: '',
-        blocker: '',
-        status: 'completed',
-        isCarriedForward: false,
-        wpiReason: '',
-      },
-    ]);
+    const newRow: TaskDraftRow = {
+      id: newId,
+      category: 'Development',
+      projectName: '',
+      task: '',
+      assignedDate: workDate,
+      completedDate: workDate,
+      timeInvested: 0,
+      estimatedHours: undefined,
+      estimatedTimeMinutes: undefined,
+      actualTimeMinutes: undefined,
+      unitCountCompleted: 1,
+      reviewAssignedDate: workDate,
+      feedbackComments: '',
+      comments: '',
+      blocker: '',
+      status: 'wpi',
+      isCarriedForward: false,
+      wpiReason: '',
+    };
+    setTaskRows((prev) => {
+      const updated = [...prev, newRow];
+      isFormDirtyRef.current = true;
+      try {
+        sessionStorage.setItem(getDraftStorageKey(targetEmployeeId, workDate), JSON.stringify(updated));
+      } catch (e) {}
+      return updated;
+    });
   };
 
   // Remove task row (Keeps at least 1 row)
@@ -275,20 +334,52 @@ export const MemberWorkTab: React.FC = () => {
       setTimeout(() => setErrorMsg(''), 3000);
       return;
     }
-    setTaskRows((prev) => prev.filter((r) => r.id !== rowId));
+    setTaskRows((prev) => {
+      const updated = prev.filter((r) => r.id !== rowId);
+      isFormDirtyRef.current = true;
+      try {
+        sessionStorage.setItem(getDraftStorageKey(targetEmployeeId, workDate), JSON.stringify(updated));
+      } catch (e) {}
+      return updated;
+    });
   };
 
   // Update specific field in row
   const handleUpdateRow = (rowId: string, field: keyof TaskDraftRow, value: any) => {
-    setTaskRows((prev) =>
-      prev.map((row) => (row.id === rowId ? { ...row, [field]: value } : row))
-    );
+    setTaskRows((prev) => {
+      const updated = prev.map((row) => {
+        if (row.id !== rowId) return row;
+        const next = { ...row, [field]: value };
+        // Sync estimated minutes if estimatedHours changed
+        if (field === 'estimatedHours') {
+          const num = typeof value === 'number' ? value : parseFloat(value);
+          next.estimatedTimeMinutes = !isNaN(num) && num > 0 ? Math.round(num * 60) : undefined;
+        }
+        // Sync actual minutes if timeInvested changed
+        if (field === 'timeInvested') {
+          const num = typeof value === 'number' ? value : parseFloat(value);
+          next.actualTimeMinutes = !isNaN(num) && num > 0 ? Math.round(num * 60) : undefined;
+        }
+        return next;
+      });
+      isFormDirtyRef.current = true;
+      try {
+        sessionStorage.setItem(getDraftStorageKey(targetEmployeeId, workDate), JSON.stringify(updated));
+      } catch (e) {}
+      return updated;
+    });
   };
 
   // Calculate live daily totals
-  const totalHours = useMemo(() => {
-    return Math.round(taskRows.reduce((acc, r) => acc + (Number(r.timeInvested) || 0), 0) * 10) / 10;
+  const totalEstimatedMinutes = useMemo(() => {
+    return taskRows.reduce((acc, r) => acc + (r.estimatedTimeMinutes || (r.estimatedHours ? Math.round(r.estimatedHours * 60) : 0)), 0);
   }, [taskRows]);
+  const totalEstimatedHours = Math.round((totalEstimatedMinutes / 60) * 10) / 10;
+
+  const totalActualMinutes = useMemo(() => {
+    return taskRows.reduce((acc, r) => acc + (r.actualTimeMinutes || (r.timeInvested ? Math.round(r.timeInvested * 60) : 0)), 0);
+  }, [taskRows]);
+  const totalHours = Math.round((totalActualMinutes / 60) * 10) / 10;
 
   const totalDeliverables = useMemo(() => {
     return taskRows.reduce((acc, r) => acc + (Number(r.unitCountCompleted) || 0), 0);
@@ -331,20 +422,33 @@ export const MemberWorkTab: React.FC = () => {
         pod_name: memberPodName,
         work_date: workDate,
         checkin_time: dailySession?.checkin_time || liveIstTime,
-        action_items: taskRows.map((r) => ({
-          projectName: r.projectName.trim(),
-          task: r.task.trim(),
-          assignedDate: r.assignedDate || workDate,
-          completedDate: r.completedDate || workDate,
-          timeInvested: Number(r.timeInvested) || 0,
-          feedbackComments: r.feedbackComments?.trim() || '',
-          category: r.category || 'Development',
-          isCarriedForward: r.isCarriedForward,
-          carriedFromDate: r.carriedFromDate,
-          carriedFromReason: r.carriedFromReason,
-          estimatedUnits: r.unitCountCompleted || 1,
-        })),
+        action_items: taskRows.map((r) => {
+          const estMins = r.estimatedTimeMinutes ?? (r.estimatedHours ? Math.round(r.estimatedHours * 60) : undefined);
+          const actMins = r.actualTimeMinutes ?? (r.timeInvested ? Math.round(r.timeInvested * 60) : undefined);
+          return {
+            projectName: r.projectName.trim(),
+            task: r.task.trim(),
+            assignedDate: r.assignedDate || workDate,
+            completedDate: r.completedDate || workDate,
+            timeInvested: Number(r.timeInvested) || 0,
+            feedbackComments: r.feedbackComments?.trim() || '',
+            category: r.category || 'Development',
+            isCarriedForward: r.isCarriedForward,
+            carriedFromDate: r.carriedFromDate,
+            carriedFromReason: r.carriedFromReason,
+            estimatedUnits: r.unitCountCompleted || 1,
+            estimated_time_minutes: estMins,
+            actual_time_minutes: actMins,
+            status: 'wpi' as ActionItemStatus,
+          };
+        }),
       });
+
+      // Clear dirty draft state
+      isFormDirtyRef.current = false;
+      try {
+        sessionStorage.removeItem(getDraftStorageKey(targetEmployeeId, workDate));
+      } catch (e) {}
 
       // Google Chat notification ONLY sent after database write succeeds
       googleChatService.sendMorningActionItemsCard({
@@ -358,6 +462,8 @@ export const MemberWorkTab: React.FC = () => {
           isCarriedForward: r.isCarriedForward,
           carriedFromDate: r.carriedFromDate,
           carriedReason: r.carriedFromReason,
+          estimatedHours: r.estimatedHours,
+          estimatedMinutes: r.estimatedTimeMinutes,
         })),
       }).catch((err) => console.warn('GChat morning checkin notice:', err));
 
@@ -403,24 +509,36 @@ export const MemberWorkTab: React.FC = () => {
       await dataStore.saveWorkProgress({
         employee_id: targetProfile?.id || profile?.id || '',
         work_date: workDate,
-        items: taskRows.map((r) => ({
-          id: r.id.startsWith('row-') ? undefined : r.id,
-          projectName: r.projectName.trim(),
-          task: r.task.trim(),
-          assignedDate: r.assignedDate || workDate,
-          completedDate: r.completedDate || workDate,
-          timeInvested: Number(r.timeInvested) || 0,
-          unitCountCompleted: Number(r.unitCountCompleted) || 1,
-          feedbackComments: r.feedbackComments?.trim() || '',
-          status: r.status,
-          wpiReason: r.wpiReason?.trim() || r.feedbackComments?.trim(),
-          comments: r.status === 'completed' ? (r.feedbackComments?.trim() || r.comments?.trim()) : undefined,
-          blocker: r.blocker?.trim(),
-          category: r.category || 'Development',
-          isCarriedForward: r.isCarriedForward,
-          carriedFromDate: r.carriedFromDate,
-        })),
+        items: taskRows.map((r) => {
+          const estMins = r.estimatedTimeMinutes ?? (r.estimatedHours ? Math.round(r.estimatedHours * 60) : undefined);
+          const actMins = r.actualTimeMinutes ?? (r.timeInvested ? Math.round(r.timeInvested * 60) : undefined);
+          return {
+            id: r.id.startsWith('row-') ? undefined : r.id,
+            projectName: r.projectName.trim(),
+            task: r.task.trim(),
+            assignedDate: r.assignedDate || workDate,
+            completedDate: r.completedDate || workDate,
+            timeInvested: Number(r.timeInvested) || (actMins ? Math.round((actMins / 60) * 100) / 100 : 0),
+            unitCountCompleted: Number(r.unitCountCompleted) || 1,
+            feedbackComments: r.feedbackComments?.trim() || '',
+            status: r.status,
+            wpiReason: r.wpiReason?.trim() || r.feedbackComments?.trim(),
+            comments: r.status === 'completed' ? (r.feedbackComments?.trim() || r.comments?.trim()) : undefined,
+            blocker: r.blocker?.trim(),
+            category: r.category || 'Development',
+            isCarriedForward: r.isCarriedForward,
+            carriedFromDate: r.carriedFromDate,
+            estimated_time_minutes: estMins,
+            actual_time_minutes: actMins,
+            wip_comment: r.status === 'wpi' ? (r.wpiReason?.trim() || r.feedbackComments?.trim()) : undefined,
+          };
+        }),
       });
+
+      isFormDirtyRef.current = false;
+      try {
+        sessionStorage.removeItem(getDraftStorageKey(targetEmployeeId, workDate));
+      } catch (e) {}
 
       setSuccessNotice('💾 Work progress draft saved successfully! You can continue updating tasks throughout the day.');
       showToast('success', 'Progress Draft Saved', 'Your work items and hours draft have been saved.');
@@ -437,6 +555,21 @@ export const MemberWorkTab: React.FC = () => {
   // 3. SUBMIT END-OF-DAY DELIVERABLES & CHECK OUT (Locks Logout Time)
   const handleEveningCheckout = async (e?: React.FormEvent) => {
     if (e) e.preventDefault();
+
+    if (!isCheckedIn) {
+      const msg = 'Please submit Morning Check-in first before checking out.';
+      setErrorMsg(msg);
+      showToast('warning', 'Check-in Required', msg);
+      return;
+    }
+
+    if (!isEveningCheckoutAllowed) {
+      const msg = 'Evening Check-out is only permitted after 3:00 PM IST (or for past dates).';
+      setErrorMsg(msg);
+      showToast('warning', 'Checkout Unavailable', msg);
+      return;
+    }
+
     if (!taskRows || taskRows.length === 0) {
       const msg = 'Please add at least 1 task deliverable before checking out.';
       setErrorMsg(msg);
@@ -466,10 +599,12 @@ export const MemberWorkTab: React.FC = () => {
       if (r.status === 'completed' && !r.completedDate) {
         r.completedDate = workDate;
       }
-      if (!r.timeInvested || Number(r.timeInvested) <= 0) {
-        const msg = `Task #${i + 1} ("${r.projectName}"): Please enter the Hours Invested (e.g. 2, 4, 8) before checking out.`;
+      // If completed, require actual time taken
+      const actualMins = r.actualTimeMinutes ?? (r.timeInvested ? Math.round(r.timeInvested * 60) : 0);
+      if (r.status === 'completed' && actualMins <= 0) {
+        const msg = `Task #${i + 1} ("${r.projectName}"): Please enter the Actual Time Taken before checking out as completed.`;
         setErrorMsg(msg);
-        showToast('warning', 'Missing Hours Invested', msg);
+        showToast('warning', 'Missing Actual Time', msg);
         return;
       }
       if (r.status === 'wpi') {
@@ -496,23 +631,36 @@ export const MemberWorkTab: React.FC = () => {
         employee_id: targetProfile?.id || profile?.id || '',
         work_date: workDate,
         checkout_time: liveIstTime,
-        items: taskRows.map((r) => ({
-          projectName: r.projectName.trim(),
-          task: r.task.trim(),
-          assignedDate: r.assignedDate || workDate,
-          completedDate: r.status === 'completed' ? (r.completedDate || workDate) : undefined,
-          timeInvested: Number(r.timeInvested) || 0,
-          unitCountCompleted: Number(r.unitCountCompleted) || 1,
-          feedbackComments: r.feedbackComments?.trim() || '',
-          status: r.status,
-          wpiReason: r.wpiReason?.trim() || r.feedbackComments?.trim(),
-          comments: r.status === 'completed' ? (r.feedbackComments?.trim() || r.comments?.trim() || 'Completed on schedule') : undefined,
-          blocker: r.blocker?.trim(),
-          category: r.category || 'Development',
-          isCarriedForward: r.isCarriedForward,
-          carriedFromDate: r.carriedFromDate,
-        })),
+        items: taskRows.map((r) => {
+          const estMins = r.estimatedTimeMinutes ?? (r.estimatedHours ? Math.round(r.estimatedHours * 60) : undefined);
+          const actMins = r.actualTimeMinutes ?? (r.timeInvested ? Math.round(r.timeInvested * 60) : undefined);
+          return {
+            id: r.id.startsWith('row-') ? undefined : r.id,
+            projectName: r.projectName.trim(),
+            task: r.task.trim(),
+            assignedDate: r.assignedDate || workDate,
+            completedDate: r.status === 'completed' ? (r.completedDate || workDate) : undefined,
+            timeInvested: Number(r.timeInvested) || (actMins ? Math.round((actMins / 60) * 100) / 100 : 0),
+            unitCountCompleted: Number(r.unitCountCompleted) || 1,
+            feedbackComments: r.feedbackComments?.trim() || '',
+            status: r.status,
+            wpiReason: r.wpiReason?.trim() || r.feedbackComments?.trim(),
+            comments: r.status === 'completed' ? (r.feedbackComments?.trim() || r.comments?.trim() || 'Completed on schedule') : undefined,
+            blocker: r.blocker?.trim(),
+            category: r.category || 'Development',
+            isCarriedForward: r.isCarriedForward,
+            carriedFromDate: r.carriedFromDate,
+            estimated_time_minutes: estMins,
+            actual_time_minutes: actMins,
+            wip_comment: r.status === 'wpi' ? (r.wpiReason?.trim() || r.feedbackComments?.trim()) : undefined,
+          };
+        }),
       });
+
+      isFormDirtyRef.current = false;
+      try {
+        sessionStorage.removeItem(getDraftStorageKey(targetEmployeeId, workDate));
+      } catch (e) {}
 
       const completedCount = taskRows.filter((r) => r.status === 'completed').length;
       const wpiCount = taskRows.filter((r) => r.status === 'wpi').length;
@@ -529,7 +677,7 @@ export const MemberWorkTab: React.FC = () => {
           task: r.task.trim(),
           assignedDate: r.assignedDate || workDate,
           completedDate: r.completedDate || workDate,
-          timeInvested: Number(r.timeInvested) || 0,
+          timeInvested: Number(r.timeInvested) || (r.actualTimeMinutes ? Math.round((r.actualTimeMinutes / 60) * 10) / 10 : 0),
           unitCountCompleted: Number(r.unitCountCompleted) || 1,
           status: r.status,
           wpiReason: r.wpiReason?.trim() || r.feedbackComments?.trim(),
@@ -598,12 +746,15 @@ export const MemberWorkTab: React.FC = () => {
         assignedDate: workDate,
         completedDate: workDate,
         timeInvested: hours,
+        estimatedHours: hours,
+        estimatedTimeMinutes: Math.round(hours * 60),
+        actualTimeMinutes: Math.round(hours * 60),
         unitCountCompleted: 1,
         reviewAssignedDate: workDate,
         feedbackComments: '',
         comments: '',
         blocker: '',
-        status: 'completed',
+        status: 'wpi',
         isCarriedForward: false,
         wpiReason: '',
       });
@@ -611,6 +762,10 @@ export const MemberWorkTab: React.FC = () => {
 
     if (parsedRows.length > 0) {
       setTaskRows(parsedRows);
+      isFormDirtyRef.current = true;
+      try {
+        sessionStorage.setItem(getDraftStorageKey(targetEmployeeId, workDate), JSON.stringify(parsedRows));
+      } catch (e) {}
       setIsPasteModalOpen(false);
       setPastedChatText('');
     }
@@ -948,15 +1103,16 @@ export const MemberWorkTab: React.FC = () => {
         {/* THE UNIFIED EDITABLE MULTI-TASK TABLE GRID */}
         <div className="space-y-4">
           <div className="rounded-xl border border-slate-800 bg-[#060E1A] shadow-xl overflow-x-auto">
-            <table className="w-full text-left text-xs border-collapse min-w-[1720px]">
+            <table className="w-full text-left text-xs border-collapse min-w-[1780px]">
               <thead>
                 <tr className="bg-[#0B1728] border-b border-slate-800 text-[11px] font-semibold uppercase tracking-wider text-slate-300">
                   <th className="py-3 px-3 w-10 text-center text-slate-500">#</th>
-                  <th className="py-3 px-3.5 min-w-[180px] w-[200px]">Project Name</th>
-                  <th className="py-3 px-3.5 min-w-[440px] w-[460px]">Task Deliverable (Specific activity)</th>
-                  <th className="py-3 px-3 w-[135px]">Assigned Date</th>
-                  <th className="py-3 px-2.5 w-[100px] min-w-[95px] text-left">Hours</th>
-                  <th className="py-3 px-3 w-[100px] text-left">
+                  <th className="py-3 px-3.5 min-w-[170px] w-[180px]">Project Name</th>
+                  <th className="py-3 px-3.5 min-w-[380px] w-[400px]">Task Deliverable (Specific activity)</th>
+                  <th className="py-3 px-3 w-[130px]">Assigned Date</th>
+                  <th className="py-3 px-2.5 w-[110px] min-w-[105px] text-left text-amber-300">Est. Time</th>
+                  <th className="py-3 px-2.5 w-[125px] min-w-[120px] text-left text-sky-300">Actual Time</th>
+                  <th className="py-3 px-3 w-[90px] text-left">
                     <div className="flex items-center gap-1">
                       <span>Units</span>
                       <span
@@ -967,12 +1123,12 @@ export const MemberWorkTab: React.FC = () => {
                       </span>
                     </div>
                   </th>
-                  <th className="py-3 px-3 w-[135px] text-sky-300">Completed Date</th>
-                  <th className="py-3 px-3 w-[220px] min-w-[215px] text-left">Status</th>
-                  <th className="py-3 px-3.5 min-w-[280px] w-[310px] text-maple-300">
+                  <th className="py-3 px-3 w-[130px] text-sky-300">Completed Date</th>
+                  <th className="py-3 px-3 w-[190px] min-w-[180px] text-left">Status</th>
+                  <th className="py-3 px-3.5 min-w-[260px] w-[290px] text-maple-300">
                     Feedback / Comments & <span className="text-amber-400 font-bold">WPI Reason</span>
                   </th>
-                  <th className="py-3 px-3.5 min-w-[170px] w-[190px]">
+                  <th className="py-3 px-3.5 min-w-[150px] w-[170px]">
                     <div className="flex items-center gap-1.5 text-rose-400 font-semibold">
                       <span>Blockers</span>
                       <span className="text-[10px] text-slate-400 font-normal">(Optional)</span>
@@ -1009,7 +1165,7 @@ export const MemberWorkTab: React.FC = () => {
                       </td>
 
                       {/* Task Deliverable Description */}
-                      <td className="py-3 px-3.5 min-w-[440px] w-[460px] align-top">
+                      <td className="py-3 px-3.5 min-w-[380px] w-[400px] align-top">
                         {row.isCarriedForward && (
                           <div className="mb-2 flex flex-wrap items-center gap-2">
                             <span className="inline-flex items-center gap-1 text-[10px] font-bold px-2 py-0.5 rounded-full bg-amber-500/20 text-amber-300 border border-amber-500/30">
@@ -1027,7 +1183,7 @@ export const MemberWorkTab: React.FC = () => {
                           value={row.task}
                           onChange={(e) => handleUpdateRow(row.id, 'task', e.target.value)}
                           placeholder={`Task ${idx + 1}: Detailed description of deliverable...`}
-                          className="w-full min-w-[420px] px-3 py-2.5 bg-slate-900 border border-slate-700/80 rounded-lg text-white placeholder-slate-500 focus:outline-none focus:border-maple-500 text-xs font-medium leading-relaxed resize-y min-h-[76px]"
+                          className="w-full min-w-[360px] px-3 py-2.5 bg-slate-900 border border-slate-700/80 rounded-lg text-white placeholder-slate-500 focus:outline-none focus:border-maple-500 text-xs font-medium leading-relaxed resize-y min-h-[76px]"
                           required
                         />
                       </td>
@@ -1043,24 +1199,88 @@ export const MemberWorkTab: React.FC = () => {
                         />
                       </td>
 
-                      {/* Hours Invested */}
-                      <td className="py-3 px-2.5 w-[100px] min-w-[95px] text-left align-top">
-                        <div className="relative flex items-center">
-                          <input
-                            type="number"
-                            step="any"
-                            min="0"
-                            max="24"
-                            value={row.timeInvested === 0 ? '' : row.timeInvested}
-                            onChange={(e) => {
-                              const v = e.target.value === '' ? 0 : parseFloat(e.target.value);
-                              handleUpdateRow(row.id, 'timeInvested', isNaN(v) ? 0 : v);
-                            }}
-                            placeholder="e.g. 2"
-                            className="w-full pr-7 pl-2.5 py-2 bg-slate-900 border border-slate-700/80 rounded-lg text-sky-400 font-mono font-bold text-xs focus:outline-none focus:border-maple-500 [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
-                          />
-                          <span className="absolute right-2 text-[10px] text-slate-400 font-medium pointer-events-none">hrs</span>
+                      {/* Estimated Time */}
+                      <td className="py-3 px-2.5 w-[110px] min-w-[105px] text-left align-top">
+                        <div className="space-y-1">
+                          <div className="relative flex items-center">
+                            <input
+                              type="number"
+                              step="0.25"
+                              min="0"
+                              max="24"
+                              value={row.estimatedHours === undefined || row.estimatedHours === 0 ? '' : row.estimatedHours}
+                              onChange={(e) => {
+                                const v = e.target.value === '' ? undefined : parseFloat(e.target.value);
+                                handleUpdateRow(row.id, 'estimatedHours', isNaN(v as number) ? undefined : v);
+                              }}
+                              placeholder="e.g. 2"
+                              className="w-full pr-7 pl-2.5 py-2 bg-slate-900 border border-slate-700/80 rounded-lg text-amber-300 font-mono font-bold text-xs focus:outline-none focus:border-amber-500 [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
+                            />
+                            <span className="absolute right-2 text-[10px] text-slate-400 font-medium pointer-events-none">hrs</span>
+                          </div>
+                          {row.estimatedTimeMinutes && row.estimatedTimeMinutes > 0 ? (
+                            <span className="text-[10px] font-mono text-amber-400/90 block truncate" title={`${row.estimatedTimeMinutes} minutes`}>
+                              ⏱️ {formatMinutesToFriendly(row.estimatedTimeMinutes)}
+                            </span>
+                          ) : null}
                         </div>
+                      </td>
+
+                      {/* Actual Time Taken */}
+                      <td className="py-3 px-2.5 w-[125px] min-w-[120px] text-left align-top">
+                        {!isCheckedIn ? (
+                          <div className="px-2 py-2 bg-slate-900/60 border border-slate-800/80 rounded-lg text-slate-500 font-mono text-[11px] italic select-none" title="Unlocked after morning check-in">
+                            — After checkin
+                          </div>
+                        ) : (
+                          <div className="space-y-1">
+                            <div className="relative flex items-center">
+                              <input
+                                type="number"
+                                step="0.25"
+                                min="0"
+                                max="24"
+                                value={row.timeInvested === 0 ? '' : row.timeInvested}
+                                onChange={(e) => {
+                                  const v = e.target.value === '' ? 0 : parseFloat(e.target.value);
+                                  handleUpdateRow(row.id, 'timeInvested', isNaN(v) ? 0 : v);
+                                }}
+                                placeholder="e.g. 2"
+                                className="w-full pr-7 pl-2.5 py-2 bg-slate-900 border border-slate-700/80 rounded-lg text-sky-400 font-mono font-bold text-xs focus:outline-none focus:border-sky-500 [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
+                              />
+                              <span className="absolute right-2 text-[10px] text-slate-400 font-medium pointer-events-none">hrs</span>
+                            </div>
+                            {/* Friendly minutes preview */}
+                            {row.actualTimeMinutes && row.actualTimeMinutes > 0 ? (
+                              <span className="text-[10px] font-mono text-sky-400/90 block truncate" title={`${row.actualTimeMinutes} minutes`}>
+                                ⏱️ {formatMinutesToFriendly(row.actualTimeMinutes)}
+                              </span>
+                            ) : null}
+                            {/* Variance Comparison Badge */}
+                            {row.estimatedTimeMinutes && row.estimatedTimeMinutes > 0 && row.actualTimeMinutes && row.actualTimeMinutes > 0 && (() => {
+                              const diff = row.actualTimeMinutes - row.estimatedTimeMinutes;
+                              if (diff === 0) {
+                                return (
+                                  <span className="inline-block text-[9px] font-bold text-emerald-400 bg-emerald-500/10 px-1.5 py-0.5 rounded border border-emerald-500/20">
+                                    ✓ On target
+                                  </span>
+                                );
+                              }
+                              if (diff > 0) {
+                                return (
+                                  <span className="inline-block text-[9px] font-bold text-amber-400 bg-amber-500/10 px-1.5 py-0.5 rounded border border-amber-500/20">
+                                    +{formatMinutesToFriendly(diff)} over
+                                  </span>
+                                );
+                              }
+                              return (
+                                <span className="inline-block text-[9px] font-bold text-sky-400 bg-sky-500/10 px-1.5 py-0.5 rounded border border-sky-500/20">
+                                  -{formatMinutesToFriendly(Math.abs(diff))} saved
+                                </span>
+                              );
+                            })()}
+                          </div>
+                        )}
                       </td>
 
                       {/* Units */}
@@ -1094,24 +1314,31 @@ export const MemberWorkTab: React.FC = () => {
                         />
                       </td>
 
-                      {/* Status Dropdown: Completed vs WPI */}
-                      <td className="py-3 px-3 w-[220px] min-w-[215px] align-top">
-                        <select
-                          value={row.status}
-                          onChange={(e) => handleUpdateRow(row.id, 'status', e.target.value as ActionItemStatus)}
-                          className={`w-full px-3 py-2 rounded-lg font-bold text-xs focus:outline-none cursor-pointer border ${
-                            row.status === 'completed'
-                              ? 'bg-emerald-950/40 text-emerald-300 border-emerald-500/50'
-                              : 'bg-amber-950/40 text-amber-300 border-amber-500/50'
-                          }`}
-                        >
-                          <option value="completed">✅ Completed</option>
-                          <option value="wpi">⏳ Work in Progress (WPI)</option>
-                        </select>
+                      {/* Status: Planned (WIP) during initial morning entry, then Enabled dropdown */}
+                      <td className="py-3 px-3 w-[190px] min-w-[180px] align-top">
+                        {!isCheckedIn ? (
+                          <div className="flex items-center gap-1.5 px-2.5 py-2 rounded-lg bg-amber-500/10 border border-amber-500/30 text-amber-300 text-xs font-semibold select-none" title="Planned during morning entry (activates upon check-in)">
+                            <Clock className="w-3.5 h-3.5 text-amber-400" />
+                            <span>⏳ Planned (WIP)</span>
+                          </div>
+                        ) : (
+                          <select
+                            value={row.status}
+                            onChange={(e) => handleUpdateRow(row.id, 'status', e.target.value as ActionItemStatus)}
+                            className={`w-full px-2.5 py-2 rounded-lg font-bold text-xs focus:outline-none cursor-pointer border ${
+                              row.status === 'completed'
+                                ? 'bg-emerald-950/40 text-emerald-300 border-emerald-500/50'
+                                : 'bg-amber-950/40 text-amber-300 border-amber-500/50'
+                            }`}
+                          >
+                            <option value="wpi">⏳ Work in Progress (WPI)</option>
+                            <option value="completed">✅ Completed</option>
+                          </select>
+                        )}
                       </td>
 
                       {/* Feedback / Comments & WPI Reason */}
-                      <td className="py-3 px-3.5 min-w-[280px] w-[310px] align-top">
+                      <td className="py-3 px-3.5 min-w-[260px] w-[290px] align-top">
                         {isWpi ? (
                           <div className="space-y-1">
                             <textarea
@@ -1122,7 +1349,7 @@ export const MemberWorkTab: React.FC = () => {
                                 handleUpdateRow(row.id, 'feedbackComments', e.target.value);
                               }}
                               placeholder="Required: Why still in progress & tomorrow's continuation plan? (Mandatory for WPI)"
-                              className="w-full min-w-[260px] px-3 py-2 bg-amber-950/20 border-2 border-amber-500/70 rounded-lg text-amber-200 placeholder-amber-400/50 focus:outline-none focus:border-amber-400 text-xs font-medium leading-relaxed resize-y min-h-[76px]"
+                              className="w-full min-w-[250px] px-3 py-2 bg-amber-950/20 border-2 border-amber-500/70 rounded-lg text-amber-200 placeholder-amber-400/50 focus:outline-none focus:border-amber-400 text-xs font-medium leading-relaxed resize-y min-h-[76px]"
                               required
                             />
                             <span className="text-[10px] text-amber-400 font-medium flex items-center gap-1">
@@ -1135,13 +1362,13 @@ export const MemberWorkTab: React.FC = () => {
                             value={row.feedbackComments}
                             onChange={(e) => handleUpdateRow(row.id, 'feedbackComments', e.target.value)}
                             placeholder="Task feedback / comments..."
-                            className="w-full min-w-[260px] px-3 py-2.5 bg-slate-900 border border-slate-700/80 rounded-lg text-slate-200 placeholder-slate-500 focus:outline-none focus:border-maple-500 text-xs font-medium leading-relaxed resize-y min-h-[76px]"
+                            className="w-full min-w-[250px] px-3 py-2.5 bg-slate-900 border border-slate-700/80 rounded-lg text-slate-200 placeholder-slate-500 focus:outline-none focus:border-maple-500 text-xs font-medium leading-relaxed resize-y min-h-[76px]"
                           />
                         )}
                       </td>
 
                       {/* Blockers (Optional) */}
-                      <td className="py-3 px-3.5 min-w-[170px] w-[190px] align-top">
+                      <td className="py-3 px-3.5 min-w-[150px] w-[170px] align-top">
                         <input
                           type="text"
                           value={row.blocker}
@@ -1234,8 +1461,12 @@ export const MemberWorkTab: React.FC = () => {
                     <span className="font-bold text-white font-mono">{taskRows.length} tasks</span>
                   </div>
                   <div>
-                    <span className="text-slate-400">Hours: </span>
-                    <span className="font-bold text-sky-400 font-mono">{totalHours} hrs</span>
+                    <span className="text-slate-400">Est. Time: </span>
+                    <span className="font-bold text-amber-400 font-mono">{totalEstimatedHours}h</span>
+                  </div>
+                  <div>
+                    <span className="text-slate-400">Actual: </span>
+                    <span className="font-bold text-sky-400 font-mono">{totalHours}h</span>
                   </div>
                   <div>
                     <span className="text-slate-400">Completed: </span>
@@ -1296,17 +1527,29 @@ export const MemberWorkTab: React.FC = () => {
                     <CheckCircle2 className="w-4 h-4 text-emerald-400" />
                     Checked Out ({dailySession?.checkout_time})
                   </span>
-                ) : (
-                  <GradientButton
-                    type="button"
-                    size="sm"
-                    onClick={handleEveningCheckout}
-                    disabled={isSubmitting}
-                    leftIcon={<Moon className="w-4 h-4" />}
-                  >
-                    {isSubmitting ? 'Checking out...' : `🚀 Evening Check-out (${dailySession?.checkout_time || liveIstTime})`}
-                  </GradientButton>
-                )}
+                ) : isCheckedIn ? (
+                  !isEveningCheckoutAllowed ? (
+                    <button
+                      type="button"
+                      disabled
+                      className="px-3.5 py-2 rounded-xl bg-slate-800/80 border border-slate-700/60 text-slate-400 text-xs font-semibold flex items-center gap-1.5 cursor-not-allowed opacity-80 shadow-sm"
+                      title="Evening checkout is available starting at 3:00 PM IST (or for past dates)"
+                    >
+                      <Lock className="w-3.5 h-3.5 text-slate-400" />
+                      <span>🔒 Evening Checkout (Available at 3:00 PM IST)</span>
+                    </button>
+                  ) : (
+                    <GradientButton
+                      type="button"
+                      size="sm"
+                      onClick={handleEveningCheckout}
+                      disabled={isSubmitting}
+                      leftIcon={<Moon className="w-4 h-4" />}
+                    >
+                      {isSubmitting ? 'Checking out...' : `🚀 Evening Check-out (${dailySession?.checkout_time || liveIstTime})`}
+                    </GradientButton>
+                  )
+                ) : null /* Hidden during morning before check-in */}
               </div>
             </div>
           </div>
@@ -1542,8 +1785,19 @@ export const MemberWorkTab: React.FC = () => {
                       </td>
 
                       {/* Hours */}
-                      <td className="py-3 px-3.5 text-left font-mono text-sky-400 font-bold whitespace-nowrap align-top text-xs">
-                        {row.time_invested || row.duration_hours}h
+                      <td className="py-3 px-3.5 text-left font-mono whitespace-nowrap align-top text-xs">
+                        <div className="space-y-1">
+                          <span className="text-sky-400 font-bold block">
+                            {row.actual_time_minutes
+                              ? formatMinutesToFriendly(row.actual_time_minutes)
+                              : `${row.time_invested || row.duration_hours || 0}h`}
+                          </span>
+                          {row.estimated_time_minutes && row.estimated_time_minutes > 0 ? (
+                            <span className="text-[10px] text-amber-400/90 block font-normal" title={`Estimated: ${row.estimated_time_minutes}m`}>
+                              Est: {formatMinutesToFriendly(row.estimated_time_minutes)}
+                            </span>
+                          ) : null}
+                        </div>
                       </td>
 
                       {/* Deliverables */}

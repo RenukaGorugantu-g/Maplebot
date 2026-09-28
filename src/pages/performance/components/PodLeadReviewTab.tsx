@@ -31,6 +31,7 @@ import {
   LogOut,
   RefreshCw,
 } from 'lucide-react';
+import { formatMinutesToFriendly } from '../../../utils/timezone';
 
 export const PodLeadReviewTab: React.FC = () => {
   const { profile, userPod } = useAuth();
@@ -448,8 +449,41 @@ export const PodLeadReviewTab: React.FC = () => {
                             )}
                           </div>
                         </td>
-                        <td className="py-3 px-3 text-left font-mono text-sky-400 font-bold whitespace-nowrap align-top">
-                          {row.time_invested || row.duration_hours}h
+                        <td className="py-3 px-3 text-left font-mono whitespace-nowrap align-top text-xs">
+                          <div className="space-y-1">
+                            <span className="text-sky-400 font-bold block text-sm">
+                              {row.actual_time_minutes
+                                ? formatMinutesToFriendly(row.actual_time_minutes)
+                                : `${row.time_invested || row.duration_hours || 0}h`}
+                            </span>
+                            {row.estimated_time_minutes && row.estimated_time_minutes > 0 ? (
+                              <span className="text-[10px] text-amber-400/90 block font-normal" title={`Estimated: ${row.estimated_time_minutes}m`}>
+                                Est: {formatMinutesToFriendly(row.estimated_time_minutes)}
+                              </span>
+                            ) : null}
+                            {row.estimated_time_minutes && row.estimated_time_minutes > 0 && row.actual_time_minutes && row.actual_time_minutes > 0 && (() => {
+                              const diff = row.actual_time_minutes - row.estimated_time_minutes;
+                              if (diff === 0) {
+                                return (
+                                  <span className="inline-block text-[9px] font-bold text-emerald-400 bg-emerald-500/10 px-1.5 py-0.2 rounded border border-emerald-500/20">
+                                    ✓ Target
+                                  </span>
+                                );
+                              }
+                              if (diff > 0) {
+                                return (
+                                  <span className="inline-block text-[9px] font-bold text-amber-400 bg-amber-500/10 px-1.5 py-0.2 rounded border border-amber-500/20">
+                                    +{formatMinutesToFriendly(diff)}
+                                  </span>
+                                );
+                              }
+                              return (
+                                <span className="inline-block text-[9px] font-bold text-sky-400 bg-sky-500/10 px-1.5 py-0.2 rounded border border-sky-500/20">
+                                  -{formatMinutesToFriendly(Math.abs(diff))}
+                                </span>
+                              );
+                            })()}
+                          </div>
                         </td>
                         <td className="py-3 px-3 text-left font-mono text-purple-300 font-bold whitespace-nowrap align-top">
                           {row.unit_count_completed || 0} items
@@ -565,8 +599,19 @@ export const PodLeadReviewTab: React.FC = () => {
                         <td className="py-3 px-3 font-mono text-[11px] text-slate-300 whitespace-nowrap align-top">
                           {row.completed_date || '—'}
                         </td>
-                        <td className="py-3 px-3 text-right font-mono text-sky-400 font-bold whitespace-nowrap align-top">
-                          {row.time_invested || row.duration_hours}h
+                        <td className="py-3 px-3 text-right font-mono whitespace-nowrap align-top text-xs">
+                          <div className="space-y-1 text-right">
+                            <span className="text-sky-400 font-bold block">
+                              {row.actual_time_minutes
+                                ? formatMinutesToFriendly(row.actual_time_minutes)
+                                : `${row.time_invested || row.duration_hours || 0}h`}
+                            </span>
+                            {row.estimated_time_minutes && row.estimated_time_minutes > 0 ? (
+                              <span className="text-[10px] text-amber-400/90 block font-normal">
+                                Est: {formatMinutesToFriendly(row.estimated_time_minutes)}
+                              </span>
+                            ) : null}
+                          </div>
                         </td>
                         <td className="py-3 px-3 text-right font-mono text-purple-300 font-bold whitespace-nowrap align-top">
                           {row.unit_count_completed || 0}

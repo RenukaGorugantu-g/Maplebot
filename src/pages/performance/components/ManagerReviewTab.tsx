@@ -42,7 +42,7 @@ import {
   Briefcase,
   AlertCircle,
 } from 'lucide-react';
-import { getTodayIST, formatDateFriendlyIST, getPreviousWorkingDayIST } from '../../../utils/timezone';
+import { getTodayIST, formatDateFriendlyIST, getPreviousWorkingDayIST, formatMinutesToFriendly } from '../../../utils/timezone';
 
 interface ManagerReviewTabProps {
   onGenerateReportForEmployee?: (employeeId: string) => void;
@@ -999,8 +999,41 @@ export const ManagerReviewTab: React.FC<ManagerReviewTabProps> = ({
                         )}
                       </div>
                     </td>
-                    <td className="py-3.5 px-3.5 text-right font-mono text-sky-400 font-bold whitespace-nowrap align-top text-sm">
-                      {row.time_invested || row.duration_hours}h
+                    <td className="py-3.5 px-3.5 text-right font-mono whitespace-nowrap align-top text-xs">
+                      <div className="space-y-1 text-right">
+                        <span className="text-sky-400 font-bold block text-sm">
+                          {row.actual_time_minutes
+                            ? formatMinutesToFriendly(row.actual_time_minutes)
+                            : `${row.time_invested || row.duration_hours || 0}h`}
+                        </span>
+                        {row.estimated_time_minutes && row.estimated_time_minutes > 0 ? (
+                          <span className="text-[10px] text-amber-400/90 block font-normal" title={`Estimated: ${row.estimated_time_minutes}m`}>
+                            Est: {formatMinutesToFriendly(row.estimated_time_minutes)}
+                          </span>
+                        ) : null}
+                        {row.estimated_time_minutes && row.estimated_time_minutes > 0 && row.actual_time_minutes && row.actual_time_minutes > 0 && (() => {
+                          const diff = row.actual_time_minutes - row.estimated_time_minutes;
+                          if (diff === 0) {
+                            return (
+                              <span className="inline-block text-[9px] font-bold text-emerald-400 bg-emerald-500/10 px-1.5 py-0.5 rounded border border-emerald-500/20">
+                                ✓ Target
+                              </span>
+                            );
+                          }
+                          if (diff > 0) {
+                            return (
+                              <span className="inline-block text-[9px] font-bold text-amber-400 bg-amber-500/10 px-1.5 py-0.5 rounded border border-amber-500/20">
+                                +{formatMinutesToFriendly(diff)}
+                              </span>
+                            );
+                          }
+                          return (
+                            <span className="inline-block text-[9px] font-bold text-sky-400 bg-sky-500/10 px-1.5 py-0.5 rounded border border-sky-500/20">
+                              -{formatMinutesToFriendly(Math.abs(diff))}
+                            </span>
+                          );
+                        })()}
+                      </div>
                     </td>
                     <td className="py-3.5 px-3.5 text-right font-mono text-purple-300 font-bold whitespace-nowrap align-top border-r border-slate-800/80 text-sm">
                       {row.unit_count_completed || 1} items

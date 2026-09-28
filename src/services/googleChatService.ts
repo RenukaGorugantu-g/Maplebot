@@ -957,6 +957,8 @@ export const googleChatService = {
       isCarriedForward?: boolean;
       carriedFromDate?: string;
       carriedReason?: string;
+      estimatedHours?: number;
+      estimatedMinutes?: number;
     }>;
     portalUrl?: string;
   }): Promise<boolean> {
@@ -968,7 +970,15 @@ export const googleChatService = {
 
     const itemsText = params.items
       .map((item, idx) => {
-        let line = `<b>${idx + 1}. [${item.projectName}]</b> ${item.task}`;
+        let estLabel = '';
+        if (item.estimatedMinutes && item.estimatedMinutes > 0) {
+          const h = Math.floor(item.estimatedMinutes / 60);
+          const m = item.estimatedMinutes % 60;
+          estLabel = ` (⏱️ Est: ${h > 0 ? `${h}h ` : ''}${m > 0 ? `${m}m` : ''})`;
+        } else if (item.estimatedHours && item.estimatedHours > 0) {
+          estLabel = ` (⏱️ Est: ${item.estimatedHours}h)`;
+        }
+        let line = `<b>${idx + 1}. [${item.projectName}]</b> ${item.task}${estLabel}`;
         if (item.isCarriedForward) {
           line += `<br/>&nbsp;&nbsp;&nbsp;&nbsp;🔄 <i>Carried Forward from ${item.carriedFromDate || 'previous day'}</i>`;
           if (item.carriedReason) {

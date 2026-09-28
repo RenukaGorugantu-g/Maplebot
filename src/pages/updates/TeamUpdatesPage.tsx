@@ -40,16 +40,12 @@ export const TeamUpdatesPage: React.FC<{
   const [viewTab, setViewTab] = useState<'deliverables_table' | 'standup_feed'>('deliverables_table');
   const [, setTick] = useState(0);
 
-  // Sync with Supabase on mount and poll
+  // Sync with Supabase on mount and listen to updates
   React.useEffect(() => {
     dataStore.refreshFromSupabase();
     const unsub = dataStore.subscribe(() => setTick((t) => t + 1));
-    const interval = setInterval(() => {
-      dataStore.refreshFromSupabase();
-    }, 4000);
     return () => {
       unsub();
-      clearInterval(interval);
     };
   }, []);
 

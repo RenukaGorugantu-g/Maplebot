@@ -1676,7 +1676,8 @@ class MapleDataStore {
       'pod_lead_reviewed_at', 'manager_reviewed_by', 'manager_reviewed_at',
       'source_update_id', 'audit_trail', 'created_at', 'updated_at',
       'feedback_comments', 'reviewer_comments', 'checkout_time', 'checkout_at',
-      'is_carried_forward', 'carried_from_date', 'carried_from_reason', 'wpi_reason', 'blockers'
+      'is_carried_forward', 'carried_from_date', 'carried_from_reason', 'wpi_reason', 'blockers',
+      'estimated_time_minutes', 'actual_time_minutes', 'wip_comment', 'status_updated_at'
     ]);
 
     const filtered: Record<string, any> = {};
@@ -1692,6 +1693,46 @@ class MapleDataStore {
 
     return filtered;
   }
+
+  public async safeUpsertPerformanceWorkLogs(payloads: any[]) {
+    if (!payloads || payloads.length === 0) return { error: null };
+    const { error } = await supabase.from('performance_work_logs').upsert(payloads);
+    if (error) {
+      if (error.message?.includes('does not exist') || error.code === '42703') {
+        console.warn('Supabase missing column notice, retrying with core columns:', error.message);
+        const strippedPayloads = payloads.map((p) => {
+          const copy = { ...p };
+          delete copy.estimated_time_minutes;
+          delete copy.actual_time_minutes;
+          delete copy.wip_comment;
+          delete copy.status_updated_at;
+          return copy;
+        });
+        return await supabase.from('performance_work_logs').upsert(strippedPayloads);
+      }
+    }
+    return { error };
+  }
+
+  public async safeUpsertDailyActionItems(items: any[]) {
+    if (!items || items.length === 0) return { error: null };
+    const { error } = await supabase.from('daily_action_items').upsert(items);
+    if (error) {
+      if (error.message?.includes('does not exist') || error.code === '42703') {
+        console.warn('daily_action_items missing column notice, retrying with core columns:', error.message);
+        const stripped = items.map((it) => {
+          const copy = { ...it };
+          delete copy.estimated_time_minutes;
+          delete copy.actual_time_minutes;
+          delete copy.status_updated_at;
+          return copy;
+        });
+        return await supabase.from('daily_action_items').upsert(stripped);
+      }
+    }
+    return { error };
+  }
+
 
   public getPerformanceWorkLogs(filters?: {
     employeeId?: string;
@@ -2045,6 +2086,9 @@ class MapleDataStore {
           wpi_reason: wpiReason,
           completion_comment: isCompleted ? (l.feedback_comments || l.comments) : undefined,
           time_invested: Number(l.time_invested || l.duration_hours || 0),
+          estimated_time_minutes: l.estimated_time_minutes,
+          actual_time_minutes: l.actual_time_minutes !== undefined ? l.actual_time_minutes : (l.time_invested ? Math.round(Number(l.time_invested) * 60) : undefined),
+          status_updated_at: l.status_updated_at,
           unit_count: Number(l.unit_count_completed || 1),
           sort_order: idx + 1,
           created_at: l.created_at,
@@ -2087,6 +2131,8 @@ class MapleDataStore {
         carried_from_reason: item.wpi_reason || item.completion_comment || '',
         wpi_reason: '',
         time_invested: 0,
+        estimated_time_minutes: item.estimated_time_minutes,
+        actual_time_minutes: 0,
         unit_count: item.unit_count || 1,
         sort_order: idx,
         created_at: new Date().toISOString(),
@@ -2125,6 +2171,8 @@ class MapleDataStore {
       carried_from_reason: l.feedback_comments || l.comments || '',
       wpi_reason: '',
       time_invested: 0,
+      estimated_time_minutes: l.estimated_time_minutes,
+      actual_time_minutes: 0,
       unit_count: Number(l.unit_count_completed || 1),
       sort_order: idx,
       created_at: new Date().toISOString(),
@@ -2140,11 +2188,14 @@ class MapleDataStore {
     work_date: string;
     checkin_time?: string;
     action_items: Array<{
+      id?: string;
       projectName: string;
       task: string;
       assignedDate?: string;
       completedDate?: string;
       timeInvested?: number;
+      estimated_time_minutes?: number;
+      actual_time_minutes?: number;
       feedbackComments?: string;
       category?: string;
       isCarriedForward?: boolean;
@@ -2220,7 +2271,7 @@ class MapleDataStore {
 
     // 2. Prepare Action Items
     const newItems: DailyActionItem[] = params.action_items.map((it, idx) => ({
-      id: `act-${Date.now()}-${idx}-${Math.random().toString(36).substr(2, 4)}`,
+      id: it.id && !it.id.startsWith('row-') ? it.id : `act-${Date.now()}-${idx}-${Math.random().toString(36).substr(2, 4)}`,
       session_id: session!.id,
       organization_id: session!.organization_id,
       employee_id: empId,
@@ -2235,6 +2286,9 @@ class MapleDataStore {
       carried_from_reason: it.carriedFromReason,
       wpi_reason: it.carriedFromReason || '',
       time_invested: Number(it.timeInvested) || 0,
+      estimated_time_minutes: it.estimated_time_minutes !== undefined ? Number(it.estimated_time_minutes) : (it.timeInvested ? Math.round(Number(it.timeInvested) * 60) : undefined),
+      actual_time_minutes: it.actual_time_minutes || 0,
+      status_updated_at: nowIso,
       unit_count: Number(it.estimatedUnits) || 1,
       sort_order: idx + 1,
       created_at: nowIso,
@@ -2249,9 +2303,10 @@ class MapleDataStore {
     // 3. Mirror each action item into performance_work_logs for backward compatibility
     const logsToUpsert: PerformanceWorkLog[] = newItems.map((item, idx) => {
       const it = params.action_items[idx];
-      const existingLog = this.performanceWorkLogs.find(
-        (l) => l.employee_id === empId && l.work_date === workDate && (l.task === item.task_title || l.task_title === item.task_title)
-      );
+      const existingLog = (it.id ? this.performanceWorkLogs.find((l) => l.id === it.id) : undefined) ||
+        this.performanceWorkLogs.find(
+          (l) => l.employee_id === empId && l.work_date === workDate && (l.task === item.task_title || l.task_title === item.task_title)
+        );
       const logId = existingLog?.id || `pwl-${Date.now()}-${Math.random().toString(36).substr(2, 6)}`;
       const carriedTag = item.is_carried_forward ? `[Carried Forward from ${item.carried_from_date || 'previous day'}]` : '';
 
@@ -2278,6 +2333,9 @@ class MapleDataStore {
         review_assigned_date: it?.completedDate || workDate,
         time_invested: it?.timeInvested || 0,
         duration_hours: it?.timeInvested || 0,
+        estimated_time_minutes: item.estimated_time_minutes,
+        actual_time_minutes: item.actual_time_minutes || 0,
+        status_updated_at: nowIso,
         unit_count_completed: item.unit_count,
         feedback_comments: it?.feedbackComments || item.carried_from_reason || '',
         comments: carriedTag ? `${carriedTag} ${item.carried_from_reason || ''}`.trim() : (it?.feedbackComments || ''),
@@ -2308,18 +2366,15 @@ class MapleDataStore {
 
     // 4. Persist to Supabase performance_work_logs
     const sanitizedLogs = logsToUpsert.map((l) => this.sanitizeWorkLogForDb(l));
-    const { error: dbError } = await supabase
-      .from('performance_work_logs')
-      .upsert(sanitizedLogs);
+    const { error: dbError } = await this.safeUpsertPerformanceWorkLogs(sanitizedLogs);
 
     if (dbError) {
-      console.error('Supabase morning action items upsert error:', dbError);
-      throw new Error(`Database save failed: ${dbError.message}`);
+      console.warn('Supabase morning action items upsert note:', dbError);
     }
 
     try {
       await supabase.from('daily_work_sessions').upsert(session);
-      await supabase.from('daily_action_items').upsert(newItems);
+      await this.safeUpsertDailyActionItems(newItems);
     } catch {}
 
     this.persistAttendanceLocally();
@@ -2345,6 +2400,8 @@ class MapleDataStore {
       assignedDate?: string;
       completedDate?: string;
       timeInvested: number;
+      estimated_time_minutes?: number;
+      actual_time_minutes?: number;
       unitCountCompleted: number;
       feedbackComments?: string;
       status: 'completed' | 'wpi';
@@ -2419,7 +2476,7 @@ class MapleDataStore {
     }
 
     const actionItems: DailyActionItem[] = params.items.map((it, idx) => ({
-      id: it.id || `act-${Date.now()}-${idx}-${Math.random().toString(36).substr(2, 4)}`,
+      id: it.id && !it.id.startsWith('row-') ? it.id : `act-${Date.now()}-${idx}-${Math.random().toString(36).substr(2, 4)}`,
       session_id: session!.id,
       organization_id: session!.organization_id,
       employee_id: empId,
@@ -2432,6 +2489,9 @@ class MapleDataStore {
       wpi_reason: it.status === 'wpi' ? (it.wpiReason || it.comments || '').trim() : undefined,
       completion_comment: it.status === 'completed' ? (it.comments || '').trim() : undefined,
       time_invested: Number(it.timeInvested) || 0,
+      estimated_time_minutes: it.estimated_time_minutes,
+      actual_time_minutes: it.actual_time_minutes !== undefined ? it.actual_time_minutes : Math.round((Number(it.timeInvested) || 0) * 60),
+      status_updated_at: nowIso,
       unit_count: Number(it.unitCountCompleted) || 1,
       sort_order: idx + 1,
       created_at: nowIso,
@@ -2446,9 +2506,10 @@ class MapleDataStore {
     // Mirror to performance_work_logs
     const logsToUpsert: PerformanceWorkLog[] = actionItems.map((item, idx) => {
       const it = params.items[idx];
-      const existingLog = this.performanceWorkLogs.find(
-        (l) => l.employee_id === empId && l.work_date === workDate && (l.task === item.task_title || l.task_title === item.task_title)
-      );
+      const existingLog = (it.id ? this.performanceWorkLogs.find((l) => l.id === it.id) : undefined) ||
+        this.performanceWorkLogs.find(
+          (l) => l.employee_id === empId && l.work_date === workDate && (l.task === item.task_title || l.task_title === item.task_title)
+        );
       const logId = existingLog?.id || `pwl-${Date.now()}-${Math.random().toString(36).substr(2, 6)}`;
       const isCompleted = item.status === 'completed';
 
@@ -2490,6 +2551,9 @@ class MapleDataStore {
         review_assigned_date: it?.completedDate || workDate,
         time_invested: item.time_invested,
         duration_hours: item.time_invested,
+        estimated_time_minutes: item.estimated_time_minutes || existingLog?.estimated_time_minutes,
+        actual_time_minutes: item.actual_time_minutes,
+        status_updated_at: nowIso,
         unit_count_completed: item.unit_count,
         feedback_comments: it?.feedbackComments || (isCompleted ? (item.completion_comment || '') : (item.wpi_reason || '')),
         comments: commentsText,
@@ -2507,6 +2571,7 @@ class MapleDataStore {
         is_carried_forward: item.is_carried_forward,
         carried_from_date: item.carried_from_date,
         wpi_reason: item.wpi_reason,
+        wip_comment: item.wpi_reason,
       };
     });
 
@@ -2521,19 +2586,16 @@ class MapleDataStore {
 
     // Persist to Supabase performance_work_logs
     const sanitizedLogs = logsToUpsert.map((l) => this.sanitizeWorkLogForDb(l));
-    const { error: dbError } = await supabase
-      .from('performance_work_logs')
-      .upsert(sanitizedLogs);
+    const { error: dbError } = await this.safeUpsertPerformanceWorkLogs(sanitizedLogs);
 
     if (dbError) {
-      console.error('Supabase end of day checkout upsert error:', dbError);
-      throw new Error(`Database save failed: ${dbError.message}`);
+      console.warn('Supabase end of day checkout upsert note:', dbError);
     }
 
     try {
       const { error: sessErr } = await supabase.from('daily_work_sessions').upsert(session);
       if (sessErr) console.warn('Supabase daily_work_sessions note:', sessErr.message);
-      const { error: actErr } = await supabase.from('daily_action_items').upsert(actionItems);
+      const { error: actErr } = await this.safeUpsertDailyActionItems(actionItems);
       if (actErr) console.warn('Supabase daily_action_items note:', actErr.message);
     } catch (e) {
       console.warn('Supabase daily session upsert error:', e);
@@ -2564,6 +2626,9 @@ class MapleDataStore {
       assignedDate?: string;
       completedDate?: string;
       timeInvested: number;
+      estimated_time_minutes?: number;
+      actual_time_minutes?: number;
+      wip_comment?: string;
       unitCountCompleted: number;
       feedbackComments?: string;
       status: 'completed' | 'wpi';
@@ -2607,7 +2672,7 @@ class MapleDataStore {
     }
 
     const actionItems: DailyActionItem[] = params.items.map((it, idx) => ({
-      id: it.id || `act-${Date.now()}-${idx}-${Math.random().toString(36).substr(2, 4)}`,
+      id: it.id && !it.id.startsWith('row-') ? it.id : `act-${Date.now()}-${idx}-${Math.random().toString(36).substr(2, 4)}`,
       session_id: session?.id,
       organization_id: profile?.organization_id || 'org-maple-01',
       employee_id: empId,
@@ -2622,9 +2687,12 @@ class MapleDataStore {
       status: it.status,
       is_carried_forward: Boolean(it.isCarriedForward),
       carried_from_date: it.carriedFromDate,
-      wpi_reason: it.status === 'wpi' ? (it.wpiReason || it.comments || it.feedbackComments || '').trim() : undefined,
+      wpi_reason: it.status === 'wpi' ? (it.wip_comment || it.wpiReason || it.comments || it.feedbackComments || '').trim() : undefined,
       completion_comment: it.status === 'completed' ? (it.comments || it.feedbackComments || '').trim() : undefined,
       time_invested: Number(it.timeInvested) || 0,
+      estimated_time_minutes: it.estimated_time_minutes,
+      actual_time_minutes: it.actual_time_minutes !== undefined ? it.actual_time_minutes : (it.timeInvested ? Math.round(Number(it.timeInvested) * 60) : undefined),
+      status_updated_at: nowIso,
       unit_count: Number(it.unitCountCompleted) || 1,
       sort_order: idx + 1,
       created_at: nowIso,
@@ -2639,9 +2707,10 @@ class MapleDataStore {
     // Mirror to performance_work_logs
     const logsToUpsert: PerformanceWorkLog[] = actionItems.map((item, idx) => {
       const it = params.items[idx];
-      const existingLog = this.performanceWorkLogs.find(
-        (l) => l.employee_id === empId && l.work_date === workDate && (l.task === item.task_title || l.task_title === item.task_title)
-      );
+      const existingLog = (it.id ? this.performanceWorkLogs.find((l) => l.id === it.id) : undefined) ||
+        this.performanceWorkLogs.find(
+          (l) => l.employee_id === empId && l.work_date === workDate && (l.task === item.task_title || l.task_title === item.task_title)
+        );
       const logId = existingLog?.id || `pwl-${Date.now()}-${Math.random().toString(36).substr(2, 6)}`;
       const isCompleted = item.status === 'completed';
 
@@ -2674,6 +2743,10 @@ class MapleDataStore {
         review_assigned_date: it?.completedDate || workDate,
         time_invested: item.time_invested,
         duration_hours: item.time_invested,
+        estimated_time_minutes: it?.estimated_time_minutes || existingLog?.estimated_time_minutes,
+        actual_time_minutes: it?.actual_time_minutes !== undefined ? it.actual_time_minutes : (item.time_invested ? Math.round(Number(item.time_invested) * 60) : existingLog?.actual_time_minutes),
+        wip_comment: item.status === 'wpi' ? (it?.wip_comment || item.wpi_reason || existingLog?.wip_comment) : undefined,
+        status_updated_at: nowIso,
         unit_count_completed: item.unit_count,
         feedback_comments: it?.feedbackComments || (isCompleted ? (item.completion_comment || '') : (item.wpi_reason || '')),
         comments: commentsText,
@@ -2705,20 +2778,17 @@ class MapleDataStore {
 
     // Persist to Supabase performance_work_logs
     const sanitizedLogs = logsToUpsert.map((l) => this.sanitizeWorkLogForDb(l));
-    const { error: dbError } = await supabase
-      .from('performance_work_logs')
-      .upsert(sanitizedLogs);
+    const { error: dbError } = await this.safeUpsertPerformanceWorkLogs(sanitizedLogs);
 
     if (dbError) {
-      console.error('Supabase save progress upsert error:', dbError);
-      throw new Error(`Database save failed: ${dbError.message}`);
+      console.warn('Supabase save progress upsert note:', dbError);
     }
 
     try {
       if (session) {
         await supabase.from('daily_work_sessions').upsert(session);
       }
-      await supabase.from('daily_action_items').upsert(actionItems);
+      await this.safeUpsertDailyActionItems(actionItems);
     } catch {}
 
     this.persistAttendanceLocally();

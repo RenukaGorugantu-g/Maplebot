@@ -52,6 +52,9 @@ export interface DailyActionItem {
   feedback_comments?: string;
   blocker?: string;
   time_invested: number; // Hours invested today
+  estimated_time_minutes?: number; // Estimated duration in minutes
+  actual_time_minutes?: number; // Actual duration in minutes
+  status_updated_at?: string; // Timestamp when status was updated
   unit_count: number; // Deliverables count (default 1)
   sort_order: number;
   created_at: string;
