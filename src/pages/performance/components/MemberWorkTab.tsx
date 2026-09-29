@@ -93,6 +93,8 @@ export const MemberWorkTab: React.FC = () => {
   const [workDate, setWorkDate] = useState<string>(todayStr);
   const [checkinDate] = useState<string>(todayStr);
   const [liveIstTime, setLiveIstTime] = useState<string>(getTimeIST());
+  const [customCheckinTime, setCustomCheckinTime] = useState<string>('');
+  const [isEditingCheckinTime, setIsEditingCheckinTime] = useState<boolean>(false);
   const [selectedEmployeeId, setSelectedEmployeeId] = useState<string>('');
   const [carriedNotice, setCarriedNotice] = useState<string>('');
   const [isPasteModalOpen, setIsPasteModalOpen] = useState<boolean>(false);
@@ -414,6 +416,8 @@ export const MemberWorkTab: React.FC = () => {
     const memberName = targetProfile?.full_name || profile?.full_name || 'Team Member';
     const memberPodName = targetPod?.name || userPod?.name || 'Web & Sales';
 
+    const effectiveCheckin = customCheckinTime || (isCheckedIn ? dailySession?.checkin_time : liveIstTime) || liveIstTime;
+
     try {
       const result = await dataStore.submitMorningActionItems({
         employee_id: targetProfile?.id || profile?.id || '',
@@ -421,7 +425,7 @@ export const MemberWorkTab: React.FC = () => {
         pod_id: targetPod?.id || targetProfile?.pod_id,
         pod_name: memberPodName,
         work_date: workDate,
-        checkin_time: dailySession?.checkin_time || liveIstTime,
+        checkin_time: effectiveCheckin,
         action_items: taskRows.map((r) => {
           const estMins = r.estimatedTimeMinutes ?? (r.estimatedHours ? Math.round(r.estimatedHours * 60) : undefined);
           const actMins = r.actualTimeMinutes ?? (r.timeInvested ? Math.round(r.timeInvested * 60) : undefined);
@@ -455,7 +459,7 @@ export const MemberWorkTab: React.FC = () => {
         memberName,
         podName: memberPodName,
         workDate,
-        checkinTime: result.session.checkin_time || liveIstTime,
+        checkinTime: result.session.checkin_time || effectiveCheckin,
         items: taskRows.map((r) => ({
           projectName: r.projectName.trim(),
           task: r.task.trim(),
@@ -467,8 +471,8 @@ export const MemberWorkTab: React.FC = () => {
         })),
       }).catch((err) => console.warn('GChat morning checkin notice:', err));
 
-      setSuccessNotice(`🌅 Morning check-in confirmed at ${result.session.checkin_time} IST! Action items saved and Google Chat notified.`);
-      showToast('success', 'Morning Check-in Confirmed', `Logged in at ${result.session.checkin_time} IST with ${taskRows.length} action item(s).`);
+      setSuccessNotice(`🌅 Morning check-in confirmed at ${result.session.checkin_time || effectiveCheckin} IST! Action items saved and Google Chat notified.`);
+      showToast('success', 'Morning Check-in Confirmed', `Logged in at ${result.session.checkin_time || effectiveCheckin} IST with ${taskRows.length} action item(s).`);
       setTimeout(() => setSuccessNotice(''), 7000);
     } catch (err: any) {
       const msg = err.message || 'Failed to submit morning check-in. Please try again.';
@@ -1017,14 +1021,104 @@ export const MemberWorkTab: React.FC = () => {
             <div className="flex items-center gap-1.5 font-mono">
               <span className="text-slate-500">|</span>
               <span className="text-slate-400 font-sans">Login:</span>
-              {dailySession?.checkin_time ? (
-                <span className="text-emerald-300 font-bold bg-emerald-950/40 border border-emerald-800/60 px-2 py-0.5 rounded flex items-center gap-1" title="Locked server timestamp">
-                  <Lock className="w-3 h-3 text-emerald-400" /> {dailySession.checkin_time} (Locked)
-                </span>
+              {dailySession?.checkin_time && !isEditingCheckinTime ? (
+                <div className="flex items-center gap-1.5">
+                  <span className="text-emerald-300 font-bold bg-emerald-950/40 border border-emerald-800/60 px-2 py-0.5 rounded flex items-center gap-1" title="Confirmed Check-in Time">
+                    <Lock className="w-3 h-3 text-emerald-400" /> {dailySession.checkin_time} (Locked)
+                  </span>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setCustomCheckinTime(dailySession.checkin_time || '09:00 AM');
+                      setIsEditingCheckinTime(true);
+                    }}
+                    className="p-1 hover:bg-slate-800 rounded text-slate-400 hover:text-amber-300 transition-colors"
+                    title="Correct or adjust check-in time"
+                  >
+                    <Edit2 className="w-3 h-3" />
+                  </button>
+                </div>
+              ) : isEditingCheckinTime ? (
+                <div className="flex items-center gap-1.5 bg-slate-900 border border-amber-500/50 rounded-lg px-2 py-1 shadow-sm">
+                  <span className="text-[10px] text-amber-400 font-sans font-semibold">Time:</span>
+                  <input
+                    type="text"
+                    value={customCheckinTime}
+                    onChange={(e) => setCustomCheckinTime(e.target.value)}
+                    placeholder="09:00 AM"
+                    className="w-20 bg-slate-950 text-amber-300 font-mono text-xs px-1.5 py-0.5 rounded border border-slate-700 focus:outline-none focus:border-amber-400"
+                  />
+                  <div className="flex items-center gap-1">
+                    <button
+                      type="button"
+                      onClick={() => setCustomCheckinTime('09:00 AM')}
+                      className="px-1.5 py-0.5 rounded bg-slate-800 hover:bg-slate-700 text-[10px] text-slate-300 font-bold"
+                      title="Set to 9:00 AM"
+                    >
+                      9:00 AM
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setCustomCheckinTime(liveIstTime)}
+                      className="px-1.5 py-0.5 rounded bg-slate-800 hover:bg-slate-700 text-[10px] text-slate-300 font-bold"
+                      title="Set to current live time"
+                    >
+                      Now
+                    </button>
+                    <button
+                      type="button"
+                      onClick={async () => {
+                        const targetTime = customCheckinTime.trim() || '09:00 AM';
+                        if (dailySession?.checkin_time && targetEmployeeId) {
+                          await dataStore.updateSessionCheckinTime(targetEmployeeId, workDate, targetTime);
+                          showToast('success', 'Check-in Time Updated', `Updated check-in time to ${targetTime}`);
+                        }
+                        setIsEditingCheckinTime(false);
+                      }}
+                      className="px-2 py-0.5 rounded bg-emerald-600 hover:bg-emerald-500 text-[10px] text-white font-bold"
+                    >
+                      Save
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setIsEditingCheckinTime(false)}
+                      className="px-1.5 py-0.5 rounded bg-slate-800 hover:bg-slate-700 text-[10px] text-slate-400 font-bold"
+                    >
+                      ✕
+                    </button>
+                  </div>
+                </div>
               ) : (
-                <span className="text-amber-300 font-semibold bg-amber-950/30 border border-amber-800/40 px-2 py-0.5 rounded flex items-center gap-1" title="Live IST time (will lock upon check-in)">
-                  <Clock className="w-3 h-3 text-amber-400" /> {liveIstTime} (Pending)
-                </span>
+                <div className="flex items-center gap-1.5">
+                  <span className="text-amber-300 font-semibold bg-amber-950/30 border border-amber-800/40 px-2 py-0.5 rounded flex items-center gap-1" title="Live IST time (will lock upon check-in)">
+                    <Clock className="w-3 h-3 text-amber-400" /> {customCheckinTime || liveIstTime} (Pending)
+                  </span>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setCustomCheckinTime(customCheckinTime === '09:00 AM' ? '' : '09:00 AM');
+                    }}
+                    className={`px-2 py-0.5 rounded text-[10px] font-bold border transition-all ${
+                      customCheckinTime === '09:00 AM'
+                        ? 'bg-amber-500 text-slate-950 border-amber-400 shadow-sm'
+                        : 'bg-slate-800 hover:bg-slate-700 text-amber-300 border-amber-500/40'
+                    }`}
+                    title="Click to record check-in at 09:00 AM office start time"
+                  >
+                    {customCheckinTime === '09:00 AM' ? '✓ At 9:00 AM' : 'Set 9:00 AM'}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setCustomCheckinTime(customCheckinTime || liveIstTime);
+                      setIsEditingCheckinTime(true);
+                    }}
+                    className="p-1 hover:bg-slate-800 rounded text-slate-400 hover:text-amber-300"
+                    title="Enter custom check-in time"
+                  >
+                    <Edit2 className="w-3 h-3" />
+                  </button>
+                </div>
               )}
             </div>
 
@@ -1505,7 +1599,7 @@ export const MemberWorkTab: React.FC = () => {
                       Check-in ({dailySession?.checkin_time || 'Done'})
                     </span>
                   ) : (
-                    `🌅 Morning Check-in (${dailySession?.checkin_time || liveIstTime})`
+                    `🌅 Morning Check-in (${customCheckinTime || liveIstTime})`
                   )}
                 </Button>
 

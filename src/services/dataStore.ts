@@ -428,9 +428,7 @@ class MapleDataStore {
           // Auto-push unsynced local logs to Supabase
           if (unsyncedLocalLogs.length > 0) {
             const payloads = unsyncedLocalLogs.map((l) => this.sanitizeWorkLogForDb(l));
-            supabase
-              .from('performance_work_logs')
-              .upsert(payloads)
+            this.safeUpsertPerformanceWorkLogs(payloads)
               .then(({ error }) => {
                 if (error) console.warn('Syncing local work logs to Supabase error:', error);
                 else console.log(`Auto-synced ${unsyncedLocalLogs.length} local logs to Supabase.`);
@@ -903,9 +901,7 @@ class MapleDataStore {
           // Auto-push unsynced local logs to Supabase
           if (unsyncedLocalLogs.length > 0) {
             const payloads = unsyncedLocalLogs.map((l) => this.sanitizeWorkLogForDb(l));
-            supabase
-              .from('performance_work_logs')
-              .upsert(payloads)
+            this.safeUpsertPerformanceWorkLogs(payloads)
               .then(({ error }) => {
                 if (error) console.warn('Syncing local work logs to Supabase error:', error);
                 else console.log(`Auto-synced ${unsyncedLocalLogs.length} local logs to Supabase.`);
@@ -1696,41 +1692,95 @@ class MapleDataStore {
 
   public async safeUpsertPerformanceWorkLogs(payloads: any[]) {
     if (!payloads || payloads.length === 0) return { error: null };
-    const { error } = await supabase.from('performance_work_logs').upsert(payloads);
-    if (error) {
-      if (error.message?.includes('does not exist') || error.code === '42703') {
-        console.warn('Supabase missing column notice, retrying with core columns:', error.message);
-        const strippedPayloads = payloads.map((p) => {
-          const copy = { ...p };
+
+    // Ensure project_name and task are never null or empty, and strip ephemeral date aliases
+    const sanitized = payloads.map((p) => {
+      const proj = (p.project_name || p.project || 'General').trim() || 'General';
+      const t = (p.task || p.task_title || 'General Task').trim() || 'General Task';
+      const copy = { ...p };
+      delete copy.checkin_date;
+      delete copy.work_date;
+      return {
+        ...copy,
+        organization_id: p.organization_id || 'org-maple-01',
+        project_name: proj,
+        project: proj,
+        task: t,
+        task_title: t,
+      };
+    });
+
+    const res = await supabase.from('performance_work_logs').upsert(sanitized);
+    if (!res.error) return res;
+
+    const errMsg = res.error.message || '';
+    const errCode = res.error.code || '';
+
+    // If Supabase schema cache doesn't have newer columns yet, strip them and retry
+    if (
+      errCode === 'PGRST204' ||
+      errCode === '42703' ||
+      errMsg.includes('does not exist') ||
+      errMsg.includes('schema cache') ||
+      errMsg.includes('column')
+    ) {
+      console.warn('Supabase missing column in schema cache, retrying with core columns:', errMsg);
+      const corePayloads = sanitized.map((p) => {
+        const copy = { ...p };
+        // Strip non-core columns not yet in DB schema
+        delete copy.estimated_time_minutes;
+        delete copy.actual_time_minutes;
+        delete copy.wip_comment;
+        delete copy.status_updated_at;
+        return copy;
+      });
+      const retryRes = await supabase.from('performance_work_logs').upsert(corePayloads);
+      if (retryRes.error) {
+        console.error('Supabase retry with core columns failed:', retryRes.error);
+      }
+      return retryRes;
+    }
+
+    return res;
+  }
+
+  public async safeUpsertDailyActionItems(items: any[]) {
+    if (!items || items.length === 0) return { error: null };
+    try {
+      const res = await supabase.from('daily_action_items').upsert(items);
+      if (!res.error) return res;
+
+      const errMsg = res.error.message || '';
+      const errCode = res.error.code || '';
+
+      if (
+        errCode === 'PGRST204' ||
+        errCode === '42703' ||
+        errCode === '42501' ||
+        errMsg.includes('does not exist') ||
+        errMsg.includes('schema cache') ||
+        errMsg.includes('column') ||
+        errMsg.includes('row-level security')
+      ) {
+        if (errCode === '42501' || errMsg.includes('row-level security')) {
+          console.warn('daily_action_items RLS policy notice:', errMsg);
+          return res;
+        }
+        const stripped = items.map((it) => {
+          const copy = { ...it };
           delete copy.estimated_time_minutes;
           delete copy.actual_time_minutes;
           delete copy.wip_comment;
           delete copy.status_updated_at;
           return copy;
         });
-        return await supabase.from('performance_work_logs').upsert(strippedPayloads);
-      }
-    }
-    return { error };
-  }
-
-  public async safeUpsertDailyActionItems(items: any[]) {
-    if (!items || items.length === 0) return { error: null };
-    const { error } = await supabase.from('daily_action_items').upsert(items);
-    if (error) {
-      if (error.message?.includes('does not exist') || error.code === '42703') {
-        console.warn('daily_action_items missing column notice, retrying with core columns:', error.message);
-        const stripped = items.map((it) => {
-          const copy = { ...it };
-          delete copy.estimated_time_minutes;
-          delete copy.actual_time_minutes;
-          delete copy.status_updated_at;
-          return copy;
-        });
         return await supabase.from('daily_action_items').upsert(stripped);
       }
+      return res;
+    } catch (e: any) {
+      console.warn('daily_action_items safeUpsert note:', e?.message);
+      return { error: e };
     }
-    return { error };
   }
 
 
@@ -1810,9 +1860,7 @@ class MapleDataStore {
       task: newLog.task_title,
     });
 
-    supabase
-      .from('performance_work_logs')
-      .upsert(this.sanitizeWorkLogForDb(newLog))
+    this.safeUpsertPerformanceWorkLogs([this.sanitizeWorkLogForDb(newLog)])
       .then(({ error }) => {
         if (error) console.warn('Supabase work log upsert note:', error);
       });
@@ -1836,10 +1884,7 @@ class MapleDataStore {
       this.logAudit('PERFORMANCE_WORK_LOG_UPDATED', 'PerformanceWorkLog', id, updates);
 
       const sanitizedUpdates = this.sanitizeWorkLogForDb({ ...updates, updated_at: new Date().toISOString() });
-      supabase
-        .from('performance_work_logs')
-        .update(sanitizedUpdates)
-        .eq('id', id)
+      this.safeUpsertPerformanceWorkLogs([{ id, ...sanitizedUpdates }])
         .then(({ error }) => {
           if (error) console.warn('Supabase work log update note:', error);
         });
@@ -1870,21 +1915,12 @@ class MapleDataStore {
 
   // Helper for YYYY-MM-DD local date (prevents UTC date shifts)
   public getLocalDateString(d: Date = new Date()): string {
-    const year = d.getFullYear();
-    const month = String(d.getMonth() + 1).padStart(2, '0');
-    const day = String(d.getDate()).padStart(2, '0');
-    return `${year}-${month}-${day}`;
+    return getTodayIST(d);
   }
 
-  // Helper for human-readable check-in time e.g. "10:15 AM"
+  // Helper for human-readable check-in time e.g. "10:15 AM" (guaranteed IST)
   private formatCurrentTime(): string {
-    const d = new Date();
-    let hours = d.getHours();
-    const minutes = d.getMinutes().toString().padStart(2, '0');
-    const ampm = hours >= 12 ? 'PM' : 'AM';
-    hours = hours % 12;
-    hours = hours ? hours : 12;
-    return `${hours.toString().padStart(2, '0')}:${minutes} ${ampm}`;
+    return getTimeIST();
   }
 
   // --- POD MEMBER: SUBMIT WORK (9 REQUIRED FIELDS + CHECK-IN TIME) ---
@@ -1900,7 +1936,7 @@ class MapleDataStore {
                 (profile?.pod_id ? this.getPodById(profile.pod_id) : undefined) ||
                 (profile?.id ? this.getPods().find((p) => p.manager_id === profile.id) : undefined) ||
                 this.getPodById('pod-web-sales');
-    const subTime = log.submission_time || log.checkin_time || this.formatCurrentTime();
+    const subTime = log.submission_time || log.checkin_time || getTimeIST();
     const localToday = this.getLocalDateString();
     const checkinDate = log.checkin_date || log.date || localToday;
     const workDate = log.work_date || log.completed_date || log.assigned_date || localToday;
@@ -1953,9 +1989,7 @@ class MapleDataStore {
 
     try {
       const sanitizedLog = this.sanitizeWorkLogForDb(newLog);
-      const { error } = await supabase
-        .from('performance_work_logs')
-        .upsert(sanitizedLog);
+      const { error } = await this.safeUpsertPerformanceWorkLogs([sanitizedLog]);
       if (error) {
         console.error('Supabase submitMemberWork upsert error:', error);
         throw new Error(`Database save failed: ${error.message}`);
@@ -2232,9 +2266,11 @@ class MapleDataStore {
     );
 
     const nowIso = new Date().toISOString();
-    // LOCKING RULE: If session already exists with checkin_time, preserve it!
-    const effectiveCheckinTime = session?.checkin_time || params.checkin_time || getTimeIST();
-    const effectiveCheckinAt = session?.checkin_at || nowIso;
+    // Prioritize explicitly provided checkin_time (or manual arrival time); fallback to existing session or current IST time
+    const effectiveCheckinTime = params.checkin_time || session?.checkin_time || getTimeIST();
+    const effectiveCheckinAt = (session?.status === 'checked_in' || session?.status === 'checked_out') && session?.checkin_at
+      ? session.checkin_at
+      : nowIso;
 
     if (session) {
       session = {
@@ -2322,10 +2358,10 @@ class MapleDataStore {
         date: workDate,
         checkin_date: workDate,
         work_date: workDate,
-        submission_time: session!.checkin_time,
-        checkin_time: session!.checkin_time,
-        project_name: item.project_name,
-        project: item.project_name,
+        submission_time: effectiveCheckinTime,
+        checkin_time: effectiveCheckinTime,
+        project_name: item.project_name || 'General',
+        project: item.project_name || 'General',
         task: item.task_title,
         task_title: item.task_title,
         assigned_date: it?.assignedDate || workDate,
@@ -2373,9 +2409,17 @@ class MapleDataStore {
     }
 
     try {
-      await supabase.from('daily_work_sessions').upsert(session);
-      await this.safeUpsertDailyActionItems(newItems);
+      localStorage.setItem('maplebot_performance_work_logs', JSON.stringify(this.performanceWorkLogs));
     } catch {}
+
+    try {
+      const { error: sessErr } = await supabase.from('daily_work_sessions').upsert(session);
+      if (sessErr) console.warn('daily_work_sessions note:', sessErr.message);
+      const { error: actErr } = await this.safeUpsertDailyActionItems(newItems);
+      if (actErr) console.warn('daily_action_items note:', actErr.message);
+    } catch (e: any) {
+      console.warn('daily sessions/items sync note:', e?.message);
+    }
 
     this.persistAttendanceLocally();
     this.logAudit('MORNING_CHECKIN_SUBMITTED', 'DailyWorkSession', session.id, {
@@ -2386,6 +2430,83 @@ class MapleDataStore {
     this.notify();
 
     return { session, items: newItems };
+  }
+
+  // --- ALLOW UPDATING CHECK-IN TIME (Corrects any skewed or stale time) ---
+  public async updateSessionCheckinTime(
+    employeeId: string,
+    workDate: string,
+    newCheckinTime: string
+  ): Promise<boolean> {
+    const nowIso = new Date().toISOString();
+    let session = this.getDailySession(employeeId, workDate);
+    if (session) {
+      session = {
+        ...session,
+        checkin_time: newCheckinTime,
+        status: session.status === 'checked_out' ? 'checked_out' : 'checked_in',
+        updated_at: nowIso,
+      };
+      const sIdx = this.dailyWorkSessions.findIndex((s) => s.id === session!.id);
+      if (sIdx !== -1) {
+        this.dailyWorkSessions[sIdx] = session;
+      } else {
+        this.dailyWorkSessions.unshift(session);
+      }
+    } else {
+      const profile = this.getProfileById(employeeId);
+      session = {
+        id: `sess-${Date.now()}-${Math.random().toString(36).substr(2, 6)}`,
+        organization_id: profile?.organization_id || 'org-maple-01',
+        employee_id: employeeId,
+        employee_name: profile?.full_name || 'Team Member',
+        pod_id: profile?.pod_id || 'pod-web-sales',
+        pod_name: 'Web & Sales',
+        work_date: workDate,
+        checkin_at: nowIso,
+        checkin_time: newCheckinTime,
+        status: 'checked_in',
+        total_tasks_count: 0,
+        completed_tasks_count: 0,
+        wpi_tasks_count: 0,
+        total_hours_invested: 0,
+        created_at: nowIso,
+        updated_at: nowIso,
+      };
+      this.dailyWorkSessions.unshift(session);
+    }
+
+    // Update all matching performance work logs
+    const matchingLogs = this.performanceWorkLogs.filter(
+      (l) => l.employee_id === employeeId && (l.work_date === workDate || l.date === workDate || l.checkin_date === workDate)
+    );
+    matchingLogs.forEach((l) => {
+      l.checkin_time = newCheckinTime;
+      l.submission_time = newCheckinTime;
+      l.updated_at = nowIso;
+    });
+
+    this.persistAttendanceLocally();
+    try {
+      localStorage.setItem('maplebot_performance_work_logs', JSON.stringify(this.performanceWorkLogs));
+    } catch {}
+
+    if (matchingLogs.length > 0) {
+      const sanitizedLogs = matchingLogs.map((l) => this.sanitizeWorkLogForDb(l));
+      await this.safeUpsertPerformanceWorkLogs(sanitizedLogs);
+    }
+
+    try {
+      await supabase.from('daily_work_sessions').upsert(session);
+    } catch {}
+
+    this.logAudit('CHECKIN_TIME_UPDATED', 'DailyWorkSession', session.id, {
+      employeeId,
+      workDate,
+      newCheckinTime,
+    });
+    this.notify();
+    return true;
   }
 
   public async submitEndOfDayCheckout(params: {
@@ -3061,9 +3182,7 @@ class MapleDataStore {
       submission_time: subTime,
     });
 
-    supabase
-      .from('performance_work_logs')
-      .upsert(this.sanitizeWorkLogForDb(newLog))
+    this.safeUpsertPerformanceWorkLogs([this.sanitizeWorkLogForDb(newLog)])
       .then(({ error }) => {
         if (error) console.error('Supabase savePodLeadOwnWork upsert error:', error);
       });

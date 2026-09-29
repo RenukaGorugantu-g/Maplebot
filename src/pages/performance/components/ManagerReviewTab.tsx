@@ -41,7 +41,9 @@ import {
   ChevronUp,
   Briefcase,
   AlertCircle,
+  Edit2,
 } from 'lucide-react';
+import { useNotifications } from '../../../context/NotificationContext';
 import { getTodayIST, formatDateFriendlyIST, getPreviousWorkingDayIST, formatMinutesToFriendly } from '../../../utils/timezone';
 
 interface ManagerReviewTabProps {
@@ -52,8 +54,12 @@ export const ManagerReviewTab: React.FC<ManagerReviewTabProps> = ({
   onGenerateReportForEmployee,
 }) => {
   const { profile, currentRole, userPod } = useAuth();
+  const { showToast } = useNotifications();
   const isAdmin = currentRole === 'admin';
   const isManager = currentRole === 'manager';
+
+  const [editingCheckinEmpId, setEditingCheckinEmpId] = useState<string | null>(null);
+  const [editingCheckinValue, setEditingCheckinValue] = useState<string>('09:00 AM');
 
   const [tick, setTick] = useState<number>(0);
   React.useEffect(() => {
@@ -629,9 +635,63 @@ export const ManagerReviewTab: React.FC<ManagerReviewTabProps> = ({
                     <div className="mt-2.5 pt-2 border-t border-slate-800/60 grid grid-cols-2 gap-2 text-[11px] font-mono">
                       <div>
                         <span className="text-[9px] text-slate-500 block uppercase font-sans">Check-in</span>
-                        <span className={`font-semibold ${item.checkin_time ? 'text-emerald-400' : 'text-slate-500'}`}>
-                          {item.checkin_time || '—'}
-                        </span>
+                        {editingCheckinEmpId === item.employee_id ? (
+                          <div className="flex items-center gap-1 mt-1 bg-slate-900 border border-amber-500/50 rounded px-1 py-0.5" onClick={(e) => e.stopPropagation()}>
+                            <input
+                              type="text"
+                              value={editingCheckinValue}
+                              onChange={(e) => setEditingCheckinValue(e.target.value)}
+                              className="w-16 bg-slate-950 text-amber-300 font-mono text-[10px] px-1 py-0.5 rounded border border-slate-700 focus:outline-none"
+                            />
+                            <button
+                              type="button"
+                              onClick={() => setEditingCheckinValue('09:00 AM')}
+                              className="px-1 py-0.5 rounded bg-slate-800 text-[9px] text-slate-300 font-bold hover:bg-slate-700"
+                              title="Set 9:00 AM"
+                            >
+                              9:00
+                            </button>
+                            <button
+                              type="button"
+                              onClick={async () => {
+                                const targetTime = editingCheckinValue.trim() || '09:00 AM';
+                                await dataStore.updateSessionCheckinTime(item.employee_id, attendanceDate, targetTime);
+                                showToast('success', 'Check-in Time Updated', `Updated ${item.employee_name}'s check-in to ${targetTime}`);
+                                setEditingCheckinEmpId(null);
+                              }}
+                              className="px-1.5 py-0.5 rounded bg-emerald-600 hover:bg-emerald-500 text-[9px] text-white font-bold"
+                              title="Save check-in time"
+                            >
+                              ✓
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => setEditingCheckinEmpId(null)}
+                              className="px-1 py-0.5 rounded bg-slate-800 hover:bg-slate-700 text-[9px] text-slate-400 font-bold"
+                              title="Cancel"
+                            >
+                              ✕
+                            </button>
+                          </div>
+                        ) : (
+                          <div className="flex items-center gap-1">
+                            <span className={`font-semibold ${item.checkin_time ? 'text-emerald-400' : 'text-slate-500'}`}>
+                              {item.checkin_time || '—'}
+                            </span>
+                            <button
+                              type="button"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                setEditingCheckinEmpId(item.employee_id);
+                                setEditingCheckinValue(item.checkin_time || '09:00 AM');
+                              }}
+                              className="p-0.5 hover:bg-slate-800 rounded text-slate-500 hover:text-amber-400 transition-colors"
+                              title="Adjust / correct check-in time"
+                            >
+                              <Edit2 className="w-2.5 h-2.5" />
+                            </button>
+                          </div>
+                        )}
                       </div>
                       <div>
                         <span className="text-[9px] text-slate-500 block uppercase font-sans">Check-out</span>
