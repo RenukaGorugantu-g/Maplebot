@@ -485,11 +485,125 @@ class MapleDataStore {
         }
       } catch (e) {}
 
+      // 12. Fetch live daily work sessions from Supabase
+      try {
+        const { data: dbSessions, error: sessError } = await supabase
+          .from('daily_work_sessions')
+          .select('*')
+          .order('work_date', { ascending: false });
+
+        if (!sessError && dbSessions && dbSessions.length > 0) {
+          const dbIds = new Set(dbSessions.map((s: any) => s.id));
+          const unsyncedLocalSessions = this.dailyWorkSessions.filter((s) => !dbIds.has(s.id));
+          this.dailyWorkSessions = [...unsyncedLocalSessions, ...dbSessions];
+
+          // Auto-push unsynced local sessions to Supabase
+          if (unsyncedLocalSessions.length > 0) {
+            for (const s of unsyncedLocalSessions) {
+              this.safeUpsertDailyWorkSession(s).catch(() => {});
+            }
+          }
+
+          try {
+            localStorage.setItem('maplebot_daily_sessions', JSON.stringify(this.dailyWorkSessions));
+          } catch {}
+        }
+      } catch (e) {}
+
+      // 13. Fetch live daily action items from Supabase
+      try {
+        const { data: dbItems, error: itemsError } = await supabase
+          .from('daily_action_items')
+          .select('*')
+          .order('work_date', { ascending: false });
+
+        if (!itemsError && dbItems && dbItems.length > 0) {
+          const dbIds = new Set(dbItems.map((it: any) => it.id));
+          const unsyncedLocalItems = this.dailyActionItems.filter((it) => !dbIds.has(it.id));
+          this.dailyActionItems = [...unsyncedLocalItems, ...dbItems];
+
+          // Auto-push unsynced local items to Supabase
+          if (unsyncedLocalItems.length > 0) {
+            this.safeUpsertDailyActionItems(unsyncedLocalItems).catch(() => {});
+          }
+
+          try {
+            localStorage.setItem('maplebot_daily_action_items', JSON.stringify(this.dailyActionItems));
+          } catch {}
+        }
+      } catch (e) {}
+
       this.notify();
 
-      // 12. Subscribe to Supabase real-time updates across all tables
+      // 14. Subscribe to Supabase real-time updates across all tables
       supabase
         .channel('public-sync')
+        .on('postgres_changes', { event: '*', schema: 'public', table: 'daily_work_sessions' }, (payload) => {
+          if (payload.eventType === 'INSERT') {
+            const newSess = payload.new as DailyWorkSession;
+            if (!this.dailyWorkSessions.some((s) => s.id === newSess.id)) {
+              this.dailyWorkSessions.unshift(newSess);
+              try {
+                localStorage.setItem('maplebot_daily_sessions', JSON.stringify(this.dailyWorkSessions));
+              } catch {}
+              this.notify();
+            }
+          } else if (payload.eventType === 'UPDATE') {
+            const updated = payload.new as DailyWorkSession;
+            const idx = this.dailyWorkSessions.findIndex((s) => s.id === updated.id);
+            if (idx !== -1) {
+              this.dailyWorkSessions[idx] = updated;
+            } else {
+              this.dailyWorkSessions.unshift(updated);
+            }
+            try {
+              localStorage.setItem('maplebot_daily_sessions', JSON.stringify(this.dailyWorkSessions));
+            } catch {}
+            this.notify();
+          } else if (payload.eventType === 'DELETE') {
+            const oldId = (payload.old as any)?.id;
+            if (oldId) {
+              this.dailyWorkSessions = this.dailyWorkSessions.filter((s) => s.id !== oldId);
+              try {
+                localStorage.setItem('maplebot_daily_sessions', JSON.stringify(this.dailyWorkSessions));
+              } catch {}
+              this.notify();
+            }
+          }
+        })
+        .on('postgres_changes', { event: '*', schema: 'public', table: 'daily_action_items' }, (payload) => {
+          if (payload.eventType === 'INSERT') {
+            const newItem = payload.new as DailyActionItem;
+            if (!this.dailyActionItems.some((it) => it.id === newItem.id)) {
+              this.dailyActionItems.push(newItem);
+              try {
+                localStorage.setItem('maplebot_daily_action_items', JSON.stringify(this.dailyActionItems));
+              } catch {}
+              this.notify();
+            }
+          } else if (payload.eventType === 'UPDATE') {
+            const updated = payload.new as DailyActionItem;
+            const idx = this.dailyActionItems.findIndex((it) => it.id === updated.id);
+            if (idx !== -1) {
+              this.dailyActionItems[idx] = updated;
+            } else {
+              this.dailyActionItems.push(updated);
+            }
+            try {
+              localStorage.setItem('maplebot_daily_action_items', JSON.stringify(this.dailyActionItems));
+            } catch {}
+            this.notify();
+          } else if (payload.eventType === 'DELETE') {
+            const oldId = (payload.old as any)?.id;
+            if (oldId) {
+              this.dailyActionItems = this.dailyActionItems.filter((it) => it.id !== oldId);
+              try {
+                localStorage.setItem('maplebot_daily_action_items', JSON.stringify(this.dailyActionItems));
+              } catch {}
+              this.notify();
+            }
+          }
+        })
         .on('postgres_changes', { event: '*', schema: 'public', table: 'leave_balances' }, (payload) => {
           if (payload.eventType === 'INSERT' || payload.eventType === 'UPDATE') {
             const rec = payload.new as LeaveBalanceRecord;
@@ -1783,8 +1897,14 @@ class MapleDataStore {
 
   public async safeUpsertDailyActionItems(items: any[]) {
     if (!items || items.length === 0) return { error: null };
+    const sanitized = items.map((it) => ({
+      ...it,
+      organization_id: it.organization_id || 'org-maple-01',
+      project_name: (it.project_name || it.project || 'General').trim() || 'General',
+      task_title: (it.task_title || it.task || 'General Task').trim() || 'General Task',
+    }));
     try {
-      const res = await supabase.from('daily_action_items').upsert(items);
+      const res = await supabase.from('daily_action_items').upsert(sanitized);
       if (!res.error) return res;
 
       const errMsg = res.error.message || '';
@@ -1803,7 +1923,7 @@ class MapleDataStore {
           console.warn('daily_action_items RLS policy notice:', errMsg);
           return res;
         }
-        const stripped = items.map((it) => {
+        const stripped = sanitized.map((it: any) => {
           const copy = { ...it };
           delete copy.checkin_date;
           delete copy.estimated_time_minutes;
