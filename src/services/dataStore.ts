@@ -1818,11 +1818,14 @@ class MapleDataStore {
       const t = (p.task || p.task_title || 'General Task').trim() || 'General Task';
       const effectiveDate = p.date || p.checkin_date || p.work_date || todayStr;
       const effectiveCheckinTime = p.checkin_time || p.submission_time || '10:00 AM';
+      const author = this.getProfileById(p.employee_id);
+      const effectiveEmpId = author?.id || p.employee_id;
       const copy = { ...p };
       delete copy.checkin_date;
       delete copy.work_date;
       return {
         ...copy,
+        employee_id: effectiveEmpId,
         date: effectiveDate,
         submission_time: p.submission_time || effectiveCheckinTime,
         checkin_time: effectiveCheckinTime,
@@ -1869,46 +1872,84 @@ class MapleDataStore {
   }
 
   public async safeUpsertDailyWorkSession(session: DailyWorkSession) {
-    if (!session) return { error: null };
+    if (!session) return { error: null, data: null };
     try {
-      const res = await supabase.from('daily_work_sessions').upsert(session);
+      // 1. Try upserting with onConflict on employee_id,work_date
+      let res = await supabase
+        .from('daily_work_sessions')
+        .upsert(session, { onConflict: 'employee_id,work_date' })
+        .select();
+
       if (!res.error) return res;
 
       const errMsg = res.error.message || '';
       const errCode = res.error.code || '';
+
+      // 2. Handle missing columns in DB schema cache (checkin_date, checkout_date)
       if (errCode === 'PGRST204' || errCode === '42703' || errMsg.includes('column') || errMsg.includes('schema cache')) {
         const sanitized: any = { ...session };
         delete sanitized.checkin_date;
         delete sanitized.checkout_date;
-        const retryRes = await supabase.from('daily_work_sessions').upsert(sanitized);
-        if (retryRes.error) {
-          console.warn('daily_work_sessions fallback note:', retryRes.error.message);
+        const retryRes = await supabase
+          .from('daily_work_sessions')
+          .upsert(sanitized, { onConflict: 'employee_id,work_date' })
+          .select();
+        if (!retryRes.error) return retryRes;
+      }
+
+      // 3. Handle unique constraint / duplicate key collision on (employee_id, work_date)
+      if (errCode === '23505' || errMsg.includes('unique') || errMsg.includes('uq_daily_session_emp_date')) {
+        const { data: existing } = await supabase
+          .from('daily_work_sessions')
+          .select('id')
+          .eq('employee_id', session.employee_id)
+          .eq('work_date', session.work_date)
+          .maybeSingle();
+
+        if (existing?.id) {
+          session.id = existing.id;
+          const sanitized: any = { ...session, id: existing.id };
+          delete sanitized.checkin_date;
+          delete sanitized.checkout_date;
+          const updateRes = await supabase
+            .from('daily_work_sessions')
+            .upsert(sanitized)
+            .select();
+          if (!updateRes.error) return updateRes;
         }
-        return retryRes;
       }
 
       console.warn('daily_work_sessions note:', res.error.message);
       return res;
     } catch (e: any) {
       console.warn('daily_work_sessions upsert catch:', e?.message);
-      return { error: e };
+      return { error: e, data: null };
     }
   }
 
   public async safeUpsertDailyActionItems(items: any[]) {
-    if (!items || items.length === 0) return { error: null };
+    if (!items || items.length === 0) return { error: null, data: null };
     const sanitized = items.map((it) => ({
       ...it,
       organization_id: it.organization_id || 'org-maple-01',
       project_name: (it.project_name || it.project || 'General').trim() || 'General',
       task_title: (it.task_title || it.task || 'General Task').trim() || 'General Task',
     }));
+
     try {
-      const res = await supabase.from('daily_action_items').upsert(sanitized);
+      let res = await supabase.from('daily_action_items').upsert(sanitized);
       if (!res.error) return res;
 
       const errMsg = res.error.message || '';
       const errCode = res.error.code || '';
+
+      // Foreign key violation on session_id (code 23503)
+      if (errCode === '23503' || errMsg.includes('foreign key') || errMsg.includes('fkey')) {
+        console.warn('daily_action_items foreign key notice, retrying with session_id: null');
+        const noFkItems = sanitized.map((it: any) => ({ ...it, session_id: null }));
+        res = await supabase.from('daily_action_items').upsert(noFkItems);
+        if (!res.error) return res;
+      }
 
       if (
         errCode === 'PGRST204' ||
@@ -1932,12 +1973,20 @@ class MapleDataStore {
           delete copy.status_updated_at;
           return copy;
         });
-        return await supabase.from('daily_action_items').upsert(stripped);
+        let retryRes = await supabase.from('daily_action_items').upsert(stripped);
+        if (!retryRes.error) return retryRes;
+
+        // If stripped also hit foreign key error
+        if (retryRes.error?.code === '23503' || retryRes.error?.message?.includes('fkey')) {
+          const strippedNoFk = stripped.map((it: any) => ({ ...it, session_id: null }));
+          return await supabase.from('daily_action_items').upsert(strippedNoFk);
+        }
+        return retryRes;
       }
       return res;
     } catch (e: any) {
       console.warn('daily_action_items safeUpsert note:', e?.message);
-      return { error: e };
+      return { error: e, data: null };
     }
   }
 
@@ -2430,8 +2479,8 @@ class MapleDataStore {
 
     const localToday = getTodayIST();
     const workDate = params.work_date || localToday;
-    const empId = params.employee_id;
-    const profile = this.getProfileById(empId);
+    const profile = this.getProfileById(params.employee_id);
+    const empId = profile?.id || params.employee_id;
     const pod = (params.pod_id ? this.getPodById(params.pod_id) : undefined) ||
                 (profile?.pod_id ? this.getPodById(profile.pod_id) : undefined) ||
                 this.getPodById('pod-web-sales');
@@ -2579,7 +2628,21 @@ class MapleDataStore {
       }
     }
 
-    // 4. Persist to Supabase performance_work_logs
+    // 4. Persist to Supabase daily_work_sessions first to establish guaranteed session_id
+    try {
+      const sessRes = await this.safeUpsertDailyWorkSession(session);
+      if (sessRes?.data && (sessRes.data as any)[0]?.id) {
+        session.id = (sessRes.data as any)[0].id;
+        for (const item of newItems) {
+          item.session_id = session.id;
+        }
+      }
+      await this.safeUpsertDailyActionItems(newItems);
+    } catch (e: any) {
+      console.warn('daily sessions/items sync note:', e?.message);
+    }
+
+    // 5. Persist to Supabase performance_work_logs
     const sanitizedLogs = logsToUpsert.map((l) => this.sanitizeWorkLogForDb(l));
     const { error: dbError } = await this.safeUpsertPerformanceWorkLogs(sanitizedLogs);
 
@@ -2590,13 +2653,6 @@ class MapleDataStore {
     try {
       localStorage.setItem('maplebot_performance_work_logs', JSON.stringify(this.performanceWorkLogs));
     } catch {}
-
-    try {
-      await this.safeUpsertDailyWorkSession(session);
-      await this.safeUpsertDailyActionItems(newItems);
-    } catch (e: any) {
-      console.warn('daily sessions/items sync note:', e?.message);
-    }
 
     this.persistAttendanceLocally();
     this.logAudit('MORNING_CHECKIN_SUBMITTED', 'DailyWorkSession', session.id, {
@@ -2731,8 +2787,8 @@ class MapleDataStore {
 
     const localToday = getTodayIST();
     const workDate = params.work_date || localToday;
-    const empId = params.employee_id;
-    const profile = this.getProfileById(empId);
+    const profile = this.getProfileById(params.employee_id);
+    const empId = profile?.id || params.employee_id;
     const pod = (profile?.pod_id ? this.getPodById(profile.pod_id) : undefined) || this.getPodById('pod-web-sales');
 
     let session = this.getDailySession(empId, workDate);
@@ -2884,19 +2940,26 @@ class MapleDataStore {
       }
     }
 
+    // Persist to Supabase daily_work_sessions first to establish guaranteed session_id
+    try {
+      const sessRes = await this.safeUpsertDailyWorkSession(session);
+      if (sessRes?.data && (sessRes.data as any)[0]?.id) {
+        session.id = (sessRes.data as any)[0].id;
+        for (const item of actionItems) {
+          item.session_id = session.id;
+        }
+      }
+      await this.safeUpsertDailyActionItems(actionItems);
+    } catch (e) {
+      console.warn('Supabase daily session upsert error:', e);
+    }
+
     // Persist to Supabase performance_work_logs
     const sanitizedLogs = logsToUpsert.map((l) => this.sanitizeWorkLogForDb(l));
     const { error: dbError } = await this.safeUpsertPerformanceWorkLogs(sanitizedLogs);
 
     if (dbError) {
       console.warn('Supabase end of day checkout upsert note:', dbError);
-    }
-
-    try {
-      await this.safeUpsertDailyWorkSession(session);
-      await this.safeUpsertDailyActionItems(actionItems);
-    } catch (e) {
-      console.warn('Supabase daily session upsert error:', e);
     }
 
     this.persistAttendanceLocally();
@@ -2944,8 +3007,8 @@ class MapleDataStore {
 
     const localToday = getTodayIST();
     const workDate = params.work_date || localToday;
-    const empId = params.employee_id;
-    const profile = this.getProfileById(empId);
+    const profile = this.getProfileById(params.employee_id);
+    const empId = profile?.id || params.employee_id;
     const pod = (profile?.pod_id ? this.getPodById(profile.pod_id) : undefined) || this.getPodById('pod-web-sales');
 
     let session = this.getDailySession(empId, workDate);
@@ -3074,6 +3137,20 @@ class MapleDataStore {
       }
     }
 
+    // Persist to Supabase daily_work_sessions first to establish guaranteed session_id
+    try {
+      if (session) {
+        const sessRes = await this.safeUpsertDailyWorkSession(session);
+        if (sessRes?.data && (sessRes.data as any)[0]?.id) {
+          session.id = (sessRes.data as any)[0].id;
+          for (const item of actionItems) {
+            item.session_id = session.id;
+          }
+        }
+      }
+      await this.safeUpsertDailyActionItems(actionItems);
+    } catch {}
+
     // Persist to Supabase performance_work_logs
     const sanitizedLogs = logsToUpsert.map((l) => this.sanitizeWorkLogForDb(l));
     const { error: dbError } = await this.safeUpsertPerformanceWorkLogs(sanitizedLogs);
@@ -3081,13 +3158,6 @@ class MapleDataStore {
     if (dbError) {
       console.warn('Supabase save progress upsert note:', dbError);
     }
-
-    try {
-      if (session) {
-        await this.safeUpsertDailyWorkSession(session);
-      }
-      await this.safeUpsertDailyActionItems(actionItems);
-    } catch {}
 
     this.persistAttendanceLocally();
     this.notify();

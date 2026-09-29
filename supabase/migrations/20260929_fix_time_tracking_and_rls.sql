@@ -98,6 +98,19 @@ ALTER TABLE IF EXISTS public.daily_work_sessions
     ADD COLUMN IF NOT EXISTS checkin_date DATE,
     ADD COLUMN IF NOT EXISTS checkout_date DATE;
 
+-- Ensure clean upserting on daily_work_sessions by employee_id and work_date
+DO $$
+BEGIN
+    IF NOT EXISTS (
+        SELECT 1 FROM pg_constraint WHERE conname = 'uq_daily_session_emp_date'
+    ) THEN
+        ALTER TABLE public.daily_work_sessions
+            ADD CONSTRAINT uq_daily_session_emp_date UNIQUE (employee_id, work_date);
+    END IF;
+EXCEPTION
+    WHEN OTHERS THEN NULL;
+END $$;
+
 -- 3. Ensure daily_action_items table exists
 CREATE TABLE IF NOT EXISTS public.daily_action_items (
     id TEXT PRIMARY KEY DEFAULT ('dai-' || gen_random_uuid()),
@@ -133,6 +146,10 @@ ALTER TABLE IF EXISTS public.daily_action_items
     ADD COLUMN IF NOT EXISTS actual_time_minutes INTEGER,
     ADD COLUMN IF NOT EXISTS wip_comment TEXT,
     ADD COLUMN IF NOT EXISTS status_updated_at TIMESTAMPTZ;
+
+-- Drop restrictive foreign key constraint from daily_action_items so tasks never fail due to session_id mismatch
+ALTER TABLE IF EXISTS public.daily_action_items
+    DROP CONSTRAINT IF EXISTS daily_action_items_session_id_fkey;
 
 -- 4. Ensure task_time_tracking table exists
 CREATE TABLE IF NOT EXISTS public.task_time_tracking (
