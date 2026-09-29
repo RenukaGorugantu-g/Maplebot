@@ -415,7 +415,9 @@ class MapleDataStore {
               pod_name: podName || l.pod_name,
               date: checkinDate,
               checkin_date: checkinDate,
-              work_date: l.work_date || l.completed_date || l.assigned_date || l.date,
+              work_date: l.work_date || l.completed_date || l.assigned_date || l.date || checkinDate,
+              submission_time: l.submission_time || l.checkin_time || '10:00 AM',
+              checkin_time: l.checkin_time || l.submission_time || '10:00 AM',
             };
           }).filter((l: any) => !this.isSeedItem(l));
 
@@ -888,7 +890,9 @@ class MapleDataStore {
               pod_name: podName || l.pod_name,
               date: checkinDate,
               checkin_date: checkinDate,
-              work_date: l.work_date || l.completed_date || l.assigned_date || l.date,
+              work_date: l.work_date || l.completed_date || l.assigned_date || l.date || checkinDate,
+              submission_time: l.submission_time || l.checkin_time || '10:00 AM',
+              checkin_time: l.checkin_time || l.submission_time || '10:00 AM',
             };
           }).filter((l: any) => !this.isSeedItem(l));
 
@@ -1693,15 +1697,21 @@ class MapleDataStore {
   public async safeUpsertPerformanceWorkLogs(payloads: any[]) {
     if (!payloads || payloads.length === 0) return { error: null };
 
+    const todayStr = getTodayIST();
     // Ensure project_name and task are never null or empty, and strip ephemeral date aliases
     const sanitized = payloads.map((p) => {
       const proj = (p.project_name || p.project || 'General').trim() || 'General';
       const t = (p.task || p.task_title || 'General Task').trim() || 'General Task';
+      const effectiveDate = p.date || p.checkin_date || p.work_date || todayStr;
+      const effectiveCheckinTime = p.checkin_time || p.submission_time || '10:00 AM';
       const copy = { ...p };
       delete copy.checkin_date;
       delete copy.work_date;
       return {
         ...copy,
+        date: effectiveDate,
+        submission_time: p.submission_time || effectiveCheckinTime,
+        checkin_time: effectiveCheckinTime,
         organization_id: p.organization_id || 'org-maple-01',
         project_name: proj,
         project: proj,
@@ -1744,6 +1754,33 @@ class MapleDataStore {
     return res;
   }
 
+  public async safeUpsertDailyWorkSession(session: DailyWorkSession) {
+    if (!session) return { error: null };
+    try {
+      const res = await supabase.from('daily_work_sessions').upsert(session);
+      if (!res.error) return res;
+
+      const errMsg = res.error.message || '';
+      const errCode = res.error.code || '';
+      if (errCode === 'PGRST204' || errCode === '42703' || errMsg.includes('column') || errMsg.includes('schema cache')) {
+        const sanitized: any = { ...session };
+        delete sanitized.checkin_date;
+        delete sanitized.checkout_date;
+        const retryRes = await supabase.from('daily_work_sessions').upsert(sanitized);
+        if (retryRes.error) {
+          console.warn('daily_work_sessions fallback note:', retryRes.error.message);
+        }
+        return retryRes;
+      }
+
+      console.warn('daily_work_sessions note:', res.error.message);
+      return res;
+    } catch (e: any) {
+      console.warn('daily_work_sessions upsert catch:', e?.message);
+      return { error: e };
+    }
+  }
+
   public async safeUpsertDailyActionItems(items: any[]) {
     if (!items || items.length === 0) return { error: null };
     try {
@@ -1768,6 +1805,7 @@ class MapleDataStore {
         }
         const stripped = items.map((it) => {
           const copy = { ...it };
+          delete copy.checkin_date;
           delete copy.estimated_time_minutes;
           delete copy.actual_time_minutes;
           delete copy.wip_comment;
@@ -1830,10 +1868,18 @@ class MapleDataStore {
       list = list.filter((l) => l.priority === filters.priority);
     }
     if (filters?.startDate) {
-      list = list.filter((l) => l.date >= filters.startDate!);
+      list = list.filter((l) => (
+        l.date >= filters.startDate! ||
+        (l.work_date && l.work_date >= filters.startDate!) ||
+        (l.checkin_date && l.checkin_date >= filters.startDate!)
+      ));
     }
     if (filters?.endDate) {
-      list = list.filter((l) => l.date <= filters.endDate!);
+      list = list.filter((l) => (
+        l.date <= filters.endDate! ||
+        (l.work_date && l.work_date <= filters.endDate!) ||
+        (l.checkin_date && l.checkin_date <= filters.endDate!)
+      ));
     }
 
     return list.sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
@@ -2013,13 +2059,18 @@ class MapleDataStore {
 
   public getDailySession(employeeId: string, workDate: string): DailyWorkSession | undefined {
     let session = this.dailyWorkSessions.find(
-      (s) => s.employee_id === employeeId && s.work_date === workDate
+      (s) => s.employee_id === employeeId && (s.work_date === workDate || (s as any).checkin_date === workDate)
     );
     if (session) return session;
 
     // Backward-compatibility: Synthesize from performance_work_logs
     const memberLogs = this.performanceWorkLogs.filter(
-      (l) => l.employee_id === employeeId && (l.work_date === workDate || l.date === workDate || l.checkin_date === workDate)
+      (l) => l.employee_id === employeeId && (
+        l.work_date === workDate ||
+        l.date === workDate ||
+        l.checkin_date === workDate ||
+        (l.submitted_at && l.submitted_at.startsWith(workDate))
+      )
     );
     if (memberLogs.length > 0) {
       const firstLog = memberLogs[0];
@@ -2065,14 +2116,19 @@ class MapleDataStore {
 
   public getDailyActionItems(employeeId: string, workDate: string): DailyActionItem[] {
     const items = this.dailyActionItems.filter(
-      (item) => item.employee_id === employeeId && item.work_date === workDate
+      (item) => item.employee_id === employeeId && (item.work_date === workDate || (item as any).checkin_date === workDate)
     );
     if (items.length > 0) {
       return [...items].sort((a, b) => (a.sort_order ?? 0) - (b.sort_order ?? 0));
     }
 
     const memberLogs = this.performanceWorkLogs
-      .filter((l) => l.employee_id === employeeId && (l.work_date === workDate || l.date === workDate || l.checkin_date === workDate))
+      .filter((l) => l.employee_id === employeeId && (
+        l.work_date === workDate ||
+        l.date === workDate ||
+        l.checkin_date === workDate ||
+        (l.submitted_at && l.submitted_at.startsWith(workDate))
+      ))
       .sort((a, b) => new Date(b.created_at || b.updated_at).getTime() - new Date(a.created_at || a.updated_at).getTime());
 
     if (memberLogs.length > 0) {
@@ -2262,7 +2318,7 @@ class MapleDataStore {
 
     // 1. Check if session already exists for this employee and work_date
     let session = this.dailyWorkSessions.find(
-      (s) => s.employee_id === empId && s.work_date === workDate
+      (s) => s.employee_id === empId && (s.work_date === workDate || (s as any).checkin_date === workDate)
     );
 
     const nowIso = new Date().toISOString();
@@ -2277,6 +2333,8 @@ class MapleDataStore {
         ...session,
         checkin_time: effectiveCheckinTime,
         checkin_at: effectiveCheckinAt,
+        checkin_date: localToday,
+        work_date: workDate,
         status: session.status === 'checked_out' ? 'checked_out' : 'checked_in',
         total_tasks_count: params.action_items.length,
         updated_at: nowIso,
@@ -2292,6 +2350,7 @@ class MapleDataStore {
         pod_id: pod?.id || 'pod-web-sales',
         pod_name: pod?.name || 'Web & Sales',
         work_date: workDate,
+        checkin_date: localToday,
         checkin_at: effectiveCheckinAt,
         checkin_time: effectiveCheckinTime,
         status: 'checked_in',
@@ -2356,7 +2415,7 @@ class MapleDataStore {
         pod_id: pod?.id || 'pod-web-sales',
         pod_name: pod?.name || 'Web & Sales',
         date: workDate,
-        checkin_date: workDate,
+        checkin_date: localToday,
         work_date: workDate,
         submission_time: effectiveCheckinTime,
         checkin_time: effectiveCheckinTime,
@@ -2382,7 +2441,7 @@ class MapleDataStore {
         workflow_status: 'submitted',
         delivery_status: 'pending',
         submitted_by: empId,
-        submitted_at: effectiveCheckinAt,
+        submitted_at: nowIso,
         created_at: existingLog?.created_at || nowIso,
         updated_at: nowIso,
         is_carried_forward: item.is_carried_forward,
@@ -2413,10 +2472,8 @@ class MapleDataStore {
     } catch {}
 
     try {
-      const { error: sessErr } = await supabase.from('daily_work_sessions').upsert(session);
-      if (sessErr) console.warn('daily_work_sessions note:', sessErr.message);
-      const { error: actErr } = await this.safeUpsertDailyActionItems(newItems);
-      if (actErr) console.warn('daily_action_items note:', actErr.message);
+      await this.safeUpsertDailyWorkSession(session);
+      await this.safeUpsertDailyActionItems(newItems);
     } catch (e: any) {
       console.warn('daily sessions/items sync note:', e?.message);
     }
@@ -2575,6 +2632,8 @@ class MapleDataStore {
       pod_id: pod?.id || 'pod-web-sales',
       pod_name: pod?.name || 'Web & Sales',
       work_date: workDate,
+      checkin_date: (session as any)?.checkin_date || localToday,
+      checkout_date: localToday,
       checkin_at: session?.checkin_at || nowIso,
       checkin_time: effectiveCheckinTime,
       checkout_at: nowIso,
@@ -2657,7 +2716,7 @@ class MapleDataStore {
         pod_id: pod?.id || 'pod-web-sales',
         pod_name: pod?.name || 'Web & Sales',
         date: workDate,
-        checkin_date: workDate,
+        checkin_date: (session as any)?.checkin_date || localToday,
         work_date: workDate,
         submission_time: session!.checkin_time,
         checkin_time: session!.checkin_time,
@@ -2714,10 +2773,8 @@ class MapleDataStore {
     }
 
     try {
-      const { error: sessErr } = await supabase.from('daily_work_sessions').upsert(session);
-      if (sessErr) console.warn('Supabase daily_work_sessions note:', sessErr.message);
-      const { error: actErr } = await this.safeUpsertDailyActionItems(actionItems);
-      if (actErr) console.warn('Supabase daily_action_items note:', actErr.message);
+      await this.safeUpsertDailyWorkSession(session);
+      await this.safeUpsertDailyActionItems(actionItems);
     } catch (e) {
       console.warn('Supabase daily session upsert error:', e);
     }
@@ -2907,7 +2964,7 @@ class MapleDataStore {
 
     try {
       if (session) {
-        await supabase.from('daily_work_sessions').upsert(session);
+        await this.safeUpsertDailyWorkSession(session);
       }
       await this.safeUpsertDailyActionItems(actionItems);
     } catch {}

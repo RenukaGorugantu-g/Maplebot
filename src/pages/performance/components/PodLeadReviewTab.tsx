@@ -76,13 +76,20 @@ export const PodLeadReviewTab: React.FC = () => {
   }, []);
 
   const pods = dataStore.getPods();
-  const defaultPodId = userPod?.id || profile?.pod_id || 'pod-marketing';
-  const [selectedPodId, setSelectedPodId] = useState<string>(defaultPodId);
-  const podId = selectedPodId || defaultPodId;
+  const effectivePodId = userPod?.id || profile?.pod_id || '';
+  const [selectedPodId, setSelectedPodId] = useState<string>(effectivePodId);
+
+  React.useEffect(() => {
+    if (effectivePodId && !selectedPodId) {
+      setSelectedPodId(effectivePodId);
+    }
+  }, [effectivePodId]);
+
+  const podId = selectedPodId !== undefined ? selectedPodId : effectivePodId;
 
   // Retrieve submitted pod logs (including both team members and pod lead's own submissions)
   const podMemberLogs = useMemo(() => {
-    return dataStore.getPerformanceWorkLogs({ podId });
+    return dataStore.getPerformanceWorkLogs(podId ? { podId } : {});
   }, [podId, profile?.id, reviewingLog, isSavingReview, tick]);
 
   // Retrieve lead's own logs
@@ -221,12 +228,15 @@ export const PodLeadReviewTab: React.FC = () => {
 
         <div className="flex items-center gap-3">
           {/* Pod Selector for Multi-Pod Leads and Admins */}
-          {pods.length > 1 && (
+          {pods.length > 0 && (
             <select
               value={podId}
               onChange={(e) => setSelectedPodId(e.target.value)}
               className="bg-slate-900 border border-slate-700/80 rounded-xl px-3 py-1.5 text-xs text-slate-200 font-semibold focus:outline-none focus:ring-1 focus:ring-maple-400 cursor-pointer"
             >
+              <option value="" className="bg-slate-900 text-slate-200">
+                All Pods ({pods.length})
+              </option>
               {pods.map((p) => (
                 <option key={p.id} value={p.id} className="bg-slate-900 text-slate-200">
                   {p.name} Pod

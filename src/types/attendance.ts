@@ -15,6 +15,8 @@ export interface DailyWorkSession {
   pod_id?: string;
   pod_name?: string;
   work_date: string; // YYYY-MM-DD (IST)
+  checkin_date?: string; // YYYY-MM-DD (IST)
+  checkout_date?: string; // YYYY-MM-DD (IST)
   checkin_at?: string; // ISO 8601 server timestamp
   checkin_time?: string; // Formatted display time, e.g. "09:32 AM"
   checkout_at?: string; // ISO 8601 server timestamp
@@ -35,6 +37,7 @@ export interface DailyActionItem {
   organization_id: string;
   employee_id: string;
   work_date: string; // YYYY-MM-DD
+  checkin_date?: string; // YYYY-MM-DD
   project_name: string;
   task_title: string;
   task_description?: string;

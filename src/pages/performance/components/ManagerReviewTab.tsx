@@ -71,11 +71,11 @@ export const ManagerReviewTab: React.FC<ManagerReviewTabProps> = ({
   const allProfiles = useMemo(() => dataStore.getProfiles().filter((p) => p.status === 'active'), [tick]);
   const defaultPodId = userPod?.id || profile?.pod_id || '';
   const availableProfiles = useMemo(() => {
-    if (isManager && defaultPodId) {
+    if (isManager && defaultPodId && !isAdmin) {
       return allProfiles.filter((p) => p.pod_id === defaultPodId || (p.pod_ids && p.pod_ids.includes(defaultPodId)));
     }
     return allProfiles;
-  }, [allProfiles, isManager, defaultPodId]);
+  }, [allProfiles, isManager, defaultPodId, isAdmin]);
 
   // Multi-Filter States
   const [selectedPodId, setSelectedPodId] = useState<string>('');

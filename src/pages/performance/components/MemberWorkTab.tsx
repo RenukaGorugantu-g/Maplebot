@@ -416,7 +416,9 @@ export const MemberWorkTab: React.FC = () => {
     const memberName = targetProfile?.full_name || profile?.full_name || 'Team Member';
     const memberPodName = targetPod?.name || userPod?.name || 'Web & Sales';
 
-    const effectiveCheckin = customCheckinTime || (isCheckedIn ? dailySession?.checkin_time : liveIstTime) || liveIstTime;
+    // Always compute current live IST time fresh at click time so submission is never skewed to stale initial state
+    const freshSubmissionTime = getTimeIST();
+    const effectiveCheckin = customCheckinTime.trim() || freshSubmissionTime;
 
     try {
       const result = await dataStore.submitMorningActionItems({
@@ -448,11 +450,14 @@ export const MemberWorkTab: React.FC = () => {
         }),
       });
 
-      // Clear dirty draft state
+      // Clear dirty draft state and editing flags immediately so locked check-in status renders instantly
+      setCustomCheckinTime('');
+      setIsEditingCheckinTime(false);
       isFormDirtyRef.current = false;
       try {
         sessionStorage.removeItem(getDraftStorageKey(targetEmployeeId, workDate));
       } catch (e) {}
+      setTick((t) => t + 1);
 
       // Google Chat notification ONLY sent after database write succeeds
       googleChatService.sendMorningActionItemsCard({
@@ -630,11 +635,13 @@ export const MemberWorkTab: React.FC = () => {
     const memberName = targetProfile?.full_name || profile?.full_name || 'Team Member';
     const memberPodName = targetPod?.name || userPod?.name || 'Web & Sales';
 
+    const freshCheckoutTime = getTimeIST();
+
     try {
       const result = await dataStore.submitEndOfDayCheckout({
         employee_id: targetProfile?.id || profile?.id || '',
         work_date: workDate,
-        checkout_time: liveIstTime,
+        checkout_time: freshCheckoutTime,
         items: taskRows.map((r) => {
           const estMins = r.estimatedTimeMinutes ?? (r.estimatedHours ? Math.round(r.estimatedHours * 60) : undefined);
           const actMins = r.actualTimeMinutes ?? (r.timeInvested ? Math.round(r.timeInvested * 60) : undefined);
@@ -673,8 +680,8 @@ export const MemberWorkTab: React.FC = () => {
         memberName,
         podName: memberPodName,
         workDate,
-        checkinTime: result.session.checkin_time || liveIstTime,
-        checkoutTime: result.session.checkout_time || liveIstTime,
+        checkinTime: result.session.checkin_time || freshCheckoutTime,
+        checkoutTime: result.session.checkout_time || freshCheckoutTime,
         totalHours: result.session.total_hours_invested,
         items: taskRows.map((r) => ({
           projectName: r.projectName.trim(),
@@ -1059,7 +1066,7 @@ export const MemberWorkTab: React.FC = () => {
                     </button>
                     <button
                       type="button"
-                      onClick={() => setCustomCheckinTime(liveIstTime)}
+                      onClick={() => setCustomCheckinTime(getTimeIST())}
                       className="px-1.5 py-0.5 rounded bg-slate-800 hover:bg-slate-700 text-[10px] text-slate-300 font-bold"
                       title="Set to current live time"
                     >
@@ -1069,9 +1076,10 @@ export const MemberWorkTab: React.FC = () => {
                       type="button"
                       onClick={async () => {
                         const targetTime = customCheckinTime.trim() || '09:00 AM';
-                        if (dailySession?.checkin_time && targetEmployeeId) {
+                        if (targetEmployeeId) {
                           await dataStore.updateSessionCheckinTime(targetEmployeeId, workDate, targetTime);
                           showToast('success', 'Check-in Time Updated', `Updated check-in time to ${targetTime}`);
+                          setTick((t) => t + 1);
                         }
                         setIsEditingCheckinTime(false);
                       }}
