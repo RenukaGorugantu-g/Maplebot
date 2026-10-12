@@ -78,6 +78,7 @@ interface TaskDraftRow {
   isCarriedForward?: boolean;
   carriedFromDate?: string;
   carriedFromReason?: string;
+  carriedOriginalTask?: string;
   wpiReason?: string;
 }
 
@@ -261,6 +262,7 @@ export const MemberWorkTab: React.FC = () => {
           isCarriedForward: true,
           carriedFromDate: item.carried_from_date || prevDate,
           carriedFromReason: item.carried_from_reason,
+          carriedOriginalTask: item.task_title,
           wpiReason: '',
         }))
       );
@@ -362,6 +364,19 @@ export const MemberWorkTab: React.FC = () => {
           const num = typeof value === 'number' ? value : parseFloat(value);
           next.actualTimeMinutes = !isNaN(num) && num > 0 ? Math.round(num * 60) : undefined;
         }
+        // Auto-reset carry-forward tag if user completely rewrites a carried forward task
+        if (field === 'task') {
+          if (next.isCarriedForward && next.carriedOriginalTask) {
+            const orig = next.carriedOriginalTask.trim().toLowerCase();
+            const curr = (typeof value === 'string' ? value : '').trim().toLowerCase();
+            if (!curr || (orig.length >= 6 && !curr.includes(orig) && !orig.includes(curr))) {
+              next.isCarriedForward = false;
+              next.carriedFromDate = undefined;
+              next.carriedFromReason = undefined;
+              next.wpiReason = '';
+            }
+          }
+        }
         return next;
       });
       isFormDirtyRef.current = true;
@@ -432,6 +447,7 @@ export const MemberWorkTab: React.FC = () => {
           const estMins = r.estimatedTimeMinutes ?? (r.estimatedHours ? Math.round(r.estimatedHours * 60) : undefined);
           const actMins = r.actualTimeMinutes ?? (r.timeInvested ? Math.round(r.timeInvested * 60) : undefined);
           return {
+            id: r.id.startsWith('row-') ? undefined : r.id,
             projectName: r.projectName.trim(),
             task: r.task.trim(),
             assignedDate: r.assignedDate || workDate,
@@ -449,6 +465,39 @@ export const MemberWorkTab: React.FC = () => {
           };
         }),
       });
+
+      // Update taskRows with the persisted database items and their IDs
+      if (result.items && result.items.length > 0) {
+        setTaskRows(
+          result.items.map((item) => {
+            const actualMins = item.actual_time_minutes ?? (item.time_invested ? Math.round(item.time_invested * 60) : undefined);
+            const estMins = item.estimated_time_minutes;
+            return {
+              id: item.id,
+              category: (item.category as WorkCategory) || 'Development',
+              projectName: item.project_name,
+              task: item.task_title,
+              assignedDate: item.assigned_date || workDate,
+              completedDate: item.completed_date || workDate,
+              timeInvested: item.time_invested ?? (actualMins ? Math.round((actualMins / 60) * 100) / 100 : 0),
+              estimatedHours: estMins ? Math.round((estMins / 60) * 100) / 100 : undefined,
+              estimatedTimeMinutes: estMins,
+              actualTimeMinutes: actualMins,
+              unitCountCompleted: item.unit_count || 1,
+              reviewAssignedDate: item.completed_date || workDate,
+              feedbackComments: item.feedback_comments || item.wpi_reason || '',
+              comments: item.completion_comment || '',
+              blocker: item.blocker || '',
+              status: item.status || 'wpi',
+              isCarriedForward: item.is_carried_forward,
+              carriedFromDate: item.carried_from_date,
+              carriedFromReason: item.carried_from_reason,
+              carriedOriginalTask: item.task_title,
+              wpiReason: item.wpi_reason || '',
+            };
+          })
+        );
+      }
 
       // Clear dirty draft state and editing flags immediately so locked check-in status renders instantly
       setCustomCheckinTime('');
@@ -515,7 +564,7 @@ export const MemberWorkTab: React.FC = () => {
       : profile;
 
     try {
-      await dataStore.saveWorkProgress({
+      const res = await dataStore.saveWorkProgress({
         employee_id: targetProfile?.id || profile?.id || '',
         work_date: workDate,
         items: taskRows.map((r) => {
@@ -543,6 +592,38 @@ export const MemberWorkTab: React.FC = () => {
           };
         }),
       });
+
+      if (res && res.items && res.items.length > 0) {
+        setTaskRows(
+          res.items.map((item) => {
+            const actualMins = item.actual_time_minutes ?? (item.time_invested ? Math.round(item.time_invested * 60) : undefined);
+            const estMins = item.estimated_time_minutes;
+            return {
+              id: item.id,
+              category: (item.category as WorkCategory) || 'Development',
+              projectName: item.project_name,
+              task: item.task_title,
+              assignedDate: item.assigned_date || workDate,
+              completedDate: item.completed_date || workDate,
+              timeInvested: item.time_invested ?? (actualMins ? Math.round((actualMins / 60) * 100) / 100 : 0),
+              estimatedHours: estMins ? Math.round((estMins / 60) * 100) / 100 : undefined,
+              estimatedTimeMinutes: estMins,
+              actualTimeMinutes: actualMins,
+              unitCountCompleted: item.unit_count || 1,
+              reviewAssignedDate: item.completed_date || workDate,
+              feedbackComments: item.feedback_comments || item.wpi_reason || item.completion_comment || '',
+              comments: item.completion_comment || '',
+              blocker: item.blocker || '',
+              status: item.status || 'wpi',
+              isCarriedForward: item.is_carried_forward,
+              carriedFromDate: item.carried_from_date,
+              carriedFromReason: item.carried_from_reason,
+              carriedOriginalTask: item.task_title,
+              wpiReason: item.wpi_reason || '',
+            };
+          })
+        );
+      }
 
       isFormDirtyRef.current = false;
       try {
@@ -667,6 +748,38 @@ export const MemberWorkTab: React.FC = () => {
           };
         }),
       });
+
+      if (result.items && result.items.length > 0) {
+        setTaskRows(
+          result.items.map((item) => {
+            const actualMins = item.actual_time_minutes ?? (item.time_invested ? Math.round(item.time_invested * 60) : undefined);
+            const estMins = item.estimated_time_minutes;
+            return {
+              id: item.id,
+              category: (item.category as WorkCategory) || 'Development',
+              projectName: item.project_name,
+              task: item.task_title,
+              assignedDate: item.assigned_date || workDate,
+              completedDate: item.completed_date || workDate,
+              timeInvested: item.time_invested ?? (actualMins ? Math.round((actualMins / 60) * 100) / 100 : 0),
+              estimatedHours: estMins ? Math.round((estMins / 60) * 100) / 100 : undefined,
+              estimatedTimeMinutes: estMins,
+              actualTimeMinutes: actualMins,
+              unitCountCompleted: item.unit_count || 1,
+              reviewAssignedDate: item.completed_date || workDate,
+              feedbackComments: item.feedback_comments || item.wpi_reason || item.completion_comment || '',
+              comments: item.completion_comment || '',
+              blocker: item.blocker || '',
+              status: item.status || 'completed',
+              isCarriedForward: item.is_carried_forward,
+              carriedFromDate: item.carried_from_date,
+              carriedFromReason: item.carried_from_reason,
+              carriedOriginalTask: item.task_title,
+              wpiReason: item.wpi_reason || '',
+            };
+          })
+        );
+      }
 
       isFormDirtyRef.current = false;
       try {
@@ -1273,6 +1386,19 @@ export const MemberWorkTab: React.FC = () => {
                             <span className="inline-flex items-center gap-1 text-[10px] font-bold px-2 py-0.5 rounded-full bg-amber-500/20 text-amber-300 border border-amber-500/30">
                               <RefreshCw className="w-3 h-3" /> Carried Forward from {row.carriedFromDate || 'previous day'}
                             </span>
+                            <button
+                              type="button"
+                              onClick={() => {
+                                handleUpdateRow(row.id, 'isCarriedForward', false);
+                                handleUpdateRow(row.id, 'carriedFromDate', undefined);
+                                handleUpdateRow(row.id, 'carriedFromReason', undefined);
+                                handleUpdateRow(row.id, 'wpiReason', '');
+                              }}
+                              className="text-[10px] text-slate-400 hover:text-rose-400 underline cursor-pointer transition-colors"
+                              title="Clear carry-forward tag if this is a new task"
+                            >
+                              (Clear carried tag)
+                            </button>
                             {row.carriedFromReason && (
                               <span className="text-[11px] text-slate-400 italic">
                                 Previous Note: "{row.carriedFromReason}"

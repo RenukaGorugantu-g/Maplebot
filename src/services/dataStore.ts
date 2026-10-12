@@ -519,10 +519,11 @@ class MapleDataStore {
 
         if (!itemsError && dbItems && dbItems.length > 0) {
           const dbIds = new Set(dbItems.map((it: any) => it.id));
-          const unsyncedLocalItems = this.dailyActionItems.filter((it) => !dbIds.has(it.id));
+          const todayStr = getTodayIST();
+          const unsyncedLocalItems = this.dailyActionItems.filter((it) => !dbIds.has(it.id) && it.work_date === todayStr);
           this.dailyActionItems = [...unsyncedLocalItems, ...dbItems];
 
-          // Auto-push unsynced local items to Supabase
+          // Auto-push unsynced local items from today to Supabase
           if (unsyncedLocalItems.length > 0) {
             this.safeUpsertDailyActionItems(unsyncedLocalItems).catch(() => {});
           }
@@ -2283,12 +2284,55 @@ class MapleDataStore {
     return session;
   }
 
+  public normalizeTaskTitle(str?: string): string {
+    return (str || '')
+      .toLowerCase()
+      .replace(/[^a-z0-9]/g, ' ')
+      .replace(/\s+/g, ' ')
+      .trim();
+  }
+
+  public isTaskMatchingCompleted(taskTitle: string, completedSet: Set<string>): boolean {
+    const norm = this.normalizeTaskTitle(taskTitle);
+    if (!norm) return false;
+    if (completedSet.has(norm)) return true;
+    if (norm.length >= 6) {
+      for (const comp of completedSet) {
+        if (comp.length >= 6) {
+          if (comp.includes(norm) || norm.includes(comp)) {
+            return true;
+          }
+        }
+      }
+    }
+    return false;
+  }
+
   public getDailyActionItems(employeeId: string, workDate: string): DailyActionItem[] {
     const items = this.dailyActionItems.filter(
       (item) => item.employee_id === employeeId && (item.work_date === workDate || (item as any).checkin_date === workDate)
     );
     if (items.length > 0) {
-      return [...items].sort((a, b) => (a.sort_order ?? 0) - (b.sort_order ?? 0));
+      // Deduplicate by normalized task title: if both 'completed' and 'wpi' exist for the same task, 'completed' ALWAYS wins!
+      const titleMap = new Map<string, DailyActionItem>();
+      for (const item of items) {
+        const key = this.normalizeTaskTitle(item.task_title);
+        const existing = titleMap.get(key);
+        if (!existing) {
+          titleMap.set(key, item);
+        } else {
+          if (item.status === 'completed' && existing.status !== 'completed') {
+            titleMap.set(key, item);
+          } else if (existing.status !== 'completed' && item.status !== 'completed') {
+            const itemTime = new Date(item.updated_at || item.created_at).getTime();
+            const existTime = new Date(existing.updated_at || existing.created_at).getTime();
+            if (itemTime > existTime) {
+              titleMap.set(key, item);
+            }
+          }
+        }
+      }
+      return Array.from(titleMap.values()).sort((a, b) => (a.sort_order ?? 0) - (b.sort_order ?? 0));
     }
 
     const memberLogs = this.performanceWorkLogs
@@ -2301,19 +2345,25 @@ class MapleDataStore {
       .sort((a, b) => new Date(b.created_at || b.updated_at).getTime() - new Date(a.created_at || a.updated_at).getTime());
 
     if (memberLogs.length > 0) {
-      // Deduplicate by task description/title, keeping latest state
-      const seenTasks = new Set<string>();
-      const uniqueLogs: PerformanceWorkLog[] = [];
+      // Deduplicate by task description/title, prioritizing completed
+      const seenTasksMap = new Map<string, PerformanceWorkLog>();
       for (const l of memberLogs) {
-        const key = (l.task || l.task_title || '').trim().toLowerCase();
-        if (key && !seenTasks.has(key)) {
-          seenTasks.add(key);
-          uniqueLogs.push(l);
+        const key = this.normalizeTaskTitle(l.task || l.task_title);
+        const isComp = l.status === 'completed' || l.delivery_status?.startsWith('completed');
+        const existing = seenTasksMap.get(key);
+        if (!existing) {
+          seenTasksMap.set(key, l);
+        } else {
+          const existingComp = existing.status === 'completed' || existing.delivery_status?.startsWith('completed');
+          if (isComp && !existingComp) {
+            seenTasksMap.set(key, l);
+          }
         }
       }
+      const uniqueLogs = Array.from(seenTasksMap.values());
 
       return uniqueLogs.map((l, idx) => {
-        const isCompleted = l.status === 'completed';
+        const isCompleted = l.status === 'completed' || l.delivery_status?.startsWith('completed');
         const isCarried = Boolean(
           l.is_carried_forward ||
           l.deliverable?.includes('[Carried Forward') ||
@@ -2362,14 +2412,52 @@ class MapleDataStore {
   public getPreviousDayWpiItems(employeeId: string, currentWorkDate: string): DailyActionItem[] {
     const prevDate = getPreviousWorkingDayIST(currentWorkDate);
 
-    // 1. Check dailyActionItems for prevDate
+    // 0. If previous day's session was checked out and reported 0 WPI tasks (or all tasks completed), DO NOT CARRY FORWARD!
+    const prevSession = this.getDailySession(employeeId, prevDate);
+    if (
+      prevSession &&
+      prevSession.status === 'checked_out' &&
+      (prevSession.wpi_tasks_count === 0 ||
+        (prevSession.total_tasks_count > 0 && prevSession.completed_tasks_count === prevSession.total_tasks_count))
+    ) {
+      return [];
+    }
+
+    // 1. Gather all tasks marked as COMPLETED on prevDate (or currentWorkDate) across dailyActionItems and performanceWorkLogs
+    const completedTasks = new Set<string>();
+
+    const allDailyItems = this.dailyActionItems.filter(
+      (i) => i.employee_id === employeeId && (i.work_date === prevDate || i.work_date === currentWorkDate)
+    );
+    for (const item of allDailyItems) {
+      if (item.status === 'completed') {
+        completedTasks.add(this.normalizeTaskTitle(item.task_title));
+      }
+    }
+
+    const allLogs = this.performanceWorkLogs.filter(
+      (l) => l.employee_id === employeeId && (l.work_date === prevDate || l.date === prevDate || l.work_date === currentWorkDate || l.date === currentWorkDate)
+    );
+    for (const l of allLogs) {
+      const isComp = l.status === 'completed' || l.delivery_status?.startsWith('completed');
+      if (isComp) {
+        completedTasks.add(this.normalizeTaskTitle(l.task || l.task_title));
+      }
+    }
+
+    // 2. Check dailyActionItems for prevDate
     const prevActionItems = this.getDailyActionItems(employeeId, prevDate);
-    const wpiItems = prevActionItems.filter((i) => i.status === 'wpi');
+    const wpiItems = prevActionItems.filter((i) => {
+      if (i.status !== 'wpi') return false;
+      // Strictest guard: If task was completed, NEVER carry forward!
+      if (this.isTaskMatchingCompleted(i.task_title, completedTasks)) return false;
+      return true;
+    });
 
     if (wpiItems.length > 0) {
       const seen = new Set<string>();
       const dedupedWpi = wpiItems.filter((item) => {
-        const key = item.task_title.toLowerCase().trim();
+        const key = this.normalizeTaskTitle(item.task_title);
         if (!key || seen.has(key)) return false;
         seen.add(key);
         return true;
@@ -2399,17 +2487,24 @@ class MapleDataStore {
       }));
     }
 
-    // 2. Check performance_work_logs for prevDate (NEVER include completed tasks!)
+    // 3. Fallback: Check performance_work_logs for prevDate (STRICTLY EXCLUDING completed tasks)
     const prevLogs = this.performanceWorkLogs
       .filter((l) => l.employee_id === employeeId && (l.work_date === prevDate || l.date === prevDate))
       .sort((a, b) => new Date(b.created_at || b.updated_at).getTime() - new Date(a.created_at || a.updated_at).getTime());
-    const prevWpiLogs = prevLogs.filter(
-      (l) => ((l.status as string) === 'in_progress' || (l.status as string) === 'wpi' || (l.status === 'pending' && l.delivery_status === 'pending')) &&
-             !l.delivery_status?.startsWith('completed')
-    );
+    const prevWpiLogs = prevLogs.filter((l) => {
+      const isComp = l.status === 'completed' || l.delivery_status?.startsWith('completed');
+      if (isComp) return false;
+      const title = l.task || l.task_title || '';
+      if (this.isTaskMatchingCompleted(title, completedTasks)) return false;
+      return (
+        (l.status as string) === 'in_progress' ||
+        (l.status as string) === 'wpi' ||
+        (l.status === 'pending' && l.delivery_status === 'pending')
+      );
+    });
     const seenLogs = new Set<string>();
     const dedupedLogs = prevWpiLogs.filter((l) => {
-      const key = (l.task || l.task_title || '').toLowerCase().trim();
+      const key = this.normalizeTaskTitle(l.task || l.task_title);
       if (!key || seenLogs.has(key)) return false;
       seenLogs.add(key);
       return true;
@@ -2567,9 +2662,16 @@ class MapleDataStore {
     // 3. Mirror each action item into performance_work_logs for backward compatibility
     const logsToUpsert: PerformanceWorkLog[] = newItems.map((item, idx) => {
       const it = params.action_items[idx];
+      const normTitle = this.normalizeTaskTitle(item.task_title);
       const existingLog = (it.id ? this.performanceWorkLogs.find((l) => l.id === it.id) : undefined) ||
         this.performanceWorkLogs.find(
-          (l) => l.employee_id === empId && l.work_date === workDate && (l.task === item.task_title || l.task_title === item.task_title)
+          (l) => l.employee_id === empId &&
+                 (l.work_date === workDate || l.date === workDate) &&
+                 (
+                   l.task === item.task_title ||
+                   l.task_title === item.task_title ||
+                   this.normalizeTaskTitle(l.task || l.task_title) === normTitle
+                 )
         );
       const logId = existingLog?.id || `pwl-${Date.now()}-${Math.random().toString(36).substr(2, 6)}`;
       const carriedTag = item.is_carried_forward ? `[Carried Forward from ${item.carried_from_date || 'previous day'}]` : '';
@@ -2637,6 +2739,21 @@ class MapleDataStore {
           item.session_id = session.id;
         }
       }
+
+      // Delete any previous daily_action_items in Supabase for this employee and work_date
+      // whose ID is not among newItems (e.g. if re-submitting morning check-in)
+      const activeIds = newItems.map((a) => a.id);
+      try {
+        await supabase
+          .from('daily_action_items')
+          .delete()
+          .eq('employee_id', empId)
+          .eq('work_date', workDate)
+          .not('id', 'in', `(${activeIds.map((id) => `"${id}"`).join(',')})`);
+      } catch (delErr) {
+        console.warn('Supabase delete old morning action items notice:', delErr);
+      }
+
       await this.safeUpsertDailyActionItems(newItems);
     } catch (e: any) {
       console.warn('daily sessions/items sync note:', e?.message);
@@ -2862,9 +2979,20 @@ class MapleDataStore {
     // Mirror to performance_work_logs
     const logsToUpsert: PerformanceWorkLog[] = actionItems.map((item, idx) => {
       const it = params.items[idx];
+      const normTitle = this.normalizeTaskTitle(item.task_title);
       const existingLog = (it.id ? this.performanceWorkLogs.find((l) => l.id === it.id) : undefined) ||
         this.performanceWorkLogs.find(
-          (l) => l.employee_id === empId && l.work_date === workDate && (l.task === item.task_title || l.task_title === item.task_title)
+          (l) => l.employee_id === empId &&
+                 (l.work_date === workDate || l.date === workDate) &&
+                 (
+                   l.task === item.task_title ||
+                   l.task_title === item.task_title ||
+                   this.normalizeTaskTitle(l.task || l.task_title) === normTitle ||
+                   (normTitle.length >= 6 && (
+                     this.normalizeTaskTitle(l.task || l.task_title).includes(normTitle) ||
+                     normTitle.includes(this.normalizeTaskTitle(l.task || l.task_title))
+                   ))
+                 )
         );
       const logId = existingLog?.id || `pwl-${Date.now()}-${Math.random().toString(36).substr(2, 6)}`;
       const isCompleted = item.status === 'completed';
@@ -2949,6 +3077,21 @@ class MapleDataStore {
           item.session_id = session.id;
         }
       }
+
+      // Delete any previous daily_action_items in Supabase for this employee and work_date
+      // whose ID is not among the checkout actionItems
+      const activeIds = actionItems.map((a) => a.id);
+      try {
+        await supabase
+          .from('daily_action_items')
+          .delete()
+          .eq('employee_id', empId)
+          .eq('work_date', workDate)
+          .not('id', 'in', `(${activeIds.map((id) => `"${id}"`).join(',')})`);
+      } catch (delErr) {
+        console.warn('Supabase delete old daily action items notice:', delErr);
+      }
+
       await this.safeUpsertDailyActionItems(actionItems);
     } catch (e) {
       console.warn('Supabase daily session upsert error:', e);
@@ -2960,6 +3103,22 @@ class MapleDataStore {
 
     if (dbError) {
       console.warn('Supabase end of day checkout upsert note:', dbError);
+    }
+
+    // Clean up any stale/orphaned in_progress logs for this employee on this date
+    const finalizedLogIds = new Set(logsToUpsert.map((l) => l.id));
+    const orphanedLogs = this.performanceWorkLogs.filter(
+      (l) => l.employee_id === empId &&
+             (l.work_date === workDate || l.date === workDate) &&
+             !finalizedLogIds.has(l.id) &&
+             (l.status === 'in_progress' || l.status === 'wpi' || (l.status === 'pending' && l.delivery_status === 'pending'))
+    );
+    if (orphanedLogs.length > 0) {
+      const orphanIds = orphanedLogs.map((l) => l.id);
+      this.performanceWorkLogs = this.performanceWorkLogs.filter((l) => !orphanIds.includes(l.id));
+      try {
+        await supabase.from('performance_work_logs').delete().in('id', orphanIds);
+      } catch (e) {}
     }
 
     this.persistAttendanceLocally();
@@ -3068,9 +3227,20 @@ class MapleDataStore {
     // Mirror to performance_work_logs
     const logsToUpsert: PerformanceWorkLog[] = actionItems.map((item, idx) => {
       const it = params.items[idx];
+      const normTitle = this.normalizeTaskTitle(item.task_title);
       const existingLog = (it.id ? this.performanceWorkLogs.find((l) => l.id === it.id) : undefined) ||
         this.performanceWorkLogs.find(
-          (l) => l.employee_id === empId && l.work_date === workDate && (l.task === item.task_title || l.task_title === item.task_title)
+          (l) => l.employee_id === empId &&
+                 (l.work_date === workDate || l.date === workDate) &&
+                 (
+                   l.task === item.task_title ||
+                   l.task_title === item.task_title ||
+                   this.normalizeTaskTitle(l.task || l.task_title) === normTitle ||
+                   (normTitle.length >= 6 && (
+                     this.normalizeTaskTitle(l.task || l.task_title).includes(normTitle) ||
+                     normTitle.includes(this.normalizeTaskTitle(l.task || l.task_title))
+                   ))
+                 )
         );
       const logId = existingLog?.id || `pwl-${Date.now()}-${Math.random().toString(36).substr(2, 6)}`;
       const isCompleted = item.status === 'completed';
@@ -3148,6 +3318,21 @@ class MapleDataStore {
           }
         }
       }
+
+      // Delete any previous daily_action_items in Supabase for this employee and work_date
+      // whose ID is not among the active progress actionItems
+      const activeIds = actionItems.map((a) => a.id);
+      try {
+        await supabase
+          .from('daily_action_items')
+          .delete()
+          .eq('employee_id', empId)
+          .eq('work_date', workDate)
+          .not('id', 'in', `(${activeIds.map((id) => `"${id}"`).join(',')})`);
+      } catch (delErr) {
+        console.warn('Supabase delete old daily action items notice:', delErr);
+      }
+
       await this.safeUpsertDailyActionItems(actionItems);
     } catch {}
 
@@ -3157,6 +3342,22 @@ class MapleDataStore {
 
     if (dbError) {
       console.warn('Supabase save progress upsert note:', dbError);
+    }
+
+    // Clean up any stale/orphaned in_progress logs for this employee on this date
+    const finalizedLogIds = new Set(logsToUpsert.map((l) => l.id));
+    const orphanedLogs = this.performanceWorkLogs.filter(
+      (l) => l.employee_id === empId &&
+             (l.work_date === workDate || l.date === workDate) &&
+             !finalizedLogIds.has(l.id) &&
+             (l.status === 'in_progress' || l.status === 'wpi' || (l.status === 'pending' && l.delivery_status === 'pending'))
+    );
+    if (orphanedLogs.length > 0) {
+      const orphanIds = orphanedLogs.map((l) => l.id);
+      this.performanceWorkLogs = this.performanceWorkLogs.filter((l) => !orphanIds.includes(l.id));
+      try {
+        await supabase.from('performance_work_logs').delete().in('id', orphanIds);
+      } catch (e) {}
     }
 
     this.persistAttendanceLocally();
